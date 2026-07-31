@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - packages/modules/*
 
 sharedWorkspaceLockfile: true
 
@@ -14,6 +15,7 @@ allowBuilds:
   # Prisma's official exact packages may initialize generated/runtime assets.
   '@prisma/client': true
   '@prisma/engines': true
+  '@scarf/scarf': false
   prisma: true
   # These transitive installers are unnecessary for local Docker transport
   # and runtime protobuf loading; keep install-time code disabled.
@@ -28,5 +30,6 @@ ignoredOptionalDependencies:
 
 overrides:
   'brace-expansion@<=5.0.7': 5.0.9
+  'js-yaml@>=5.0.0 <5.2.2': 5.2.2
 
 saveExact: true

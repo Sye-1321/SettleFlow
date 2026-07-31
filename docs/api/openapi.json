@@ -1,0 +1,92 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1": {
+      "get": {
+        "operationId": "ApiVersionController.getVersion",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The API is available to the authenticated merchant request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "service": "settleflow-api",
+                    "status": "available",
+                    "version": "v1"
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The merchant API key is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "merchantApiKey": []
+          }
+        ],
+        "summary": "Return the authenticated merchant API version entrypoint",
+        "tags": [
+          "foundation"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "HealthController.getLiveness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The API process is live."
+          }
+        },
+        "summary": "Report process liveness without dependency probes",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController.getReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "All required dependencies are ready."
+          },
+          "503": {
+            "description": "At least one required dependency is unavailable."
+          }
+        },
+        "summary": "Report bounded PostgreSQL and RabbitMQ readiness",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "SettleFlow API",
+    "description": "Finance-grade payment-platform simulation. Merchant API routes use scoped API keys; no real funds or regulated payment data are supported.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "merchantApiKey": {
+        "scheme": "bearer",
+        "bearerFormat": "SettleFlow merchant API key",
+        "description": "Use Authorization: Bearer <merchant_api_key>. Never place a real key in documentation.",
+        "type": "http"
+      }
+    },
+    "schemas": {}
+  }
+}

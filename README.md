@@ -9,9 +9,10 @@ The repository provides two independent NestJS processes and their local support
 - `apps/api`: HTTP API with process liveness and dependency readiness.
 - `apps/worker`: standalone background worker with internal lifecycle health.
 - `packages/infrastructure`: shared PostgreSQL/RabbitMQ connection lifecycle and lazy Prisma adapter.
+- `packages/modules/merchant-access`: bounded-domain API-key generation, lifecycle, authentication, and Prisma persistence.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-This foundation contains a Prisma configuration and intentionally empty baseline migration, but no Prisma model, application table, seed, queue topology, publisher, consumer, payment, ledger, authentication, webhook, settlement, reconciliation, or provider behavior.
+The only application data currently authorized is Merchant Access: merchant lifecycle roots and merchant-owned scoped API keys. There is no user/password/JWT authentication, merchant self-service onboarding, seed, queue topology, publisher, consumer, payment, ledger, webhook, settlement, reconciliation, provider, or financial behavior.
 
 ### Pinned toolchain
 
@@ -27,6 +28,7 @@ This foundation contains a Prisma configuration and intentionally empty baseline
 | amqplib        | 2.0.1         | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
 | Testcontainers | 12.0.4        | Disposable real PostgreSQL/RabbitMQ integration environment        |
 | Prisma         | 7.9.1         | Current ORM/CLI patch with the PostgreSQL driver adapter           |
+| NestJS Swagger | 11.4.6        | OpenAPI support compatible with the pinned NestJS 11 line          |
 
 The repository pins Node in `.node-version` and `package.json` engine metadata. It pins pnpm in `package.json` package-manager and engine metadata. Direct dependencies use exact versions and one root `pnpm-lock.yaml`.
 
@@ -100,7 +102,7 @@ pnpm infra:up
 
 ### Prisma and local database workflow
 
-The root `.env` supplies `DATABASE_URL` to Prisma commands. The checked-in schema deliberately contains no models: every entity named by the specification belongs to a later bounded-domain milestone, and the demo currency defaults do not define a reference-data table. There is therefore no seed command in this milestone.
+The root `.env` supplies `DATABASE_URL` to Prisma commands. The schema contains exactly two non-financial models authorized by FR-01: `Merchant` and its owned `ApiKey` records. There is no seed command because a committed deterministic API-key secret would violate the one-time-secret requirement, and merchant onboarding is not yet authorized as a public workflow.
 
 Validate the schema and generate the ignored Prisma Client output:
 
@@ -116,7 +118,7 @@ pnpm db:migrate:apply
 pnpm db:migrate:status
 ```
 
-The initial migration is intentionally empty. Applying it creates Prisma's internal `_prisma_migrations` history table and no application or financial table.
+The baseline migration is intentionally empty. The additive Merchant Access migration creates only `merchants` and `api_keys`, their two status enums, indexes, ownership foreign key, and reviewed integrity checks. It creates no financial table or column.
 
 When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
 
@@ -149,9 +151,26 @@ The default listener is `http://127.0.0.1:3000` and exposes:
 
 - `GET /health/live` - process liveness.
 - `GET /health/ready` - bounded PostgreSQL and RabbitMQ connectivity; HTTP 200 only when both are up, otherwise HTTP 503.
-- `GET /api/v1` - API version entrypoint.
+- `GET /api/v1` - API version entrypoint protected by a merchant bearer API key.
+- `GET /docs` - public Swagger UI.
+- `GET /docs/openapi.json` - public runtime OpenAPI document.
 
 Liveness never performs a dependency check. Readiness returns stable `up`/`down` states and does not expose connection URLs, credentials, or raw errors.
+
+Merchant credentials use `Authorization: Bearer <merchant_api_key>`. The plaintext is returned once by the internal issue or rotation application-service call, while PostgreSQL stores only its safe `sf_test_...` prefix and a salted scrypt hash. Never put a usable key in a shell history, source file, log, screenshot, or documentation. For example, with a disposable locally issued key held only in a process variable:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:3000/api/v1 -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
+```
+
+No HTTP/CLI key-provisioning command is exposed in this milestone: the specification does not authorize public merchant onboarding or a lifecycle endpoint, and operator authentication/auditing is deferred. Integration tests provision synthetic merchants and one-time keys directly through the bounded-domain application service. See [Merchant Access API and security](docs/api/merchant-access.md).
+
+Generate or verify the committed OpenAPI artifact:
+
+```shell
+pnpm openapi:generate
+pnpm openapi:check
+```
 
 ### Run the worker
 
@@ -168,15 +187,16 @@ pnpm lint
 pnpm format:check
 pnpm typecheck
 pnpm test
+pnpm test:merchant-access
 pnpm test:integration
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent unit tests. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime. `pnpm build` creates the shared infrastructure package plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, and Merchant Access unit tests. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime. `pnpm build` creates the shared infrastructure and Merchant Access packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-Runtime readiness remains health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. Prisma migration application creates only its internal migration-history table; no application table, queue, exchange, event, or financial behavior is created.
+Runtime readiness remains health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. No queue, exchange, event, user identity, financial table, or financial behavior is created.
 
 ## Governance
 

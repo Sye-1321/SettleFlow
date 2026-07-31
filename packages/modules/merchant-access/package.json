@@ -1,0 +1,21 @@
+{
+  "name": "@settleflow/merchant-access",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json"
+  },
+  "dependencies": {
+    "@settleflow/infrastructure": "workspace:*"
+  }
+}

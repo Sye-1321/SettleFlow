@@ -57,7 +57,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
     }
   }, 120_000);
 
-  it('applies the empty migration history repeatedly without an application table', async () => {
+  it('applies the migration history repeatedly with only authorized Merchant Access tables', async () => {
     if (postgres === undefined) {
       throw new Error('Testcontainers did not start PostgreSQL');
     }
@@ -92,9 +92,13 @@ describe('Prisma data foundation with real PostgreSQL', () => {
     ]);
 
     expect(tables.exitCode).toBe(0);
-    expect(tables.stdout.trim().split(/\r?\n/)).toEqual(['_prisma_migrations']);
+    expect(tables.stdout.trim().split(/\r?\n/)).toEqual([
+      '_prisma_migrations',
+      'api_keys',
+      'merchants',
+    ]);
     expect(appliedMigrations.exitCode).toBe(0);
-    expect(appliedMigrations.stdout.trim()).toBe('1');
+    expect(appliedMigrations.stdout.trim()).toBe('2');
   });
 
   it('uses one lazy Prisma client and disconnects idempotently', async () => {

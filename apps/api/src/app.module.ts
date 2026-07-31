@@ -1,11 +1,18 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { DependencyConnections, PrismaDatabase } from '@settleflow/infrastructure';
+import {
+  ApiKeyCredentialService,
+  MerchantAccessService,
+  PrismaMerchantAccessRepository,
+} from '@settleflow/merchant-access';
 
 import { ApiLifecycleService } from './api-lifecycle.service';
 import { ApiVersionController } from './api-version.controller';
 import { ApiEnvironment, validateApiEnvironment } from './config/environment';
 import { HealthController } from './health/health.controller';
+import { MerchantApiKeyGuard } from './merchant-access/merchant-api-key.guard';
 
 @Module({
   controllers: [ApiVersionController, HealthController],
@@ -19,6 +26,7 @@ import { HealthController } from './health/health.controller';
   ],
   providers: [
     ApiLifecycleService,
+    ApiKeyCredentialService,
     {
       provide: PrismaDatabase,
       inject: [ConfigService],
@@ -37,6 +45,25 @@ import { HealthController } from './health/health.controller';
           rabbitmqUrl: config.get('RABBITMQ_URL', { infer: true }),
           timeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
         }),
+    },
+    {
+      provide: PrismaMerchantAccessRepository,
+      inject: [PrismaDatabase],
+      useFactory: (prisma: PrismaDatabase): PrismaMerchantAccessRepository =>
+        new PrismaMerchantAccessRepository(prisma),
+    },
+    {
+      provide: MerchantAccessService,
+      inject: [PrismaMerchantAccessRepository, ApiKeyCredentialService],
+      useFactory: (
+        repository: PrismaMerchantAccessRepository,
+        credentials: ApiKeyCredentialService,
+      ): MerchantAccessService => new MerchantAccessService(repository, credentials),
+    },
+    MerchantApiKeyGuard,
+    {
+      provide: APP_GUARD,
+      useExisting: MerchantApiKeyGuard,
     },
   ],
 })

@@ -4,7 +4,8 @@
     "incremental": false,
     "noEmit": true,
     "paths": {
-      "@settleflow/infrastructure": ["./packages/infrastructure/src/index.ts"]
+      "@settleflow/infrastructure": ["./packages/infrastructure/src/index.ts"],
+      "@settleflow/merchant-access": ["./packages/modules/merchant-access/src/index.ts"]
     },
     "types": ["jest", "node"]
   },

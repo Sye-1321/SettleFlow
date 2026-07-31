@@ -8,10 +8,10 @@ The repository provides two independent NestJS processes and their local support
 
 - `apps/api`: HTTP API with process liveness and dependency readiness.
 - `apps/worker`: standalone background worker with internal lifecycle health.
-- `packages/infrastructure`: shared, health-only PostgreSQL/RabbitMQ connection lifecycle.
+- `packages/infrastructure`: shared PostgreSQL/RabbitMQ connection lifecycle and lazy Prisma adapter.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-This foundation contains no database schema, Prisma model, queue topology, publisher, consumer, payment, ledger, authentication, webhook, settlement, reconciliation, or provider behavior.
+This foundation contains a Prisma configuration and intentionally empty baseline migration, but no Prisma model, application table, seed, queue topology, publisher, consumer, payment, ledger, authentication, webhook, settlement, reconciliation, or provider behavior.
 
 ### Pinned toolchain
 
@@ -26,6 +26,7 @@ This foundation contains no database schema, Prisma model, queue topology, publi
 | pg             | 8.22.0        | Health-only PostgreSQL client                                      |
 | amqplib        | 2.0.1         | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
 | Testcontainers | 12.0.4        | Disposable real PostgreSQL/RabbitMQ integration environment        |
+| Prisma         | 7.9.1         | Current ORM/CLI patch with the PostgreSQL driver adapter           |
 
 The repository pins Node in `.node-version` and `package.json` engine metadata. It pins pnpm in `package.json` package-manager and engine metadata. Direct dependencies use exact versions and one root `pnpm-lock.yaml`.
 
@@ -97,6 +98,47 @@ pnpm infra:reset
 pnpm infra:up
 ```
 
+### Prisma and local database workflow
+
+The root `.env` supplies `DATABASE_URL` to Prisma commands. The checked-in schema deliberately contains no models: every entity named by the specification belongs to a later bounded-domain milestone, and the demo currency defaults do not define a reference-data table. There is therefore no seed command in this milestone.
+
+Validate the schema and generate the ignored Prisma Client output:
+
+```shell
+pnpm prisma:validate
+pnpm prisma:generate
+```
+
+Apply the reviewed migration history and inspect its status:
+
+```shell
+pnpm db:migrate:apply
+pnpm db:migrate:status
+```
+
+The initial migration is intentionally empty. Applying it creates Prisma's internal `_prisma_migrations` history table and no application or financial table.
+
+When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
+
+```shell
+pnpm db:migrate:create --name descriptive_name
+pnpm db:migrate:apply
+```
+
+Open Prisma Studio for local inspection:
+
+```shell
+pnpm db:inspect
+```
+
+Reset only the local PostgreSQL schema and reapply committed migrations with the interactive command below. This is destructive to all data in the configured database and is never production guidance:
+
+```shell
+pnpm db:reset
+```
+
+Use `pnpm infra:reset` instead when both local service volumes must be removed. Every migration must be reviewed before application; `prisma db push` is not part of the governed workflow.
+
 ### Run the API
 
 ```shell
@@ -134,7 +176,7 @@ pnpm start:worker
 
 `pnpm test` runs Docker-independent unit tests. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime. `pnpm build` creates the shared infrastructure package plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-All runtime dependency operations in this milestone are health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. No table, queue, exchange, event, or financial behavior is created.
+Runtime readiness remains health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. Prisma migration application creates only its internal migration-history table; no application table, queue, exchange, event, or financial behavior is created.
 
 ## Governance
 

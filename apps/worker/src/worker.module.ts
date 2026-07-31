@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ConfigService } from '@nestjs/config';
-import { DependencyConnections } from '@settleflow/infrastructure';
+import { DependencyConnections, PrismaDatabase } from '@settleflow/infrastructure';
 
 import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
@@ -19,6 +19,15 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
   providers: [
     WorkerHealthService,
     WorkerRuntimeService,
+    {
+      provide: PrismaDatabase,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): PrismaDatabase =>
+        new PrismaDatabase({
+          connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+          databaseUrl: config.get('DATABASE_URL', { infer: true }),
+        }),
+    },
     {
       provide: DependencyConnections,
       inject: [ConfigService],

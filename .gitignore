@@ -13,6 +13,7 @@ coverage/
 .nyc_output/
 *.tsbuildinfo
 *.lcov
+packages/infrastructure/src/generated/prisma/
 
 # Environment files and local secrets (safe examples remain tracked)
 .env

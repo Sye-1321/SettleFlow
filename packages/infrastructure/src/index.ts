@@ -5,3 +5,5 @@ export type {
   DependencyReadiness,
   DependencyStatus,
 } from './dependency-connections';
+export { PrismaDatabase } from './prisma-database';
+export type { PrismaDatabaseOptions } from './prisma-database';

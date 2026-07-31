@@ -9,5 +9,5 @@
     "types": ["jest", "node"]
   },
   "exclude": ["apps/**/dist/**", "packages/**/dist/**"],
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts", "prisma.config.mts"]
 }

@@ -11,6 +11,10 @@ engineStrict: true
 # The exact platform binding is installed as an optional dependency. The
 # fallback postinstall can perform its own network download and is unnecessary.
 allowBuilds:
+  # Prisma's official exact packages may initialize generated/runtime assets.
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
   # These transitive installers are unnecessary for local Docker transport
   # and runtime protobuf loading; keep install-time code disabled.
   protobufjs: false

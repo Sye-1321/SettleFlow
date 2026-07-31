@@ -6,7 +6,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DependencyConnections } from '@settleflow/infrastructure';
+import { DependencyConnections, PrismaDatabase } from '@settleflow/infrastructure';
 
 import { WorkerEnvironment } from '../config/environment';
 import { WorkerHealthService } from '../health/worker-health.service';
@@ -22,6 +22,7 @@ export class WorkerRuntimeService
   public constructor(
     private readonly config: ConfigService<WorkerEnvironment, true>,
     private readonly dependencies: DependencyConnections,
+    private readonly prisma: PrismaDatabase,
     private readonly health: WorkerHealthService,
   ) {}
 
@@ -61,7 +62,7 @@ export class WorkerRuntimeService
       this.keepAliveTimer = undefined;
     }
 
-    await this.dependencies.close();
+    await Promise.all([this.dependencies.close(), this.prisma.close()]);
   }
 
   private async recordHeartbeat(): Promise<void> {

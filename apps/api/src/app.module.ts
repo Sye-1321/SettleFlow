@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { DependencyConnections } from '@settleflow/infrastructure';
+import { DependencyConnections, PrismaDatabase } from '@settleflow/infrastructure';
 
 import { ApiLifecycleService } from './api-lifecycle.service';
 import { ApiVersionController } from './api-version.controller';
@@ -19,6 +19,15 @@ import { HealthController } from './health/health.controller';
   ],
   providers: [
     ApiLifecycleService,
+    {
+      provide: PrismaDatabase,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<ApiEnvironment, true>): PrismaDatabase =>
+        new PrismaDatabase({
+          connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+          databaseUrl: config.get('DATABASE_URL', { infer: true }),
+        }),
+    },
     {
       provide: DependencyConnections,
       inject: [ConfigService],

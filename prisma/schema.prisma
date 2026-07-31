@@ -1,0 +1,17 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../packages/infrastructure/src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "cjs"
+  generatedFileExtension = "ts"
+  importFileExtension    = ""
+  engineType             = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// No application model is authorized in this milestone. The specification's
+// listed entities belong to later bounded-domain milestones, and its demo
+// currency defaults do not define a reference-data table.

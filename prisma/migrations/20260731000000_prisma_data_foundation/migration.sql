@@ -1,0 +1,2 @@
+-- Intentionally empty baseline migration.
+-- No application or financial table is authorized by this milestone.

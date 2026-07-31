@@ -1,0 +1,43 @@
+{
+  "name": "settleflow",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Finance-grade payment-platform simulation and engineering case study.",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "11.18.0"
+  },
+  "scripts": {
+    "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','apps/api/dist','apps/worker/dist']) fs.rmSync(path, { recursive: true, force: true })\"",
+    "dev:api": "nest start api --watch",
+    "dev:worker": "nest start worker --watch",
+    "start:api": "node apps/api/dist/main.js",
+    "start:worker": "node apps/worker/dist/main.js",
+    "build": "node -e \"const fs=require('node:fs'); for (const path of ['dist','apps/api/dist','apps/worker/dist']) fs.rmSync(path, { recursive: true, force: true })\" && nest build api && nest build worker",
+    "build:api": "nest build api",
+    "build:worker": "nest build worker",
+    "lint": "eslint apps --max-warnings=0",
+    "format": "prettier --write \"apps/**/*.ts\" \"packages/**/*.md\" \"*.{json,cjs,mjs,yaml,md}\"",
+    "format:check": "prettier --check \"apps/**/*.ts\" \"packages/**/*.md\" \"*.{json,cjs,mjs,yaml,md}\"",
+    "typecheck": "tsc --project tsconfig.typecheck.json",
+    "test": "jest --runInBand",
+    "test:api": "jest --selectProjects api --runInBand",
+    "test:worker": "jest --selectProjects worker --runInBand"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@nestjs/cli": "11.0.24",
+    "@types/jest": "30.0.0",
+    "@types/node": "24.13.3",
+    "eslint": "10.8.0",
+    "eslint-config-prettier": "10.1.8",
+    "jest": "30.4.2",
+    "prettier": "3.9.6",
+    "ts-jest": "29.4.12",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0"
+  }
+}

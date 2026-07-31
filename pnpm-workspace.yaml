@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+
+sharedWorkspaceLockfile: true
+
+strictPeerDependencies: true
+
+engineStrict: true
+
+# The exact platform binding is installed as an optional dependency. The
+# fallback postinstall can perform its own network download and is unnecessary.
+allowBuilds:
+  unrs-resolver: false
+
+overrides:
+  'brace-expansion@<=5.0.7': 5.0.9
+
+saveExact: true

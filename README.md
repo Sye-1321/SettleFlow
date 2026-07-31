@@ -2,24 +2,30 @@
 
 SettleFlow is a finance-grade payment-platform simulation and engineering case study. It is not authorized to process real funds or store cardholder data. The authoritative product and architecture baseline is [the SettleFlow specification](docs/specification/SettleFlow_Technical_Product_and_Architecture_Specification_v1.0.docx).
 
-## Runnable application foundation
+## Local application and infrastructure foundation
 
-The current milestone provides two independent NestJS processes from one pnpm workspace:
+The repository provides two independent NestJS processes and their local supporting services:
 
-- `apps/api`: HTTP API foundation.
-- `apps/worker`: standalone background-worker foundation with internal lifecycle health.
-- `packages`: reserved for shared code only when a real cross-entrypoint need exists.
+- `apps/api`: HTTP API with process liveness and dependency readiness.
+- `apps/worker`: standalone background worker with internal lifecycle health.
+- `packages/infrastructure`: shared, health-only PostgreSQL/RabbitMQ connection lifecycle.
+- `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-No payment, ledger, database, broker, authentication, webhook, settlement, reconciliation, provider, or Docker behavior exists yet.
+This foundation contains no database schema, Prisma model, queue topology, publisher, consumer, payment, ledger, authentication, webhook, settlement, reconciliation, or provider behavior.
 
 ### Pinned toolchain
 
-| Tool       | Exact version | Selection note                                                     |
-| ---------- | ------------- | ------------------------------------------------------------------ |
-| Node.js    | 24.18.0       | Current official LTS patch when this scaffold was created          |
-| pnpm       | 11.18.0       | Current stable pnpm 11; pnpm 12 is still beta                      |
-| NestJS     | 11.1.28       | Current stable NestJS 11 framework line                            |
-| TypeScript | 6.0.3         | Newest stable compiler supported by the pinned lint/test toolchain |
+| Tool           | Exact version | Selection note                                                     |
+| -------------- | ------------- | ------------------------------------------------------------------ |
+| Node.js        | 24.18.0       | Current official LTS patch when this scaffold was created          |
+| pnpm           | 11.18.0       | Current stable pnpm 11; pnpm 12 is still beta                      |
+| NestJS         | 11.1.28       | Current stable NestJS 11 framework line                            |
+| TypeScript     | 6.0.3         | Newest stable compiler supported by the pinned lint/test toolchain |
+| PostgreSQL     | 18.4          | Current supported PostgreSQL minor, pinned as a Compose image      |
+| RabbitMQ       | 4.3.4         | Current fully supported RabbitMQ patch, with management UI         |
+| pg             | 8.22.0        | Health-only PostgreSQL client                                      |
+| amqplib        | 2.0.1         | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
+| Testcontainers | 12.0.4        | Disposable real PostgreSQL/RabbitMQ integration environment        |
 
 The repository pins Node in `.node-version` and `package.json` engine metadata. It pins pnpm in `package.json` package-manager and engine metadata. Direct dependencies use exact versions and one root `pnpm-lock.yaml`.
 
@@ -28,6 +34,7 @@ The repository pins Node in `.node-version` and `package.json` engine metadata. 
 - Git.
 - Node.js 24.18.0 exactly. Version managers can read `.node-version`.
 - Corepack or another official pnpm installation method.
+- Docker Engine with Docker Compose for local services and integration tests.
 
 From the repository root:
 
@@ -38,14 +45,57 @@ corepack pnpm install --frozen-lockfile
 
 For the first lockfile generation only, maintainers use `corepack pnpm install`; normal fresh-clone and CI installs use `--frozen-lockfile`.
 
-Both applications have safe, non-secret examples. Defaults work without local files; copy an example only to override them:
+Copy the safe, synthetic development examples before starting local services or applications:
 
 ```powershell
+Copy-Item .env.example .env
 Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/worker/.env.example apps/worker/.env
 ```
 
-The copied `.env` files are ignored. Never add real secrets or credentials to an example.
+The copied `.env` files are ignored. The checked-in values are local-development credentials only; never reuse them outside this project or add real secrets to an example.
+
+If a default port is already occupied, change its value in the root `.env` and update the matching application URL. For example, set `POSTGRES_PORT=55432` and use port `55432` in both application `DATABASE_URL` values.
+
+### Start and inspect local infrastructure
+
+Start PostgreSQL and RabbitMQ and wait for both health checks:
+
+```shell
+pnpm infra:up
+```
+
+Inspect container health, recent logs, and service-native diagnostics:
+
+```shell
+pnpm infra:ps
+pnpm infra:logs
+docker compose exec postgres pg_isready --username settleflow --dbname settleflow
+docker compose exec rabbitmq rabbitmq-diagnostics -q ping
+```
+
+RabbitMQ management is available at `http://127.0.0.1:15672` with the synthetic values from the root `.env`. Published PostgreSQL, AMQP, and management ports bind to loopback only.
+
+Stop containers without removing them, or remove containers while preserving named volumes:
+
+```shell
+docker compose stop
+pnpm infra:down
+```
+
+Restart stopped services with `pnpm infra:up`. To inspect dependency-failure behavior, stop and restart one service explicitly:
+
+```shell
+docker compose stop rabbitmq
+docker compose up --detach --wait rabbitmq
+```
+
+Resetting is destructive to local PostgreSQL and RabbitMQ state. It removes both named volumes and cannot recover their contents:
+
+```shell
+pnpm infra:reset
+pnpm infra:up
+```
 
 ### Run the API
 
@@ -56,10 +106,10 @@ pnpm dev:api
 The default listener is `http://127.0.0.1:3000` and exposes:
 
 - `GET /health/live` - process liveness.
-- `GET /health/ready` - foundation configuration/bootstrap readiness.
+- `GET /health/ready` - bounded PostgreSQL and RabbitMQ connectivity; HTTP 200 only when both are up, otherwise HTTP 503.
 - `GET /api/v1` - API version entrypoint.
 
-The readiness response explicitly lists PostgreSQL as deferred. It is not a claim of final FR-13 dependency readiness; the database milestone must add a real bounded PostgreSQL check.
+Liveness never performs a dependency check. Readiness returns stable `up`/`down` states and does not expose connection URLs, credentials, or raw errors.
 
 ### Run the worker
 
@@ -67,7 +117,7 @@ The readiness response explicitly lists PostgreSQL as deferred. It is not a clai
 pnpm dev:worker
 ```
 
-The worker is a standalone Nest application context, not an HTTP server. It logs `worker.ready` after configuration and bootstrap succeed, keeps the process alive, reports internal live/ready state, becomes unready during shutdown, and handles `SIGINT`/`SIGTERM` through Nest shutdown hooks. PostgreSQL and RabbitMQ checks are explicitly deferred until those integrations exist.
+The worker is a standalone Nest application context, not an HTTP server. It checks PostgreSQL and RabbitMQ during bootstrap and on each heartbeat, logs internal readiness, remains running but not ready during a dependency outage, becomes unready during shutdown, and closes both dependency clients on `SIGINT`/`SIGTERM`.
 
 ### Quality and production commands
 
@@ -76,12 +126,15 @@ pnpm lint
 pnpm format:check
 pnpm typecheck
 pnpm test
+pnpm test:integration
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm build` creates independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build.
+`pnpm test` runs Docker-independent unit tests. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime. `pnpm build` creates the shared infrastructure package plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+
+All runtime dependency operations in this milestone are health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. No table, queue, exchange, event, or financial behavior is created.
 
 ## Governance
 

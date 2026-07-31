@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import type { DependencyReadiness, DependencyStatus } from '@settleflow/infrastructure';
 
-type WorkerState = 'ready' | 'starting' | 'stopping';
+type WorkerState = 'running' | 'starting' | 'stopping';
 
 export interface WorkerLiveness {
   readonly service: 'worker';
@@ -10,14 +11,19 @@ export interface WorkerLiveness {
 export interface WorkerReadiness {
   readonly checks: {
     readonly configuration: 'up';
+    readonly postgresql: DependencyStatus;
+    readonly rabbitmq: DependencyStatus;
   };
-  readonly deferredDependencies: readonly ['postgresql', 'rabbitmq'];
   readonly service: 'worker';
   readonly status: 'not_ready' | 'ready';
 }
 
 @Injectable()
 export class WorkerHealthService {
+  private dependencies: DependencyReadiness = {
+    postgresql: { status: 'down' },
+    rabbitmq: { status: 'down' },
+  };
   private state: WorkerState = 'starting';
 
   public getLiveness(): WorkerLiveness {
@@ -31,18 +37,28 @@ export class WorkerHealthService {
     return {
       checks: {
         configuration: 'up',
+        postgresql: this.dependencies.postgresql.status,
+        rabbitmq: this.dependencies.rabbitmq.status,
       },
-      deferredDependencies: ['postgresql', 'rabbitmq'],
       service: 'worker',
-      status: this.state === 'ready' ? 'ready' : 'not_ready',
+      status:
+        this.state === 'running' &&
+        this.dependencies.postgresql.status === 'up' &&
+        this.dependencies.rabbitmq.status === 'up'
+          ? 'ready'
+          : 'not_ready',
     };
   }
 
-  public markReady(): void {
-    this.state = 'ready';
+  public markRunning(): void {
+    this.state = 'running';
   }
 
   public markStopping(): void {
     this.state = 'stopping';
+  }
+
+  public updateDependencies(dependencies: DependencyReadiness): void {
+    this.dependencies = dependencies;
   }
 }

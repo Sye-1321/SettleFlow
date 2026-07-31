@@ -1,5 +1,5 @@
 # Shared packages
 
-This directory is reserved for code that is genuinely shared by the API and worker while preserving the boundaries in [the architecture documentation](../docs/architecture/module-boundaries.md).
+This directory contains code genuinely shared by the API and worker while preserving the boundaries in [the architecture documentation](../docs/architecture/module-boundaries.md).
 
-The runnable-foundation milestone does not add a shared runtime package. The entrypoints currently share no domain or infrastructure behavior that justifies another dependency boundary.
+`infrastructure` owns health-only PostgreSQL and RabbitMQ connection lifecycle shared by both entrypoints. It exposes bounded probes and clean shutdown only; it does not own schema, migrations, Prisma access, queue topology, publishing, consumption, or domain behavior.

@@ -3,8 +3,11 @@
   "compilerOptions": {
     "incremental": false,
     "noEmit": true,
+    "paths": {
+      "@settleflow/infrastructure": ["./packages/infrastructure/src/index.ts"]
+    },
     "types": ["jest", "node"]
   },
-  "exclude": ["apps/**/dist/**"],
-  "include": ["apps/**/*.ts"]
+  "exclude": ["apps/**/dist/**", "packages/**/dist/**"],
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts"]
 }

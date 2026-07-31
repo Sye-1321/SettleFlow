@@ -1,4 +1,9 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import {
+  areRequiredDependenciesReady,
+  DependencyConnections,
+  DependencyStatus,
+} from '@settleflow/infrastructure';
 
 export interface ApiLiveness {
   readonly service: 'api';
@@ -8,14 +13,17 @@ export interface ApiLiveness {
 export interface ApiReadiness {
   readonly checks: {
     readonly configuration: 'up';
+    readonly postgresql: DependencyStatus;
+    readonly rabbitmq: DependencyStatus;
   };
-  readonly deferredDependencies: readonly ['postgresql'];
   readonly service: 'api';
-  readonly status: 'ready';
+  readonly status: 'not_ready' | 'ready';
 }
 
 @Controller('health')
 export class HealthController {
+  public constructor(private readonly dependencies: DependencyConnections) {}
+
   @Get('live')
   public getLiveness(): ApiLiveness {
     return {
@@ -25,14 +33,22 @@ export class HealthController {
   }
 
   @Get('ready')
-  public getReadiness(): ApiReadiness {
-    return {
+  public async getReadiness(): Promise<ApiReadiness> {
+    const dependencies = await this.dependencies.checkReadiness();
+    const response: ApiReadiness = {
       checks: {
         configuration: 'up',
+        postgresql: dependencies.postgresql.status,
+        rabbitmq: dependencies.rabbitmq.status,
       },
-      deferredDependencies: ['postgresql'],
       service: 'api',
-      status: 'ready',
+      status: areRequiredDependenciesReady(dependencies) ? 'ready' : 'not_ready',
     };
+
+    if (response.status === 'not_ready') {
+      throw new ServiceUnavailableException(response);
+    }
+
+    return response;
   }
 }

@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
+import { DependencyConnections } from '@settleflow/infrastructure';
 
-import { validateWorkerEnvironment } from './config/environment';
+import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
 import { WorkerRuntimeService } from './runtime/worker-runtime.service';
 
@@ -14,6 +16,19 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
       validate: validateWorkerEnvironment,
     }),
   ],
-  providers: [WorkerHealthService, WorkerRuntimeService],
+  providers: [
+    WorkerHealthService,
+    WorkerRuntimeService,
+    {
+      provide: DependencyConnections,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): DependencyConnections =>
+        new DependencyConnections({
+          databaseUrl: config.get('DATABASE_URL', { infer: true }),
+          rabbitmqUrl: config.get('RABBITMQ_URL', { infer: true }),
+          timeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+        }),
+    },
+  ],
 })
 export class WorkerModule {}

@@ -6,6 +6,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DependencyConnections } from '@settleflow/infrastructure';
 
 import { WorkerEnvironment } from '../config/environment';
 import { WorkerHealthService } from '../health/worker-health.service';
@@ -16,31 +17,29 @@ export class WorkerRuntimeService
 {
   private readonly logger = new Logger(WorkerRuntimeService.name);
   private keepAliveTimer: NodeJS.Timeout | undefined;
+  private readinessRefresh: Promise<void> | undefined;
 
   public constructor(
     private readonly config: ConfigService<WorkerEnvironment, true>,
+    private readonly dependencies: DependencyConnections,
     private readonly health: WorkerHealthService,
   ) {}
 
-  public onApplicationBootstrap(): void {
+  public async onApplicationBootstrap(): Promise<void> {
     const heartbeatIntervalMs = this.config.get('WORKER_HEARTBEAT_INTERVAL_MS', {
       infer: true,
     });
 
     this.keepAliveTimer = setInterval(() => {
-      this.logger.debug(
-        JSON.stringify({
-          event: 'worker.heartbeat',
-          ...this.health.getLiveness(),
-        }),
-      );
+      void this.recordHeartbeat();
     }, heartbeatIntervalMs);
 
-    this.health.markReady();
+    await this.refreshReadiness();
+    this.health.markRunning();
     this.logger.log(
       JSON.stringify({
-        event: 'worker.ready',
-        ...this.health.getReadiness(),
+        event: 'worker.readiness',
+        readiness: this.health.getReadiness(),
       }),
     );
   }
@@ -56,10 +55,36 @@ export class WorkerRuntimeService
     );
   }
 
-  public onApplicationShutdown(): void {
+  public async onApplicationShutdown(): Promise<void> {
     if (this.keepAliveTimer !== undefined) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = undefined;
     }
+
+    await this.dependencies.close();
+  }
+
+  private async recordHeartbeat(): Promise<void> {
+    await this.refreshReadiness();
+    this.logger.debug(
+      JSON.stringify({
+        event: 'worker.heartbeat',
+        liveness: this.health.getLiveness(),
+        readiness: this.health.getReadiness(),
+      }),
+    );
+  }
+
+  private async refreshReadiness(): Promise<void> {
+    this.readinessRefresh ??= this.dependencies
+      .checkReadiness()
+      .then((readiness) => {
+        this.health.updateDependencies(readiness);
+      })
+      .finally(() => {
+        this.readinessRefresh = undefined;
+      });
+
+    await this.readinessRefresh;
   }
 }

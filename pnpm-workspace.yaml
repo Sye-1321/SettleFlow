@@ -11,7 +11,16 @@ engineStrict: true
 # The exact platform binding is installed as an optional dependency. The
 # fallback postinstall can perform its own network download and is unnecessary.
 allowBuilds:
+  # These transitive installers are unnecessary for local Docker transport
+  # and runtime protobuf loading; keep install-time code disabled.
+  protobufjs: false
+  ssh2: false
   unrs-resolver: false
+
+# Testcontainers reaches cpu-features only through optional SSH transport
+# acceleration. Local Docker does not need its native build or transitive nan.
+ignoredOptionalDependencies:
+  - cpu-features
 
 overrides:
   'brace-expansion@<=5.0.7': 5.0.9

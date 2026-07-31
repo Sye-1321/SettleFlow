@@ -10,15 +10,26 @@ describe('WorkerHealthService', () => {
     });
     expect(health.getReadiness().status).toBe('not_ready');
 
-    health.markReady();
+    health.updateDependencies({
+      postgresql: { status: 'up' },
+      rabbitmq: { status: 'up' },
+    });
+    health.markRunning();
     expect(health.getReadiness()).toEqual({
       checks: {
         configuration: 'up',
+        postgresql: 'up',
+        rabbitmq: 'up',
       },
-      deferredDependencies: ['postgresql', 'rabbitmq'],
       service: 'worker',
       status: 'ready',
     });
+
+    health.updateDependencies({
+      postgresql: { status: 'up' },
+      rabbitmq: { status: 'down' },
+    });
+    expect(health.getReadiness().status).toBe('not_ready');
 
     health.markStopping();
     expect(health.getReadiness().status).toBe('not_ready');

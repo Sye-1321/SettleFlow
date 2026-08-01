@@ -7,15 +7,15 @@ SettleFlow is a finance-grade payment-platform simulation and engineering case s
 The repository provides two independent NestJS processes and their local supporting services:
 
 - `apps/api`: HTTP API with process liveness and dependency readiness.
-- `apps/worker`: standalone background worker with internal lifecycle health.
+- `apps/worker`: standalone transactional-outbox relay with internal lifecycle health.
 - `packages/infrastructure`: shared PostgreSQL/RabbitMQ connection lifecycle and lazy Prisma adapter.
 - `packages/modules/merchant-access`: bounded-domain API-key generation, lifecycle, authentication, and Prisma persistence.
 - `packages/modules/idempotency`: merchant-scoped command acquisition, leases, fingerprints, and response snapshots.
-- `packages/modules/eventing`: transactional outbox persistence and approved event contracts; no relay yet.
+- `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, and RabbitMQ confirm publishing.
 - `packages/modules/payments`: M1 Payment Intent create/read application logic and Prisma adapter.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-The implemented domain surface is Merchant Access plus the M1 simulated Payment Intent create/read slice. There is no user/password/JWT authentication, merchant self-service onboarding, seed, RabbitMQ publisher/consumer, capture/authorization/refund, ledger, balance, settlement processing, webhook, reconciliation, provider, or movement of real funds.
+The implemented domain surface is Merchant Access plus the M1 simulated Payment Intent create/read slice and its transactional-outbox relay. There is no user/password/JWT authentication, merchant self-service onboarding, seed, RabbitMQ consumer/inbox processing, capture/authorization/refund, ledger, balance, settlement processing, webhook delivery, reconciliation, provider, or movement of real funds.
 
 ### Pinned toolchain
 
@@ -203,7 +203,31 @@ pnpm openapi:check
 pnpm dev:worker
 ```
 
-The worker is a standalone Nest application context, not an HTTP server. It checks PostgreSQL and RabbitMQ during bootstrap and on each heartbeat, logs internal readiness, remains running but not ready during a dependency outage, becomes unready during shutdown, and closes both dependency clients on `SIGINT`/`SIGTERM`.
+The worker is a standalone Nest application context, not an HTTP server. It relays committed `payment.created.v1` rows with at-least-once delivery. Readiness requires PostgreSQL and a healthy RabbitMQ publisher-confirm channel after the complete topology is declared. It remains running but not ready during a dependency outage, stops new claims on shutdown, drains current work for at most 10 seconds, then closes the publisher and Prisma resources.
+
+The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID; future consumers must deduplicate it.
+
+Validated worker settings and approved defaults are:
+
+| Environment variable               | Default |
+| ---------------------------------- | ------: |
+| `OUTBOX_RELAY_BATCH_SIZE`          |      50 |
+| `OUTBOX_RELAY_POLL_INTERVAL_MS`    |     500 |
+| `OUTBOX_RELAY_LEASE_MS`            |   30000 |
+| `OUTBOX_RELAY_CONFIRM_TIMEOUT_MS`  |    5000 |
+| `OUTBOX_RELAY_RETRY_BASE_MS`       |    1000 |
+| `OUTBOX_RELAY_RETRY_MAX_MS`        |   60000 |
+| `OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS` |   10000 |
+| `DEPENDENCY_READINESS_TIMEOUT_MS`  |    2000 |
+| `WORKER_HEARTBEAT_INTERVAL_MS`     |   30000 |
+
+RabbitMQ topology is:
+
+- durable topic exchange `settleflow.domain-events` and routing key `payment.created.v1`;
+- durable quorum queue `settleflow.webhook-projection.payment-created.v1`;
+- durable topic DLX `settleflow.dead-letter` and quorum DLQ `settleflow.webhook-projection.payment-created.v1.dlq`.
+
+The future Webhook projection queue intentionally accumulates messages until its consumer milestone. Inspect backlog and recover without data edits using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md); see the [versioned event contract](docs/events/README.md) for payload and AMQP metadata.
 
 ### Quality and production commands
 
@@ -214,15 +238,16 @@ pnpm typecheck
 pnpm test
 pnpm test:merchant-access
 pnpm test:payments
+pnpm test:event-contract
 pnpm test:integration
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, and Payments unit tests. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, and Payments unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` serializer and relay contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including the relay race/failure scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-Runtime readiness remains health-only: PostgreSQL receives `SELECT 1`, while RabbitMQ receives connection/channel handshakes. M1 writes a durable `payment.created.v1` outbox row but creates no queue/exchange and performs no publish, consume, provider, ledger, settlement, or real-funds operation.
+The API readiness behavior is unchanged. Worker readiness is relay-specific and requires its confirm channel and declared topology. The worker performs no consume, inbox, webhook, provider, ledger, settlement, or real-funds operation.
 
 ## Governance
 

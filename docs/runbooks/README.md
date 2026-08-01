@@ -20,14 +20,14 @@ Use placeholders labeled **To be decided** for environment-specific accounts, co
 
 ## Minimum v1.0 runbooks
 
-| Runbook | Trigger and safe outcome | Status |
-| --- | --- | --- |
-| Outbox backlog | Oldest unpublished event exceeds the approved threshold; restore relay/broker health and prove catch-up without manual row edits. | To be created |
-| Webhook dead letters | Dead-letter count/age rises; classify endpoint failures and perform authorized replay with reason after correction. | To be created |
-| Ledger invariant failure | Constraint violation or mismatch detector fires; stop the affected command path, preserve evidence, and use controlled code/migration correction; never patch entries. | To be created |
-| Settlement mismatch | Batch totals differ from items/ledger; block export, record an incident, and recover only through rollback, reversal, or controlled forward fix. | To be created |
-| Reconciliation unexplained difference | Difference exceeds the approved threshold; inspect mutually exclusive buckets/duplicates and record operator disposition. | To be created |
-| Database recovery | Restore exercise or loss event; restore backup/WAL, apply migrations, validate INV-01 through INV-10 and outbox/inbox state, and report achieved RPO/RTO. | To be created |
+| Runbook                               | Trigger and safe outcome                                                                                                                                               | Status        |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| [Outbox backlog](outbox-backlog.md)   | Oldest unpublished event exceeds the approved threshold; restore relay/broker health and prove catch-up without manual row edits.                                      | Implemented   |
+| Webhook dead letters                  | Dead-letter count/age rises; classify endpoint failures and perform authorized replay with reason after correction.                                                    | To be created |
+| Ledger invariant failure              | Constraint violation or mismatch detector fires; stop the affected command path, preserve evidence, and use controlled code/migration correction; never patch entries. | To be created |
+| Settlement mismatch                   | Batch totals differ from items/ledger; block export, record an incident, and recover only through rollback, reversal, or controlled forward fix.                       | To be created |
+| Reconciliation unexplained difference | Difference exceeds the approved threshold; inspect mutually exclusive buckets/duplicates and record operator disposition.                                              | To be created |
+| Database recovery                     | Restore exercise or loss event; restore backup/WAL, apply migrations, validate INV-01 through INV-10 and outbox/inbox state, and report achieved RPO/RTO.              | To be created |
 
 Additional runbooks are required when implementation introduces a new alert, external dependency, privileged recovery action, or terminal state not safely covered above.
 

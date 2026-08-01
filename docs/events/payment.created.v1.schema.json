@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.settleflow.invalid/events/payment.created.v1.schema.json",
+  "title": "payment.created.v1",
+  "description": "A Payment Intent was durably created in CREATED state.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "pattern": "^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "eventType": {
+      "const": "payment.created.v1"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "merchantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "paymentId": {
+      "type": "string",
+      "pattern": "^pi_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "amountMinor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "currency": {
+      "enum": ["ETB", "USD"]
+    },
+    "status": {
+      "const": "CREATED"
+    }
+  },
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "requestId",
+    "merchantId",
+    "paymentId",
+    "amountMinor",
+    "currency",
+    "status"
+  ]
+}

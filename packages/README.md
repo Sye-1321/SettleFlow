@@ -8,6 +8,6 @@ This directory contains shared infrastructure and bounded-domain packages while 
 
 `modules/idempotency` owns command-key hashing, merchant/method/route scoping, request fingerprints, leases, single-winner acquisition, and bounded response snapshots. Its reviewed Prisma adapter is the only production writer of `idempotency_keys`.
 
-`modules/eventing` owns the approved event contract and transactional persistence of `outbox_events`. M1 has no relay, publisher, consumer, RabbitMQ topology, inbox, or dead-letter behavior.
+`modules/eventing` owns the approved event contract, transactional persistence of `outbox_events`, PostgreSQL lease/claim/finalization behavior, and RabbitMQ confirm publisher/topology. The worker composes its public relay surface. Eventing publishes at least once but owns no consumer, inbox, webhook effect, or financial state.
 
 `modules/payments` owns the M1 Payment Intent command/query service, validation, representation, and Prisma adapter. It can request Idempotency and Eventing application operations but cannot write their tables directly. It exposes only create/read behavior in this milestone; later lifecycle and financial domains remain deferred.

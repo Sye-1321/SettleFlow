@@ -126,6 +126,9 @@ importers:
       '@nestjs/core':
         specifier: 11.1.28
         version: 11.1.28(@nestjs/common@11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1))(@nestjs/platform-express@11.1.28)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@settleflow/eventing':
+        specifier: workspace:*
+        version: link:../../packages/modules/eventing
       '@settleflow/infrastructure':
         specifier: workspace:*
         version: link:../../packages/infrastructure
@@ -166,6 +169,9 @@ importers:
       '@settleflow/infrastructure':
         specifier: workspace:*
         version: link:../../infrastructure
+      amqplib:
+        specifier: 2.0.1
+        version: 2.0.1
 
   packages/modules/idempotency:
     dependencies:

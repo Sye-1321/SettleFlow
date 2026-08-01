@@ -1,6 +1,6 @@
 # Implementation Plan: Transactional outbox relay for `payment.created.v1`
 
-- **Status:** Approved
+- **Status:** Complete
 - **Owner:** SettleFlow maintainers
 - **Created:** 2026-08-01
 - **Last updated:** 2026-08-01
@@ -33,7 +33,7 @@ FR-07 requires an event to exist only with committed state, permits duplicates, 
 
 ## Existing behavior
 
-- The repository baseline is clean at commit `e3aa2e7`, which implements the M1 Payment Intent create/read API.
+- Implementation started from clean commit `30bfcea`; the preceding `e3aa2e7` milestone implements the M1 Payment Intent create/read API.
 - `POST /v1/payment-intents` already commits one Payment Intent, one completed idempotency response snapshot, and one `payment.created.v1` outbox row atomically. It performs no RabbitMQ network call.
 - `packages/modules/eventing` owns the creation-event contract, `EventingService`, and `PrismaOutboxRepository`. The approved payload contains exactly `eventId`, `eventType`, `occurredAt`, `requestId`, `merchantId`, `paymentId`, `amountMinor`, `currency`, and `status`.
 - `outbox_events` already contains `available_at`, `attempt_count`, `locked_by`, `locked_at`, `lease_expires_at`, and `published_at`. Named constraints enforce event identifiers, the only currently supported event type, lease/publish consistency, and the exact payload contract.
@@ -371,22 +371,39 @@ No unresolved design decision blocks implementation. The project owner approved 
 - [x] Design and module/transaction boundaries reviewed.
 - [x] Required topology, timing, retry, readiness, queue-accumulation, and observability-deferral decisions approved.
 - [x] Read-only implementation plan created.
-- [ ] Event contract artifact and relay implementation completed.
-- [ ] No unexpected schema/migration or dependency-version change introduced.
-- [ ] Unit, contract, real dependency, concurrency, and failure scenarios pass.
-- [ ] Security and sensitive-data review passes.
-- [ ] Documentation and runbooks updated.
-- [ ] Commands/results, query-plan evidence, performance result, and deviations recorded below.
+- [x] Event contract artifact and relay implementation completed.
+- [x] No unexpected schema/migration or dependency-version change introduced.
+- [x] Unit, contract, real dependency, concurrency, and failure scenarios pass.
+- [x] Security and sensitive-data review passes.
+- [x] Documentation and runbooks updated.
+- [x] Commands/results, query-plan evidence, performance result, and deviations recorded below.
+
+## Implementation notes and deviations
+
+Implementation matched the approved design. No Prisma schema, migration, Compose, Payment Intent endpoint, or OpenAPI change was needed. `amqplib@2.0.1` was already locked; Eventing now declares that exact package as its direct dependency, without changing the external version set.
+
+The real-dependency fixture sets synthetic `occurred_at` and `available_at` safely in the past before direct repository claims. This avoids host/container clock skew in zero-poll test calls while production continues to compare availability, lease, retry, and publication state using PostgreSQL time and the approved 500 ms poll.
+
+The first complete integration attempt exposed Jest's effective five-second per-test timeout during the 60-event real-broker case. The timed-out test left asynchronous test work active and contaminated later assertions. The relay suite now explicitly uses the repository's approved 120-second integration ceiling, awaits every publish, and proves after closing a real worker application context that a newly created event remains unclaimed. The clean rerun passed all suites. This was a test-harness correction, not a product/design change.
 
 ## Verification record
 
-| Command or review                                    | Result            | Date/evidence                                                                                                      |
-| ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Initial repository status                            | Pass              | 2026-08-01: `git status --short --branch --untracked-files=all` returned only `## main...origin/main` at `e3aa2e7` |
-| Complete design evidence review                      | Pass              | 2026-08-01: sources listed under Existing behavior; no specification/schema blocker identified                     |
-| Owner approval                                       | Pass              | 2026-08-01: exact topology, operating constants, retry/readiness behavior, accumulation, and deferrals approved    |
-| Initial plan formatting, links, and diff checks      | Pass              | 2026-08-01: targeted Prettier check passed, all 7 local links resolved, and `git diff --check` passed              |
-| Application/dependency/database/runtime verification | Not run by design | Planning-only task; code and runtime changes are not authorized                                                    |
+| Command or review                                | Result | Date/evidence                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial repository status                        | Pass   | 2026-08-01: `git status --short --branch --untracked-files=all` returned only `## main...origin/main` at `30bfcea`                                                                                                                                                                        |
+| Complete design evidence review                  | Pass   | 2026-08-01: sources listed under Existing behavior; no specification/schema blocker identified                                                                                                                                                                                            |
+| Owner approval                                   | Pass   | 2026-08-01: exact topology, operating constants, retry/readiness behavior, accumulation, and deferrals approved                                                                                                                                                                           |
+| Frozen dependency installation                   | Pass   | `pnpm install --frozen-lockfile`; all eight workspace projects already up to date with pnpm 11.18.0                                                                                                                                                                                       |
+| Local dependencies                               | Pass   | `pnpm infra:up`, `pnpm infra:ps`, `pg_isready`, and `rabbitmq-diagnostics -q ping`; PostgreSQL 18.4 and RabbitMQ 4.3.4 reported healthy                                                                                                                                                   |
+| Prisma/database                                  | Pass   | `pnpm prisma:validate`, `pnpm prisma:generate`, `pnpm db:migrate:apply`, and `pnpm db:migrate:status`; schema valid, client generated, three migrations applied/current. Migration commands used the safe local `DATABASE_URL` inline because no root `.env` exists                       |
+| Formatting, lint, and type-check                 | Pass   | `pnpm format:check`, `pnpm lint`, and `pnpm typecheck`                                                                                                                                                                                                                                    |
+| Unit suites                                      | Pass   | `pnpm test`; 20 suites and 69 tests passed across API, worker, Merchant Access, Idempotency, Eventing, and Payments                                                                                                                                                                       |
+| Event contract                                   | Pass   | `pnpm test:event-contract`; two suites and eight serializer/publisher contract tests passed                                                                                                                                                                                               |
+| Real PostgreSQL/RabbitMQ relay                   | Pass   | Focused relay run: nine scenarios passed. `pnpm test:integration`: all five suites and 33 tests passed, including topology/DLX, exact metadata, two-worker claims, outage/catch-up, mandatory return, lease recovery, stable-ID duplicate, ownership loss, conflict refusal, and shutdown |
+| Claim-query and publish-lag gates                | Pass   | Real PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` assertion found `outbox_events_pending_available_at_idx`; the healthy 60-event backlog asserted publish-lag p95 below 10 seconds and completed the two-relay pass below 10 seconds                                                           |
+| Production build and API compatibility           | Pass   | `pnpm build` completed both deployables and all shared packages; `pnpm openapi:check` confirmed the committed HTTP contract is unchanged                                                                                                                                                  |
+| Security/scope review                            | Pass   | Exact serializer rejects extra/unsafe/mismatched payloads; schema and tests contain only approved metadata; no API, consumer, inbox, webhook, financial flow, retention deletion, schema, migration, or secret was introduced                                                             |
+| Final documentation, link, and repository checks | Pass   | Prettier/Markdown checks, local-link resolution, `git diff --check`, full diff inspection, and final status completed on 2026-08-01                                                                                                                                                       |
 
 ## Definition of done
 

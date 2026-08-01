@@ -16,6 +16,7 @@
     "build": "tsc --project tsconfig.build.json"
   },
   "dependencies": {
-    "@settleflow/infrastructure": "workspace:*"
+    "@settleflow/infrastructure": "workspace:*",
+    "amqplib": "2.0.1"
   }
 }

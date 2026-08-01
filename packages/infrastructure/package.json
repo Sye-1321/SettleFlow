@@ -19,7 +19,8 @@
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "amqplib": "2.0.1",
-    "pg": "8.22.0"
+    "pg": "8.22.0",
+    "ulid": "3.0.2"
   },
   "devDependencies": {
     "@types/pg": "8.20.0"

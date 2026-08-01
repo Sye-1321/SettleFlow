@@ -93,6 +93,9 @@ importers:
       '@settleflow/merchant-access':
         specifier: workspace:*
         version: link:../../packages/modules/merchant-access
+      lossless-json:
+        specifier: 4.3.0
+        version: 4.3.0
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -141,6 +144,9 @@ importers:
       pg:
         specifier: 8.22.0
         version: 8.22.0
+      ulid:
+        specifier: 3.0.2
+        version: 3.0.2
     devDependencies:
       '@types/pg':
         specifier: 8.20.0
@@ -2727,6 +2733,9 @@ packages:
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
 
+  lossless-json@4.3.0:
+    resolution: {integrity: sha512-ToxOC+SsduRmdSuoLZLYAr5zy1Qu7l5XhmPWM3zefCZ5IcrzW/h108qbJUKfOlDlhvhjUK84+8PSVX0kxnit0g==}
+
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
@@ -3637,6 +3646,10 @@ packages:
   uint8array-extras@1.5.0:
     resolution: {integrity: sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A==}
     engines: {node: '>=18'}
+
+  ulid@3.0.2:
+    resolution: {integrity: sha512-yu26mwteFYzBAot7KVMqFGCVpsF6g8wXfJzQUHvu1no3+rRRSFcSV2nKeYvNPLD2J4b08jYBDhHUjeH0ygIl9w==}
+    hasBin: true
 
   undici-types@5.26.5:
     resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
@@ -6819,6 +6832,8 @@ snapshots:
 
   long@5.3.2: {}
 
+  lossless-json@4.3.0: {}
+
   lru-cache@10.4.3: {}
 
   lru-cache@11.5.2: {}
@@ -7717,6 +7732,8 @@ snapshots:
       '@lukeed/csprng': 1.1.0
 
   uint8array-extras@1.5.0: {}
+
+  ulid@3.0.2: {}
 
   undici-types@5.26.5: {}
 

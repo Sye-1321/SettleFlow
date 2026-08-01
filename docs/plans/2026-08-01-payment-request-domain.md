@@ -1,6 +1,6 @@
 # Implementation Plan: Payment Request (Payment Intent create/read) domain
 
-- **Status:** Approved
+- **Status:** In progress
 - **Owner:** SettleFlow maintainers
 - **Created:** 2026-08-01
 - **Last updated:** 2026-08-01
@@ -58,8 +58,8 @@ No specification evidence authorizes a `PaymentRequest`, payment line item, cust
 
 ## Existing behavior
 
-- Git was clean before this approval update: `git status --short --branch` returned only `## main...origin/main` at committed ADR baseline `b7b5527`.
-- [prisma/schema.prisma](../../prisma/schema.prisma) contains only `Merchant` and `ApiKey`; there is no financial or idempotency table.
+- At plan approval, `git status --short --branch` returned only `## main...origin/main` at committed ADR baseline `b7b5527`. Implementation started from clean commit `134249d`.
+- At plan approval, [prisma/schema.prisma](../../prisma/schema.prisma) contained only `Merchant` and `ApiKey`. The current database-foundation milestone adds the approved Payment Intent, Idempotency, and Eventing persistence models; it still adds no endpoint or business service.
 - `packages/modules/merchant-access` authenticates opaque bearer credentials and returns only merchant ID, API-key ID, and scopes. Its fixed vocabulary already includes `payments:write` and `payments:read`.
 - The global API guard authenticates all non-public routes, and `RequireMerchantScopes` can enforce endpoint scopes. No Payments, Idempotency, Eventing, Ledger, or Operations implementation exists.
 - The current authenticated foundation route remains `GET /api/v1`. ADR-0008 requires the implementation milestone to correct it to `GET /v1`; `/v1` is the only business API namespace and no compatibility alias is authorized.
@@ -67,7 +67,7 @@ No specification evidence authorizes a `PaymentRequest`, payment line item, cust
 - PostgreSQL and RabbitMQ readiness/lifecycle behavior is already centralized. Payment create/read must not replace or weaken it.
 - Existing migrations establish the Prisma foundation and Merchant Access only. A later migration must work both from an empty database and from the committed Merchant Access migration state.
 - ADR-0003 permits Prisma by default and reviewed, parameterized raw SQL only where financial/concurrency correctness cannot be safely expressed. ADR-0004 already requires an outbox, publisher confirms, manual acknowledgements, and at-least-once consumers when messaging is introduced.
-- No ULID or lossless JSON dependency is currently installed. The owner approved exact `ulid@3.0.2` and `lossless-json@4.3.0` for the implementation milestone under ADR-0002's exact-version policy.
+- At plan approval, neither ULID nor lossless JSON was installed. The database-foundation milestone installs exact `ulid@3.0.2` in Infrastructure and `lossless-json@4.3.0` in the API package under ADR-0002's exact-version policy; their runtime adapters remain for the later application slice.
 
 Evidence reviewed for this plan includes `AGENTS.md`, `PLANS.md`, `CONTRIBUTING.md`, `SECURITY.md`, all files under `docs/architecture`, ADR-0001 through ADR-0013 and their index, all existing plans, the complete unchanged v1.0 `.docx` specification, the full Prisma schema and migrations, the Merchant Access package/API guard/tests/documentation, the root README, workspace scripts, current dependencies, and current OpenAPI setup.
 
@@ -464,6 +464,7 @@ Before deployment/data, revert application wiring and an unapplied migration. Af
 - [x] API namespace, identifier, currency/range, external-reference, capture-method, error, event, retention, and audit decisions approved.
 - [x] ULID, exact event envelope, and lossless amount parser selections approved.
 - [x] Design and boundaries reviewed for implementation readiness.
+- [x] Exact dependencies and the first Payment Intent/Idempotency/Eventing database foundation completed and verified.
 - [ ] Implementation and migrations completed.
 - [ ] Tests and failure scenarios pass.
 - [ ] Security and sensitive-data review pass.
@@ -479,9 +480,15 @@ Before deployment/data, revert application wiring and an unapplied migration. Af
 | Initial plan formatting/link/diff/status checks             | Pass              | 2026-08-01: original plan-only milestone; the plan was later committed                                                                                |
 | ADR and implementation-selection approval update            | Pass              | 2026-08-01: `pnpm exec prettier --check`, local-link/anchor/stale-language checks, and `git diff --check`; only this tracked plan is modified         |
 | Application, database, dependency, test, or runtime command | Not run by design | Planning-only milestone; no implementation verification authorized                                                                                    |
+| Exact dependency installation                               | Pass              | 2026-08-01: `pnpm install --frozen-lockfile`; lockfile resolves exact `ulid@3.0.2` and `lossless-json@4.3.0`                                          |
+| Prisma schema and migration                                 | Pass              | 2026-08-01: validate/generate pass; migration applies after the two committed migrations and from an empty Testcontainers database; status current    |
+| Database constraint test                                    | Pass              | 2026-08-01: focused real-PostgreSQL suite passes 4/4, including atomic persistence, named checks/indexes, tenant uniqueness, and restrictive FKs      |
+| Regression verification                                     | Pass              | 2026-08-01: lint, type-check, formatting, 18/18 unit tests, and 11/11 full integration tests pass                                                     |
+
+The initial migration review briefly added application-clock-versus-database-clock ordering checks that the approved plan did not require. A fresh PostgreSQL test correctly exposed their clock-skew hazard, so those checks were removed before final verification. The completed-idempotency constraint also explicitly permits ADR-0007's minimal tombstone after all replay fields are disposed; this milestone adds no cleanup job. The accepted state-consistency, 24-hour minimum replay window, and outbox lock/publish consistency rules remain enforced; no durable data was deleted.
 
 ## Definition of done
 
-This planning milestone is complete when this file is the only worktree change; it maps every authorized Payment Intent model/endpoint and cross-cutting requirement; gives reviewable table, state, money, idempotency, error, audit/event, migration, security, failure, and test designs; records all accepted ADRs and implementation selections; defers unauthorized work; passes Markdown link/format/whitespace checks; and records complete Git status without a commit or push.
+The original planning milestone was complete when this file was the only worktree change; it mapped every authorized Payment Intent model/endpoint and cross-cutting requirement; gave reviewable table, state, money, idempotency, error, audit/event, migration, security, failure, and test designs; recorded all accepted ADRs and implementation selections; deferred unauthorized work; passed Markdown link/format/whitespace checks; and recorded complete Git status without a commit or push.
 
-The plan is now Approved for a separately authorized implementation task. Completion of that implementation requires the remaining execution checklist, verification commands, and failure/security evidence; plan approval itself does not claim that code, schemas, migrations, dependencies, OpenAPI, or tests exist.
+The plan is now In progress. The separately authorized database foundation is complete, but application modules, endpoints, raw-body parsing, idempotency acquisition, atomic application flow, OpenAPI, and runtime tests remain deliberately unimplemented. Full completion still requires the remaining execution checklist, verification commands, and failure/security evidence.

@@ -27,13 +27,40 @@ enum ApiKeyStatus {
   @@map("api_key_status")
 }
 
+enum PaymentCaptureMethod {
+  MANUAL @map("manual")
+
+  @@map("payment_capture_method")
+}
+
+enum PaymentStatus {
+  CREATED            @map("created")
+  AUTHORIZED         @map("authorized")
+  CAPTURED           @map("captured")
+  PARTIALLY_REFUNDED @map("partially_refunded")
+  REFUNDED           @map("refunded")
+  VOIDED             @map("voided")
+
+  @@map("payment_status")
+}
+
+enum IdempotencyState {
+  IN_PROGRESS @map("in_progress")
+  COMPLETED   @map("completed")
+
+  @@map("idempotency_state")
+}
+
 model Merchant {
-  id        String         @id @default(uuid()) @db.Uuid
-  code      String         @unique(map: "merchants_code_key") @db.VarChar(64)
-  status    MerchantStatus @default(ACTIVE)
-  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  apiKeys   ApiKey[]
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique(map: "merchants_code_key") @db.VarChar(64)
+  status          MerchantStatus   @default(ACTIVE)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  apiKeys         ApiKey[]
+  paymentIntents  PaymentIntent[]
+  idempotencyKeys IdempotencyKey[]
+  outboxEvents    OutboxEvent[]
 
   @@map("merchants")
 }
@@ -53,4 +80,72 @@ model ApiKey {
 
   @@index([merchantId, status], map: "api_keys_merchant_id_status_idx")
   @@map("api_keys")
+}
+
+model PaymentIntent {
+  id                  String               @id @default(uuid()) @db.Uuid
+  publicId            String               @unique(map: "payment_intents_public_id_key") @map("public_id") @db.VarChar(29)
+  merchantId          String               @map("merchant_id") @db.Uuid
+  externalRef         String               @map("external_ref") @db.VarChar(255)
+  amountMinor         BigInt               @map("amount_minor") @db.BigInt
+  currency            String               @db.Char(3)
+  captureMethod       PaymentCaptureMethod @map("capture_method")
+  paymentStatus       PaymentStatus        @default(CREATED) @map("payment_status")
+  capturedAmountMinor BigInt               @default(0) @map("captured_amount_minor") @db.BigInt
+  refundedAmountMinor BigInt               @default(0) @map("refunded_amount_minor") @db.BigInt
+  version             Int                  @default(0)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant            Merchant             @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "payment_intents_merchant_id_fkey")
+
+  @@unique([merchantId, externalRef], map: "payment_intents_merchant_id_external_ref_key")
+  @@map("payment_intents")
+}
+
+model IdempotencyKey {
+  id                  String           @id @default(uuid()) @db.Uuid
+  merchantId          String           @map("merchant_id") @db.Uuid
+  httpMethod          String           @map("http_method") @db.VarChar(8)
+  normalizedRoute     String           @map("normalized_route") @db.VarChar(255)
+  keyHash             Bytes            @map("key_hash") @db.ByteA
+  requestHash         Bytes            @map("request_hash") @db.ByteA
+  state               IdempotencyState
+  ownerToken          String?          @map("owner_token") @db.Uuid
+  leaseExpiresAt      DateTime?        @map("lease_expires_at") @db.Timestamptz(6)
+  responseStatus      Int?             @map("response_status")
+  responseContentType String?          @map("response_content_type") @db.VarChar(128)
+  responseHeaders     Json?            @map("response_headers") @db.JsonB
+  responseBody        Json?            @map("response_body") @db.JsonB
+  resultReference     String?          @map("result_reference") @db.VarChar(255)
+  completedAt         DateTime?        @map("completed_at") @db.Timestamptz(6)
+  responseExpiresAt   DateTime?        @map("response_expires_at") @db.Timestamptz(6)
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant            Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "idempotency_keys_merchant_id_fkey")
+
+  @@unique([merchantId, httpMethod, normalizedRoute, keyHash], map: "idempotency_keys_scope_key")
+  @@map("idempotency_keys")
+}
+
+model OutboxEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  eventId        String    @unique(map: "outbox_events_event_id_key") @map("event_id") @db.VarChar(30)
+  eventType      String    @map("event_type") @db.VarChar(128)
+  merchantId     String    @map("merchant_id") @db.Uuid
+  aggregateType  String    @map("aggregate_type") @db.VarChar(64)
+  aggregateId    String    @map("aggregate_id") @db.VarChar(255)
+  occurredAt     DateTime  @map("occurred_at") @db.Timestamptz(6)
+  requestId      String    @map("request_id") @db.VarChar(128)
+  payload        Json      @db.JsonB
+  availableAt    DateTime  @default(now()) @map("available_at") @db.Timestamptz(6)
+  attemptCount   Int       @default(0) @map("attempt_count")
+  lockedBy       String?   @map("locked_by") @db.VarChar(128)
+  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(6)
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant       Merchant  @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "outbox_events_merchant_id_fkey")
+
+  @@map("outbox_events")
 }

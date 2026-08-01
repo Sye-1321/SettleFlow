@@ -5,7 +5,10 @@
     "noEmit": true,
     "paths": {
       "@settleflow/infrastructure": ["./packages/infrastructure/src/index.ts"],
-      "@settleflow/merchant-access": ["./packages/modules/merchant-access/src/index.ts"]
+      "@settleflow/merchant-access": ["./packages/modules/merchant-access/src/index.ts"],
+      "@settleflow/idempotency": ["./packages/modules/idempotency/src/index.ts"],
+      "@settleflow/eventing": ["./packages/modules/eventing/src/index.ts"],
+      "@settleflow/payments": ["./packages/modules/payments/src/index.ts"]
     },
     "types": ["jest", "node"]
   },

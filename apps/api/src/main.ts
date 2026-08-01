@@ -12,7 +12,7 @@ function describeError(error: unknown): string {
 
 async function bootstrap(): Promise<void> {
   try {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create(AppModule, { rawBody: true });
     const config = app.get<ConfigService<ApiEnvironment, true>>(ConfigService);
     const host = config.get('API_HOST', { infer: true });
     const port = config.get('API_PORT', { infer: true });

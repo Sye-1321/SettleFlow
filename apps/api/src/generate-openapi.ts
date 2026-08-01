@@ -10,6 +10,10 @@ const generationEnvironment: Readonly<Record<string, string>> = {
   API_PORT: '3000',
   DATABASE_URL: 'postgresql://openapi:openapi@127.0.0.1:1/settleflow_openapi',
   DEPENDENCY_READINESS_TIMEOUT_MS: '100',
+  IDEMPOTENCY_LEASE_MS: '30000',
+  IDEMPOTENCY_LOCK_TIMEOUT_MS: '5000',
+  IDEMPOTENCY_REPLAY_TTL_HOURS: '168',
+  IDEMPOTENCY_STATEMENT_TIMEOUT_MS: '10000',
   NODE_ENV: 'test',
   RABBITMQ_URL: 'amqp://openapi:openapi@127.0.0.1:1/settleflow_openapi',
 };

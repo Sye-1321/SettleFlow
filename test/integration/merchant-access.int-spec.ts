@@ -57,11 +57,19 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
     process.env['API_PORT'] = '3000';
     process.env['DATABASE_URL'] = postgres.getConnectionUri();
     process.env['DEPENDENCY_READINESS_TIMEOUT_MS'] = '250';
+    process.env['IDEMPOTENCY_LEASE_MS'] = '30000';
+    process.env['IDEMPOTENCY_LOCK_TIMEOUT_MS'] = '5000';
+    process.env['IDEMPOTENCY_REPLAY_TTL_HOURS'] = '168';
+    process.env['IDEMPOTENCY_STATEMENT_TIMEOUT_MS'] = '10000';
     process.env['NODE_ENV'] = 'test';
     process.env['RABBITMQ_URL'] = 'amqp://unavailable:unavailable@127.0.0.1:1/unavailable';
 
     const { AppModule } = await import('../../apps/api/src/app.module.js');
-    app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
+    app = await NestFactory.create(AppModule, {
+      abortOnError: false,
+      logger: false,
+      rawBody: true,
+    });
     configureOpenApi(app);
     await app.listen(0, '127.0.0.1');
     baseUrl = await app.getUrl();
@@ -93,8 +101,9 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
     const live = await fetch(`${baseUrl}/health/live`);
     const ready = await fetch(`${baseUrl}/health/ready`);
     const openApi = await fetch(`${baseUrl}/docs/openapi.json`);
-    const missing = await fetch(`${baseUrl}/api/v1`);
-    const wrong = await fetch(`${baseUrl}/api/v1`, {
+    const missing = await fetch(`${baseUrl}/v1`);
+    const removedScaffoldAlias = await fetch(`${baseUrl}/api/v1`);
+    const wrong = await fetch(`${baseUrl}/v1`, {
       headers: {
         authorization: `Bearer sf_test_${'a'.repeat(12)}.${'a'.repeat(43)}`,
       },
@@ -104,15 +113,21 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
     expect(ready.status).toBe(503);
     expect(openApi.status).toBe(200);
     expect(missing.status).toBe(401);
+    expect(removedScaffoldAlias.status).toBe(404);
     expect(wrong.status).toBe(401);
-    await expect(missing.json()).resolves.toEqual(await wrong.json());
+    await expect(missing.json()).resolves.toMatchObject({ code: 'unauthorized', status: 401 });
+    await expect(wrong.json()).resolves.toMatchObject({ code: 'unauthorized', status: 401 });
+    await expect(removedScaffoldAlias.json()).resolves.toMatchObject({
+      code: 'route_not_found',
+      status: 404,
+    });
 
     const document = (await openApi.json()) as {
       readonly components?: { readonly securitySchemes?: Record<string, unknown> };
       readonly paths: Record<string, { readonly get?: { readonly security?: unknown } }>;
     };
     expect(document.components?.securitySchemes).toHaveProperty('merchantApiKey');
-    expect(document.paths['/api/v1']?.get?.security).toEqual([{ merchantApiKey: [] }]);
+    expect(document.paths['/v1']?.get?.security).toEqual([{ merchantApiKey: [] }]);
     expect(document.paths['/health/live']?.get?.security).toBeUndefined();
   });
 
@@ -138,7 +153,7 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
       merchantId,
       scopes: ['payments:read'],
     });
-    const response = await fetch(`${baseUrl}/api/v1`, {
+    const response = await fetch(`${baseUrl}/v1`, {
       headers: { authorization: `Bearer ${issued.plaintext}` },
     });
     expect(response.status).toBe(200);

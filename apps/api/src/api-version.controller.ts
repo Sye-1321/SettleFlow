@@ -7,13 +7,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
+import { problemContent } from './http/problem-details.openapi';
+
 export interface ApiVersionResponse {
   readonly service: 'settleflow-api';
   readonly status: 'available';
   readonly version: 'v1';
 }
 
-@Controller('api/v1')
+@Controller('v1')
 @ApiTags('foundation')
 @ApiBearerAuth('merchantApiKey')
 export class ApiVersionController {
@@ -26,7 +28,10 @@ export class ApiVersionController {
       type: 'object',
     },
   })
-  @ApiUnauthorizedResponse({ description: 'The merchant API key is missing or invalid.' })
+  @ApiUnauthorizedResponse({
+    content: problemContent,
+    description: 'The merchant API key is missing or invalid.',
+  })
   public getVersion(): ApiVersionResponse {
     return {
       service: 'settleflow-api',

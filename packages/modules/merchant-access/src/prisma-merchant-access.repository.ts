@@ -83,21 +83,26 @@ export class PrismaMerchantAccessRepository implements MerchantAccessRepository 
   public async findActiveApiKeyByPrefix(
     prefix: string,
   ): Promise<ApiKeyAuthenticationRecord | undefined> {
-    const record = await this.database.getClient().apiKey.findFirst({
-      where: {
-        merchant: { is: { status: 'ACTIVE' } },
-        prefix,
-        revokedAt: null,
-        status: 'ACTIVE',
-      },
-      select: {
-        id: true,
-        merchantId: true,
-        prefix: true,
-        scopes: true,
-        secretHash: true,
-      },
-    });
+    let record;
+    try {
+      record = await this.database.getClient().apiKey.findFirst({
+        where: {
+          merchant: { is: { status: 'ACTIVE' } },
+          prefix,
+          revokedAt: null,
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          merchantId: true,
+          prefix: true,
+          scopes: true,
+          secretHash: true,
+        },
+      });
+    } catch (error: unknown) {
+      return this.database.rethrowDatabaseError(error);
+    }
 
     if (record === null) {
       return undefined;

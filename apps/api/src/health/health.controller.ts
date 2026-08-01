@@ -5,6 +5,8 @@ import {
   ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
+
+import { problemContent } from '../http/problem-details.openapi';
 import {
   areRequiredDependenciesReady,
   DependencyConnections,
@@ -48,6 +50,7 @@ export class HealthController {
   @ApiOperation({ summary: 'Report bounded PostgreSQL and RabbitMQ readiness' })
   @ApiOkResponse({ description: 'All required dependencies are ready.' })
   @ApiServiceUnavailableResponse({
+    content: problemContent,
     description: 'At least one required dependency is unavailable.',
   })
   public async getReadiness(): Promise<ApiReadiness> {

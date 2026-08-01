@@ -8,13 +8,13 @@ Merchant Access is the specification-authorized machine-identity boundary for me
 | ------------------------ | ------------------------------------------ | --------------------------------- |
 | `GET /health/live`       | Public                                     | Process liveness only             |
 | `GET /health/ready`      | Public                                     | PostgreSQL and RabbitMQ readiness |
-| `GET /api/v1`            | `Authorization: Bearer <merchant_api_key>` | Authenticated version entrypoint  |
+| `GET /v1`                | `Authorization: Bearer <merchant_api_key>` | Authenticated version entrypoint  |
 | `GET /docs`              | Public                                     | Swagger UI                        |
 | `GET /docs/openapi.json` | Public                                     | Runtime OpenAPI JSON              |
 
 The committed machine-readable contract is [openapi.json](openapi.json). Generate it with `pnpm openapi:generate` and detect drift with `pnpm openapi:check`.
 
-Missing, malformed, unknown, disabled, revoked, rotated, wrong-secret, or disabled-merchant credentials receive the same generic HTTP 401 response. A valid credential without every scope declared by a future handler receives HTTP 403. Health and documentation routes are the only explicit public surfaces.
+Missing, malformed, unknown, disabled, revoked, rotated, wrong-secret, or disabled-merchant credentials receive the same generic HTTP 401 RFC 9457 problem response. A valid credential without every scope required by a handler receives HTTP 403. Health and documentation routes are the only explicit public surfaces.
 
 No merchant or API-key lifecycle HTTP endpoint exists. Issuance, disablement, revocation, and rotation are bounded-domain application-service operations only until a separately authorized operator authentication and audit milestone exists.
 
@@ -41,7 +41,7 @@ Never commit, log, document, screenshot, or place a usable credential in shell h
 - `reconciliation:write`
 - `reconciliation:read`
 
-There is no wildcard or mutable scope table. These strings authorize no financial behavior in the current milestone; they establish only the specification-defined credential vocabulary for later bounded modules.
+There is no wildcard or mutable scope table. The M1 Payment Intent endpoints enforce `payments:write` and `payments:read`; the other strings reserve only the specification-defined vocabulary and authorize no unimplemented behavior.
 
 ## Verification commands
 

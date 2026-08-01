@@ -1,6 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from './generated/prisma/client';
+import { DatabaseUnavailableError, isDatabaseUnavailableError } from './database-error';
 
 export interface PrismaDatabaseOptions {
   readonly connectionTimeoutMs: number;
@@ -83,6 +84,23 @@ export class PrismaDatabase {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Converts structurally recognized connection failures into the stable
+   * infrastructure error. Prisma's PostgreSQL adapter can emit a plain Error
+   * after an established socket is severed, so an otherwise-unclassified
+   * operation failure gets one bounded connectivity probe instead of unsafe
+   * vendor-message matching.
+   */
+  public async rethrowDatabaseError(error: unknown): Promise<never> {
+    if (error instanceof DatabaseUnavailableError || isDatabaseUnavailableError(error)) {
+      throw new DatabaseUnavailableError();
+    }
+    if (!(await this.checkConnectivity())) {
+      throw new DatabaseUnavailableError();
+    }
+    throw error instanceof Error ? error : new Error('Unknown database operation failure');
   }
 
   public async close(): Promise<void> {

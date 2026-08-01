@@ -35,7 +35,7 @@ Authoritative references:
 
 ### Option A: Separate owners and physical state, with API composition
 
-Payments owns `payment_intents`, payment status, and captured/refunded projections. Settlements owns authoritative settlement progress in settlement-owned records. Before a settlement record exists, the public representation reports `not_eligible`; after settlement functionality exists, an authorized read composition obtains settlement state through a stable Settlements read port.
+Payments owns `payment_intents`, payment status, and captured/refunded projections. Settlements owns authoritative settlement progress in settlement-owned records. Before a settlement record exists, the public representation reports `NOT_ELIGIBLE`; after settlement functionality exists, an authorized read composition obtains settlement state through a stable Settlements read port.
 
 This preserves one writer per table and prevents a settlement process from mutating Payments persistence. It requires an explicit read-composition and recovery design before settlement work.
 
@@ -100,7 +100,7 @@ The project owner approves this physical ownership as the implementation refinem
 ## Implementation notes
 
 - The first Payment Intent migration should not add an authoritative `settlement_status` column if this ADR is accepted.
-- The create/read API may serialize `settlementStatus: "not_eligible"` while no settlement record can exist.
+- The create/read API may serialize `settlementStatus: "NOT_ELIGIBLE"` while no settlement record can exist.
 - Payment status and projections require named database checks; later transitions require real PostgreSQL concurrency tests.
 - Every payment query/mutation includes authenticated `merchant_id` in its predicate.
 - Exact settlement read-model schema, composition, and transition transactions are outside the Payment Intent create/read milestone.
@@ -124,7 +124,7 @@ The project owner approves this physical ownership as the implementation refinem
 
 ## Verification
 
-- Prove creation writes only `CREATED` payment state and returns derived `not_eligible` settlement state.
+- Prove creation writes only `CREATED` payment state and returns derived `NOT_ELIGIBLE` settlement state.
 - Prove no Settlements adapter imports or writes Payments persistence.
 - Add exhaustive allowed/forbidden payment-transition unit tests and database checks.
 - Run capture/refund row-lock and cumulative-refund concurrency tests when those commands are implemented.

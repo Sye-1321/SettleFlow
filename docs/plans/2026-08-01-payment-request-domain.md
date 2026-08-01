@@ -1,6 +1,6 @@
 # Implementation Plan: Payment Request (Payment Intent create/read) domain
 
-- **Status:** In progress
+- **Status:** Complete
 - **Owner:** SettleFlow maintainers
 - **Created:** 2026-08-01
 - **Last updated:** 2026-08-01
@@ -9,7 +9,7 @@
 
 ## Goal
 
-Plan the specification-authorized, merchant-owned Payment Intent create/read slice without implementing it. A later implementation is successful when an authenticated merchant can create one `CREATED` payment intent and retrieve only its own intent, with exact money validation, tenant isolation, duplicate protection, idempotent replay, durable evidence, and an OpenAPI contract that agrees with the authoritative v1.0 specification.
+Deliver the specification-authorized, merchant-owned Payment Intent create/read slice. The implementation is successful when an authenticated merchant can create one `CREATED` payment intent and retrieve only its own intent, with exact money validation, tenant isolation, duplicate protection, idempotent replay, durable evidence, and an OpenAPI contract that agrees with the authoritative v1.0 specification.
 
 The specification calls the bounded module **Payments** and the resource **Payment Intent**. “Payment Request” is the milestone label only; it does not authorize a second bounded context, a `payment_requests` table, or an alias resource.
 
@@ -142,7 +142,7 @@ Required database objects:
 - Primary key on internal `id`, global unique constraint and exact-format check on `public_id`, and named unique constraint on `(merchant_id, external_ref)`.
 - Restrictive FK to `merchants(id)`.
 - Named checks for the approved amount range, ETB/USD allow-list, non-negative projections, projection upper bounds, non-negative version, and initial state/projection consistency.
-- No settlement-status column. The API returns derived lowercase `settlementStatus: "not_eligible"` while no settlement-owned record can exist.
+- No settlement-status column. The API returns derived `settlementStatus: "NOT_ELIGIBLE"` while no settlement-owned record can exist.
 - No provider, ledger, settlement-batch, customer, payment-method, fee, tax, webhook, event, or audit columns.
 - No soft-delete or delete endpoint. A later retention decision controls archival/purge.
 - A tenant-safe `WHERE public_id = ? AND merchant_id = ?` explain plan must be recorded. Because `public_id` is globally unique, its unique index may be sufficient; add a redundant composite index only if measurement proves it necessary.
@@ -217,7 +217,7 @@ All other transitions are forbidden. `GET` never transitions state. A generic st
 
 | Method/path                    | Scope            | Request                                                                                                             | Success                                                                                                                                     | Tenant behavior                                                                                |
 | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `POST /v1/payment-intents`     | `payments:write` | Bearer key; `Idempotency-Key` (1-255); JSON body with `externalRef`, `amountMinor`, `currency`, and `captureMethod` | `201`; body contains public ID, submitted fields, lowercase `created`/derived `not_eligible`, zero projections, version, and UTC timestamps | Merchant ID comes only from authentication, never body/query.                                  |
+| `POST /v1/payment-intents`     | `payments:write` | Bearer key; `Idempotency-Key` (1-255); JSON body with `externalRef`, `amountMinor`, `currency`, and `captureMethod` | `201`; body contains public ID, submitted fields, lowercase `created`/derived `NOT_ELIGIBLE`, zero projections, version, and UTC timestamps | Merchant ID comes only from authentication, never body/query.                                  |
 | `GET /v1/payment-intents/{id}` | `payments:read`  | Bearer key and validated ID                                                                                         | `200` with the same resource representation                                                                                                 | Query includes `id` and authenticated `merchant_id`; missing/foreign both return the same 404. |
 
 There is no list, update, delete, capture, refund, void, authorize, or public lookup endpoint in this slice.
@@ -396,7 +396,7 @@ Migration rollback is safe only before durable payment data exists. After use, d
 - **Performance:** measure create/read percentiles and idempotency contention with reference data; record query plans.
 - **Documentation/link checks:** README/API/runbook commands, Markdown links, OpenAPI drift, `git diff --check`, and complete status.
 
-Expected later verification commands (not run in this planning-only milestone):
+Verification commands for this completed M1 milestone:
 
 ```shell
 pnpm install --frozen-lockfile
@@ -465,25 +465,29 @@ Before deployment/data, revert application wiring and an unapplied migration. Af
 - [x] ULID, exact event envelope, and lossless amount parser selections approved.
 - [x] Design and boundaries reviewed for implementation readiness.
 - [x] Exact dependencies and the first Payment Intent/Idempotency/Eventing database foundation completed and verified.
-- [ ] Implementation and migrations completed.
-- [ ] Tests and failure scenarios pass.
-- [ ] Security and sensitive-data review pass.
-- [ ] Documentation and runbooks updated.
-- [ ] Commands/results and deviations recorded below.
+- [x] Implementation and migrations completed.
+- [x] Tests and failure scenarios pass for the authorized M1 slice.
+- [x] Security and sensitive-data review pass.
+- [x] Documentation and runbooks updated.
+- [x] Commands/results and deviations recorded below.
 
 ## Verification record
 
-| Command or review                                           | Result            | Date/evidence                                                                                                                                         |
-| ----------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `git status --short --branch` before planning               | Pass              | 2026-08-01: clean `main...origin/main`                                                                                                                |
-| Complete document/repository evidence review                | Pass              | 2026-08-01: sources listed under Existing behavior; specification SHA-256 remained `77E3A5B44C4EE20F2E241DDC5CE2991D64BE82128E31EFBEE6DEC86239F239A6` |
-| Initial plan formatting/link/diff/status checks             | Pass              | 2026-08-01: original plan-only milestone; the plan was later committed                                                                                |
-| ADR and implementation-selection approval update            | Pass              | 2026-08-01: `pnpm exec prettier --check`, local-link/anchor/stale-language checks, and `git diff --check`; only this tracked plan is modified         |
-| Application, database, dependency, test, or runtime command | Not run by design | Planning-only milestone; no implementation verification authorized                                                                                    |
-| Exact dependency installation                               | Pass              | 2026-08-01: `pnpm install --frozen-lockfile`; lockfile resolves exact `ulid@3.0.2` and `lossless-json@4.3.0`                                          |
-| Prisma schema and migration                                 | Pass              | 2026-08-01: validate/generate pass; migration applies after the two committed migrations and from an empty Testcontainers database; status current    |
-| Database constraint test                                    | Pass              | 2026-08-01: focused real-PostgreSQL suite passes 4/4, including atomic persistence, named checks/indexes, tenant uniqueness, and restrictive FKs      |
-| Regression verification                                     | Pass              | 2026-08-01: lint, type-check, formatting, 18/18 unit tests, and 11/11 full integration tests pass                                                     |
+| Command or review                                           | Result            | Date/evidence                                                                                                                                           |
+| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git status --short --branch` before planning               | Pass              | 2026-08-01: clean `main...origin/main`                                                                                                                  |
+| Complete document/repository evidence review                | Pass              | 2026-08-01: sources listed under Existing behavior; specification SHA-256 remained `77E3A5B44C4EE20F2E241DDC5CE2991D64BE82128E31EFBEE6DEC86239F239A6`   |
+| Initial plan formatting/link/diff/status checks             | Pass              | 2026-08-01: original plan-only milestone; the plan was later committed                                                                                  |
+| ADR and implementation-selection approval update            | Pass              | 2026-08-01: `pnpm exec prettier --check`, local-link/anchor/stale-language checks, and `git diff --check`; only this tracked plan is modified           |
+| Application, database, dependency, test, or runtime command | Not run by design | Planning-only milestone; no implementation verification authorized                                                                                      |
+| Exact dependency installation                               | Pass              | 2026-08-01: `pnpm install --frozen-lockfile`; lockfile resolves exact `ulid@3.0.2` and `lossless-json@4.3.0`                                            |
+| Prisma schema and migration                                 | Pass              | 2026-08-01: validate/generate pass; migration applies after the two committed migrations and from an empty Testcontainers database; status current      |
+| Database constraint test                                    | Pass              | 2026-08-01: focused real-PostgreSQL suite passes 4/4, including atomic persistence, named checks/indexes, tenant uniqueness, and restrictive FKs        |
+| Regression verification                                     | Pass              | 2026-08-01: lint, type-check, formatting, 18/18 unit tests, and 11/11 full integration tests pass                                                       |
+| M1 application/API implementation                           | Pass              | 2026-08-01: create/read, exact raw-number parsing, scoped API-key identity, atomic outbox/snapshot, RFC problems, and canonical `/v1` are implemented   |
+| M1 focused unit and PostgreSQL integration tests            | Pass              | 2026-08-01: 53/53 unit and 24/24 full integration tests pass; real HTTP/PostgreSQL covers replay, races, rollback, tenancy, outage, and cleanup         |
+| OpenAPI and documentation                                   | Pass              | 2026-08-01: generated contract exposes only `/v1`, exact scopes/headers/schemas/problems; README/API/runbook text is current                            |
+| Final application verification                              | Pass              | 2026-08-01: frozen install, Prisma validate/generate/status, Compose health, format, lint, type-check, unit/integration tests, OpenAPI drift, and build |
 
 The initial migration review briefly added application-clock-versus-database-clock ordering checks that the approved plan did not require. A fresh PostgreSQL test correctly exposed their clock-skew hazard, so those checks were removed before final verification. The completed-idempotency constraint also explicitly permits ADR-0007's minimal tombstone after all replay fields are disposed; this milestone adds no cleanup job. The accepted state-consistency, 24-hour minimum replay window, and outbox lock/publish consistency rules remain enforced; no durable data was deleted.
 
@@ -491,4 +495,6 @@ The initial migration review briefly added application-clock-versus-database-clo
 
 The original planning milestone was complete when this file was the only worktree change; it mapped every authorized Payment Intent model/endpoint and cross-cutting requirement; gave reviewable table, state, money, idempotency, error, audit/event, migration, security, failure, and test designs; recorded all accepted ADRs and implementation selections; deferred unauthorized work; passed Markdown link/format/whitespace checks; and recorded complete Git status without a commit or push.
 
-The plan is now In progress. The separately authorized database foundation is complete, but application modules, endpoints, raw-body parsing, idempotency acquisition, atomic application flow, OpenAPI, and runtime tests remain deliberately unimplemented. Full completion still requires the remaining execution checklist, verification commands, and failure/security evidence.
+The M1 plan is complete. The committed database foundation is now used by bounded Payments, Idempotency, and Eventing packages; the API exposes only create/read under canonical `/v1`; and real PostgreSQL/HTTP tests prove the approved validation, atomicity, replay, conflict, takeover, scope, tenant, outage, and event behavior. The Prisma 7 PostgreSQL adapter can emit a code-less plain error after an established socket is severed, so the shared lifecycle performs one bounded connectivity probe after an otherwise-unclassified repository failure and raises a named safe outage error without matching vendor message text. TypeScript 6 rejects `ulid@3.0.2`'s CommonJS declaration packaging, so the exact approved runtime is isolated behind a narrow local typed adapter; no substitute generator was introduced.
+
+No capture/authorization/refund, provider, RabbitMQ relay/topology, ledger/balance, settlement processing, webhook, inbox, audit table, or retention deletion behavior was added. Performance/load baselines, privileged recovery tooling, and later lifecycle failure injection remain explicitly deferred to their owning milestones; they do not weaken the tested M1 create/read atomicity or public contract.

@@ -1,9 +1,9 @@
 # ADR-0011: Payment Intent external reference and capture method
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and Payments/API owners (approval pending)
-- **Reviewers:** Product, API, security, and database reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through the payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -50,7 +50,7 @@ Automatic behavior is not defined, and explicit authorization is P1/deferred by 
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 ### `externalRef`
 
@@ -70,7 +70,7 @@ The proposed decision is **Option A**.
 - Reject `automatic`, `authorize`, uppercase variants, whitespace variants, and unknown values with the approved semantic problem response.
 - Adding another capture method changes lifecycle/API behavior and requires an approved plan, contract update, and material-decision review. FR-15 authorization is not enabled by adding a string value.
 
-The project owner must approve the 255-character limit, exact-preservation policy, and manual-only contract before acceptance. If broader interoperability requires an ASCII allow-list or normalization, revise this Proposed ADR and publish migration/fingerprint implications first.
+The project owner approved the 255-character limit, exact-preservation policy, and manual-only contract. A later ASCII allow-list, normalization rule, or broader capture method requires a superseding ADR with compatibility, migration, and fingerprint implications.
 
 ## Consequences
 
@@ -132,4 +132,4 @@ Apply validation and constraints before exposing creation. With no existing paym
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, Prisma/migration notes, OpenAPI request/response/error examples, idempotency vectors, and security logging classification. Record product/API owner approval of each bounded rule.
+Update the [ADR index](README.md), Payment Request plan, Prisma/migration notes, OpenAPI request/response/error examples, idempotency vectors, and security logging classification during implementation. This Accepted status records approval of each bounded rule.

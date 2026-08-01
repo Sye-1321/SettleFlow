@@ -1,9 +1,9 @@
 # ADR-0009: Public Payment Intent identifiers
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and API/Payments owners (approval pending)
-- **Reviewers:** Architecture, database, and security reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through the payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -49,7 +49,7 @@ Opaque IDs are not authorization. This violates tenant-isolation requirements an
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 - `payment_intents.id` is an internal UUID primary key used by PostgreSQL foreign keys and never accepted from or exposed to merchant API clients.
 - `payment_intents.public_id` is immutable, non-null, globally unique `VARCHAR(29)` in the exact form `pi_` plus a 26-character uppercase Crockford Base32 ULID: `^pi_[0-9A-HJKMNP-TV-Z]{26}$`.
@@ -60,7 +60,7 @@ The proposed decision is **Option A**.
 - IDs are case-sensitive canonical uppercase. Input with lowercase, whitespace, wrong prefix, or invalid Crockford characters is rejected rather than normalized.
 - IDs are not credentials and may appear only in approved structured log/correlation fields. Rate/resource controls and merchant authorization remain mandatory.
 
-This proposal treats the appendix shape as intentional. The project owner must approve that interpretation before acceptance. If the sample was illustrative only, revise this ADR to Option B before migration rather than supporting two public formats.
+This decision treats the appendix shape as intentional, as approved by the project owner. A later change to the public identifier format requires a superseding ADR and compatibility/migration plan rather than support for two implicit formats.
 
 ## Consequences
 
@@ -123,4 +123,4 @@ Decide and migrate before the first Payment Intent exists. After public IDs are 
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, Prisma design, OpenAPI schemas/examples, event schema, logging classification, and identifier test vectors. Record the project owner's interpretation of the appendix format.
+Update the [ADR index](README.md), Payment Request plan, Prisma design, OpenAPI schemas/examples, event schema, logging classification, and identifier test vectors during implementation. This Accepted status records the project owner's interpretation of the appendix format.

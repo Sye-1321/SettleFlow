@@ -1,9 +1,9 @@
 # ADR-0008: API version path and compatibility
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and API owner (approval pending)
-- **Reviewers:** Architecture and API contract reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through the payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -44,17 +44,17 @@ This follows the current scaffold but contradicts the specification. It requires
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 - `/v1` is the only canonical base path for v1 business endpoints.
 - Payment Intent routes are exactly `POST /v1/payment-intents` and `GET /v1/payment-intents/{id}`.
 - Health endpoints remain `/health/live` and `/health/ready`; documentation remains `/docs` and `/docs/openapi.json`. They are not placed under the business API version path.
 - The scaffold-only `GET /api/v1` route is corrected to `GET /v1` in the later implementation milestone. No payment route is added below `/api/v1`.
-- No compatibility alias is proposed because the repository is pre-release, the route has no payment behavior, and no external consumer is documented. Before acceptance, the project owner must confirm that no consumer requires `/api/v1`. If one exists, revise this ADR to Option B with an owner, removal date, complete OpenAPI treatment, and equivalent authentication/rate/security controls.
+- No compatibility alias will be created because the repository is pre-release, the route has no payment behavior, no external consumer is documented, and the project owner confirmed this compatibility assumption through acceptance. A later discovery of an actual consumer requires a new compatibility decision with an owner, removal date, complete OpenAPI treatment, and equivalent authentication/rate/security controls.
 - Compatible additions remain under `/v1`. A breaking public contract requires `/v2` or an explicitly documented compatibility policy and a new ADR/plan where material.
 - OpenAPI, examples, integration tests, generated clients, logs, metrics, and idempotency normalized routes use the canonical template, never an internal controller prefix.
 
-This aligns the repository with the specification and does not require a specification version change. It remains Proposed until the compatibility assertion is approved.
+This aligns the repository with the specification and does not require a specification version change. Acceptance records approval of the compatibility assertion.
 
 ## Consequences
 
@@ -71,7 +71,7 @@ This aligns the repository with the specification and does not require a specifi
 
 ### Risks and mitigations
 
-- **Hidden consumer:** Require owner confirmation and repository/example search before acceptance.
+- **Hidden consumer:** Repository/example search and project-owner confirmation support the pre-release correction; a later discovery requires an explicit compatibility decision rather than an undocumented alias.
 - **Partial path migration:** Contract tests must assert the exact route inventory and absence of `/api/v1/payment-intents`.
 - **Idempotency split by alias:** Use only `/v1/payment-intents` as the normalized route; do not expose an alias.
 
@@ -113,4 +113,4 @@ Before a public release, make the correction atomically with documentation and c
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, Merchant Access API document, root README, committed OpenAPI, examples, and route tests. Record the owner's no-consumer confirmation.
+Update the [ADR index](README.md), Payment Request plan, Merchant Access API document, root README, committed OpenAPI, examples, and route tests during implementation. This Accepted status records the owner's no-consumer confirmation.

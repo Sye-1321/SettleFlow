@@ -1,9 +1,9 @@
 # ADR-0013: Problem details, audit, and retention boundaries
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and API/Operations/Security owners (approval pending)
-- **Reviewers:** API, security, financial/domain, and operations reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -51,16 +51,16 @@ This destroys business/event linkage and has no specification authorization. It 
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 ### Problem-details contract
 
 - Every API error uses `Content-Type: application/problem+json` and contains `type`, `title`, `status`, stable SettleFlow `code`, safe `detail`, and `requestId`. Optional bounded `violations` may contain only field names and stable reason codes, never rejected values or raw payloads.
 - `type` uses the stable pattern `https://docs.settleflow.dev/problems/<code>` demonstrated by the specification. It identifies the problem class; it is not generated from exception text.
-- Accept a caller `X-Request-Id` only when it is 1-128 characters from `[A-Za-z0-9._:-]`; otherwise reject it as `invalid_request`. Generate a high-entropy `req_` identifier when absent. Return the canonical request ID in `X-Request-Id` and the problem body, and propagate it to approved records/traces.
+- Accept a caller `X-Request-Id` only when it is 1-128 characters from `[A-Za-z0-9._:-]`. Generate a high-entropy `req_` identifier when the header is absent or invalid; never echo or log an invalid value. Return the canonical request ID in `X-Request-Id` and the problem body, and propagate it to approved records/traces.
 - Map only recognized domain/database conditions. Unknown exceptions become generic `500 internal_error`; PostgreSQL unavailability or exhausted approved transaction retries become `503 service_unavailable`. Never expose stack traces, SQL, constraint text, URLs, credentials, keys, or bodies.
-- The proposed Payment Intent mapping is:
-  - `400 invalid_request` for malformed JSON/header/ID, wrong types/ranges, unknown fields, or missing required fields;
+- The Payment Intent mapping is:
+  - `400 invalid_request` for malformed JSON, required command headers, or payment identifiers; wrong types/ranges; unknown fields; or missing required fields;
   - `401 unauthorized` for missing/invalid merchant credentials;
   - `403 insufficient_scope` for a valid key without the handler scope;
   - `404 payment_intent_not_found` for both missing and foreign-merchant IDs;
@@ -76,7 +76,7 @@ The proposed decision is **Option A**.
 - Normal merchant-authenticated Payment Intent creation and retrieval are not FR-14 privileged operational actions and do not create `audit_events`.
 - Their durable evidence is the merchant-owned Payment Intent, idempotency record/result, stable event/outbox record, and request/command/event correlation. Logs are supporting telemetry, not authoritative audit or financial state.
 - Operations owns `audit_events`. Privileged API-key/secret lifecycle commands, authorized replay, settlement execution, reconciliation import, and future manual recovery record actor, action, target, reason, timestamp, and correlation ID through an Operations port.
-- The word “creation” in the secret-lifecycle security paragraph is interpreted as credential/secret creation, not every Payment Intent. Product/security owners must confirm this interpretation before acceptance.
+- The word “creation” in the secret-lifecycle security paragraph is interpreted as credential/secret creation, not every Payment Intent. Project-owner approval confirms this interpretation; a later requirement to audit ordinary payment creation requires a superseding ADR and an Operations-owned design.
 - Authentication failures, validation errors, reads, and ordinary merchant writes are counted/logged safely but are not append-only audit actions unless a later threat/control requirement explicitly promotes them.
 
 ### Retention boundaries
@@ -88,7 +88,7 @@ The proposed decision is **Option A**.
 - Logs/traces follow the 7-30 day environment baseline and contain no authorization, idempotency-key value, secret, raw financial request body, or response snapshot. Problems are not separately persisted except when an approved idempotency result requires a safe logical snapshot.
 - Retention/cleanup jobs belong to their owning modules/Operations, use bounded batches, preserve referential evidence, and are never part of synchronous command success.
 
-The project owner, security owner, and Operations owner must approve the exact code matrix, request-ID validation, audit interpretation, and conservative indefinite retention before this ADR becomes Accepted.
+Project-owner approval records the code matrix, replacement of invalid caller request IDs, privileged-only audit interpretation, and conservative retention boundaries above. No destructive retention job is authorized without the later policy and restricted mechanism identified here.
 
 ## Consequences
 
@@ -145,14 +145,14 @@ The project owner, security owner, and Operations owner must approve the exact c
 - Contract-test every listed status/code/content type and exact required fields.
 - Prove missing/invalid credentials are indistinguishable and missing/foreign Payment Intents return the same 404.
 - Inject validation, named constraint, unknown exception, and database-outage failures; scan for SQL, stack, credential, key, and body leakage.
-- Test accepted/rejected/generated request IDs and log-injection attempts.
+- Test accepted/replaced/generated request IDs and log-injection attempts.
 - Prove normal create/read creates no `audit_event`, while future privileged commands require complete append-only evidence.
 - Test retention jobs only when authorized: bounded batches, unpublished-event exclusion, tombstone preservation, and restricted audit deletion.
 
 ## Rollout and recovery
 
-Introduce the shared problem/request-ID contract before Payment Intent routes and update existing API contract tests atomically. Since the API is pre-release, no compatibility adapter is proposed; owner review must confirm that assumption. Retention changes are forward-only after evidence exists. Disable a faulty cleanup job and forward-fix; never restore space by deleting financial/audit evidence manually.
+Introduce the shared problem/request-ID contract before Payment Intent routes and update existing API contract tests atomically. Accepted ADR-0008 records the pre-release compatibility decision. Retention changes are forward-only after evidence exists. Disable a faulty cleanup job and forward-fix; never restore space by deleting financial/audit evidence manually.
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, API problem catalog, OpenAPI, Merchant Access docs/tests, security logging classification, retention/runbooks, and future Operations plan. Record owner approvals for audit interpretation and each retention boundary.
+The [ADR index](README.md) records acceptance. Update the Payment Request plan, API problem catalog, OpenAPI, Merchant Access docs/tests, security logging classification, retention/runbooks, and future Operations plan during their affected milestones. Project-owner approval records the audit interpretation and retention boundaries.

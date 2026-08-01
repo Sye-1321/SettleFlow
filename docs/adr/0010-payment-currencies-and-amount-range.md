@@ -1,9 +1,9 @@
 # ADR-0010: Payment currencies and amount range
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and Payments owner (approval pending)
-- **Reviewers:** Financial/domain, API, and database reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -48,17 +48,17 @@ Syntax alone would not establish “supported currencies” and could admit curr
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 - The v1 Payment Intent currency allow-list is exactly `ETB` and `USD`, applying OQ-01's documented default. No conversion, exchange rate, cross-currency aggregation, or dynamic currency administration exists.
 - Request `amountMinor` is a JSON number that must decode to an integer in the inclusive range `1..9,007,199,254,740,991` (`Number.MAX_SAFE_INTEGER`). Reject zero, negatives, fractions, non-finite runtime values, strings, booleans, null, and values outside the safe range before persistence.
-- Persist `amount_minor`, captured/refunded projections, and later financial amounts as PostgreSQL signed `BIGINT` with field-specific positive/non-negative and upper-bound checks. Application code converts a validated safe integer to `bigint` explicitly and proves the value remains in range before converting back for JSON.
+- Persist Payment Intent `amount_minor` and its captured/refunded projections as PostgreSQL signed `BIGINT` with field-specific positive/non-negative and upper-bound checks. Application code converts a validated safe integer to `bigint` explicitly and proves the value remains in range before converting back for JSON. Later domains must preserve the global `BIGINT` minor-unit rules and separately document any narrower public range they expose.
 - Persist currency as an uppercase three-character value. Enforce both `^[A-Z]{3}$` and `currency IN ('ETB', 'USD')` in the Payment Intent table; application validation provides the earlier problem response.
 - Reject lowercase or surrounding whitespace rather than normalizing. The accepted representation is part of the canonical idempotency fingerprint.
 - Each Payment Intent has one immutable requested currency. Later ledger transactions, events, refunds, and settlement records must carry and match it according to their invariants.
 - API and event contracts describe amounts as integer minor units. No code infers a decimal exponent, formats major units, rounds, or performs FX.
 
-The project owner must explicitly approve use of OQ-01's fallback before this ADR becomes Accepted. A different currency set or string amount representation requires revising this Proposed ADR, and a later public-contract change requires compatibility review.
+Project-owner approval resolves OQ-01 to its documented fallback: ETB and USD with no conversion. A different currency set or amount representation requires a superseding ADR and public-contract compatibility review.
 
 ## Consequences
 
@@ -120,4 +120,4 @@ Apply the constraints before exposing Payment Intent creation. Invalid preexisti
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, Prisma/migration notes, OpenAPI schemas/examples, fixture documentation, and money test vectors. Record explicit OQ-01 owner approval.
+The [ADR index](README.md) records acceptance and explicit OQ-01 owner approval. Update the Payment Request plan, Prisma/migration notes, OpenAPI schemas/examples, fixture documentation, and money test vectors during implementation.

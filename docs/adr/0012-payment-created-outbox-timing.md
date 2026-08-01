@@ -1,9 +1,9 @@
 # ADR-0012: `payment.created.v1` outbox timing
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and Payments/Eventing owners (approval pending)
-- **Reviewers:** Financial/domain, architecture, database, and reliability reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -55,19 +55,19 @@ This contradicts the event catalog and producer responsibility. It is rejected a
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 - Do not expose `POST /v1/payment-intents` until an Eventing-owned outbox persistence port and schema can atomically record `payment.created.v1`.
 - The winning create transaction writes exactly one Payment Intent, exactly one stable `payment.created.v1` outbox row, and the ADR-0007 completion snapshot; all commit or roll back together.
 - Payments constructs the specification-authorized event data and calls an Eventing application port with the existing transaction context. Payments never imports or writes Eventing tables directly.
 - Eventing owns the outbox row, event identifier, pending/lease/publish state, retention, and future relay. No direct RabbitMQ publish occurs in the API transaction or immediately after it without the outbox.
 - A same-key completed replay returns its snapshot and creates no new event. A changed fingerprint, active idempotency owner, validation failure, or external-reference loser creates no event.
-- The event uses one stable ID, occurrence time, merchant ID, public payment ID, integer-minor-unit amount with currency, and status `CREATED` as required by the catalog. Exact envelope field names and whether the catalog's `amount` is represented as `amountMinor` or a money object are **To be decided in the event contract before implementation**; timing may not be implemented ahead of that contract.
+- The event uses one stable ID, occurrence time, merchant ID, public payment ID, `amountMinor`, currency, and status `CREATED` as required by the catalog and integer-minor-unit API convention. This ADR fixes event timing and those minimum semantics; a versioned event contract must approve the exact envelope before implementation without reopening the atomic outbox decision.
 - RabbitMQ topology, relay code, publisher confirms, consumers, inbox, webhook projection/delivery, dead-letter handling, and operator replay remain deferred to M2. Pending rows may accumulate until the relay exists, and their age/count must be inspectable in development and tests.
 - Broker availability is not a prerequisite for the database commit. Existing readiness policy may report RabbitMQ down, but no creation transaction performs broker I/O.
-- No historical backfill is part of the default design. If project scope cannot include minimal outbox persistence, revise this Proposed ADR to Option B and approve its cutoff/backfill/non-public-release controls before any Payment Intent row is created.
+- No historical backfill is part of the design. If project scope cannot include minimal outbox persistence, the create endpoint remains unavailable unless a superseding ADR selects Option B and approves its cutoff, backfill, and non-public-release controls before any Payment Intent row is created.
 
-This uses accepted ADR-0004 rather than changing its delivery semantics. Owner approval is still required because it moves minimal Eventing persistence into the Payment Intent implementation milestone.
+This uses accepted ADR-0004 rather than changing its delivery semantics. Project-owner approval authorizes the minimum Eventing-owned persistence port and schema in the Payment Intent implementation milestone; it does not authorize RabbitMQ delivery work.
 
 ## Consequences
 
@@ -88,7 +88,7 @@ This uses accepted ADR-0004 rather than changing its delivery semantics. Owner a
 
 - **Outbox scope expands into messaging:** Limit M1 to schema, transaction port, and database tests; no broker topology/relay.
 - **Unbounded pending backlog:** Expose counts/oldest age and document that no terminal-row purge applies before publication.
-- **Event schema ambiguity:** Approve a versioned schema and contract tests before code.
+- **Event schema ambiguity:** Define and approve a versioned envelope and contract tests before the create endpoint is implemented; the payload uses `amountMinor` and the minimum semantics fixed above.
 - **Cross-module write:** Eventing adapter owns persistence; Payments calls a port in the shared transaction.
 - **Duplicate event:** Stable event ID plus idempotency and unique outbox constraints; race/failure tests.
 
@@ -131,4 +131,4 @@ Deploy the Eventing schema/port before the create endpoint. Pending rows are val
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, Eventing architecture/plan, event schema, migration notes, pending-backlog runbook, and tests. Record owner approval for the earlier minimal Eventing scope and the final event payload contract.
+The [ADR index](README.md) records acceptance and the earlier minimum Eventing persistence scope. Update the Payment Request plan, Eventing architecture/plan, versioned event contract, migration notes, pending-backlog runbook, and tests during implementation.

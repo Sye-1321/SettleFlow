@@ -1,9 +1,9 @@
 # ADR-0007: Idempotency keys, concurrency, and response snapshots
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner and Idempotency owner (approval pending)
-- **Reviewers:** Financial/domain, database, security, and API reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -13,7 +13,7 @@ FR-05 and INV-10 require a duplicate money command to create no second financial
 
 The Payment Intent create example includes `Idempotency-Key`, and duplicate `externalRef` handling cannot replace response replay. Although creation does not yet post ledger entries, the public create command must use the same governed mechanism so retries cannot create multiple aggregates or events.
 
-The specification's capture workflow says to commit and then persist the HTTP response snapshot, while the architecture overview identifies the exact finalization/recovery sequence as undecided. A durable choice is required before code. This ADR proposes an atomic completion design; specification-owner approval is required to confirm it as the intended refinement.
+The specification's capture workflow lists commit before response-snapshot persistence, while the architecture overview identifies the exact finalization/recovery sequence as undecided. A literal two-transaction sequence leaves a crash gap after the domain effect commits. This ADR records the approved refinement: persist the logical replay snapshot atomically with the domain effect and required outbox intent, commit, and only then return the HTTP response.
 
 Authoritative references:
 
@@ -38,7 +38,7 @@ Authoritative references:
 
 Acquire a committed `IN_PROGRESS` lease in a short transaction. The winning command then locks/verifies that record in the domain transaction, writes domain state, ledger/outbox where applicable, and the replayable response snapshot, marks the record `COMPLETED`, and commits everything together. A crash before commit leaves no effect; a crash after commit leaves a replayable response.
 
-This closes the post-commit snapshot gap but requires confirmation that the specification's workflow wording permits the snapshot to be persisted before the transaction commit and returned after it.
+This closes the post-commit snapshot gap. Project-owner approval confirms that the workflow's response occurs after commit while its durable logical snapshot is part of the atomic command transaction.
 
 ### Option B: Persist the response snapshot in a second transaction after the domain commit
 
@@ -56,7 +56,7 @@ These mechanisms cannot scope/fingerprint/replay the HTTP command transactionall
 
 ## Decision
 
-The proposed decision is **Option A**, subject to specification-owner approval of the response-snapshot ordering.
+The decision is **Option A**.
 
 ### Scope and validation
 
@@ -68,7 +68,7 @@ The proposed decision is **Option A**, subject to specification-owner approval o
 
 ### Owned record and constraints
 
-The Idempotency module owns `idempotency_keys`. The proposed durable fields are internal UUID, merchant FK, method, normalized route, 32-byte key hash, 32-byte request hash, state (`IN_PROGRESS` or `COMPLETED`), owner token, lease expiry, response status/content type/whitelisted headers/body, immutable result reference when applicable, completed time, response expiry, and created/updated times.
+The Idempotency module owns `idempotency_keys`. The durable fields are internal UUID, merchant FK, method, normalized route, 32-byte key hash, 32-byte request hash, state (`IN_PROGRESS` or `COMPLETED`), owner token, lease expiry, response status/content type/whitelisted headers/body, immutable result reference when applicable, completed time, response expiry, and created/updated times.
 
 - Enforce unique `(merchant_id, http_method, normalized_route, key_hash)`.
 - Enforce digest lengths, valid state, owner/lease presence while in progress, and response/result consistency when completed.
@@ -78,18 +78,18 @@ The Idempotency module owns `idempotency_keys`. The proposed durable fields are 
 ### Acquisition and concurrency
 
 - Use a reviewed, parameterized PostgreSQL `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` harmless-update pattern, or an equivalently proven acquire/read statement, inside the Idempotency adapter. Prisma does not safely express the required single-winner semantics; ADR-0003's raw-SQL exception applies.
-- A new row receives a cryptographically random owner token and a proposed 30-second lease. The command transaction must start promptly, lock the idempotency row, and use bounded statement/lock timeouts shorter than the lease.
+- A new row receives a cryptographically random owner token and an initial reference lease of 30 seconds. The command transaction must start promptly, lock the idempotency row, and use bounded statement/lock timeouts shorter than the lease.
 - Same scope/key with a different request hash returns `409 idempotency_key_reused` without changing ownership or executing domain logic.
 - Same scope/key/hash in `COMPLETED` returns the stored result without re-running the command.
 - Same scope/key/hash with an unexpired owner returns `409 idempotency_request_in_progress` and `Retry-After: 1`; the server does not hold an HTTP request open waiting for another command.
 - After lease expiry, one contender atomically replaces the owner token using a conditional `UPDATE ... RETURNING`. If the original domain transaction holds the row lock, the contender waits only within the lock timeout and then observes commit/rollback before takeover.
 - Deadlock or approved transient serialization retries restart the entire transaction with the same idempotency identity; partial statement retries are prohibited.
 
-The proposed 30-second lease and one-second retry hint are operational defaults requiring database/latency review before acceptance. Any different values must be recorded in this ADR or its accepted implementation plan, not hidden in code.
+The 30-second lease and one-second retry hint are approved reference defaults. The implementation plan must verify them against measured transaction and lock-time limits before release and document any environment-specific tuning. A change that alters ownership, takeover, or replay semantics requires a superseding ADR.
 
 ### Completion and replay
 
-- The winner's command transaction verifies the owner token, performs the complete domain effect and required ledger/outbox writes, builds a bounded replay snapshot from the committed result values, updates the idempotency record to `COMPLETED`, and commits atomically.
+- The winner's command transaction verifies the owner token, performs the complete domain effect and required ledger/outbox writes, builds a bounded replay snapshot from the transaction's result values, updates the idempotency record to `COMPLETED`, and commits atomically.
 - Snapshot successful committed responses and deterministic terminal business outcomes reached after acquisition. Authentication/authorization/validation failures occur before acquisition. Transient dependency/transaction failures do not mark the command completed.
 - Store the logical JSON/problem body, HTTP status, content type, and only explicitly approved replay-safe headers. Do not store authorization, cookies, idempotency key, raw request, secrets, or telemetry-only headers.
 - `X-Request-Id` identifies each HTTP attempt and is not replayed from the snapshot. The durable result keeps its original command/event correlation separately; API documentation must distinguish attempt correlation from command identity.
@@ -101,7 +101,7 @@ The proposed 30-second lease and one-second retry hint are operational defaults 
 - After expiry, a bounded job purges response bodies/headers but retains the scope digest, request digest, state, result reference, and timestamps as a minimal tombstone needed for INV-10 and audit linkage. Reuse then returns `409 idempotency_key_expired`; it does not execute the command again.
 - The owner and retention policy for tombstone deletion is **To be decided before any purge beyond response-body disposal**. No financial idempotency evidence is deleted merely to reclaim space.
 
-If specification-owner review requires literal post-commit snapshot persistence, this ADR remains Proposed and must be revised to Option B with an immutable result record and crash-recovery algorithm before implementation.
+Project-owner approval establishes atomic snapshot completion as the controlling refinement of the workflow sequence. Option B is not authorized; adopting it later requires a superseding ADR with an immutable result record and a proven crash-recovery algorithm.
 
 ## Consequences
 
@@ -122,7 +122,7 @@ If specification-owner review requires literal post-commit snapshot persistence,
 
 ### Risks and mitigations
 
-- **Specification sequence mismatch:** Require specification-owner approval before acceptance; otherwise adopt documented Option B.
+- **Workflow wording ambiguity:** This approval distinguishes durable snapshot persistence inside the transaction from returning the HTTP response after commit; transaction and crash-point tests must enforce that sequence.
 - **Lease expires during a live transaction:** Lock the idempotency row in the command transaction and keep transaction timeouts below the lease.
 - **Hash/canonicalization mismatch:** Version canonical forms and publish fixed test vectors.
 - **Raw SQL defect:** Parameterize, isolate in the owning adapter, database-review, and race-test against real PostgreSQL.
@@ -169,4 +169,4 @@ Deploy the Idempotency schema and module before exposing any protected endpoint.
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), architecture open matters, Payment Request plan, API/problem contracts, migration notes, idempotency runbook, and test evidence. Record the specification-owner decision on Option A versus Option B and the approved lease/retention values.
+The [ADR index](README.md) records acceptance. Update architecture open matters, the Payment Request plan, API/problem contracts, migration notes, the idempotency runbook, and test evidence during implementation. Project-owner approval selects Option A and records the reference lease, retry, and retention values above.

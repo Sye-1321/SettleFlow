@@ -1,9 +1,9 @@
 # ADR-0006: Payment and settlement lifecycle state ownership
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-01
-- **Decision owners:** SettleFlow project owner, Payments owner, and Settlements owner (approval pending)
-- **Reviewers:** Financial/domain and architecture reviewers (To be decided)
+- **Decision owners:** SettleFlow Project
+- **Reviewers:** Project owner through payment-request ADR acceptance review
 - **Supersedes:** None
 - **Superseded by:** None
 
@@ -13,7 +13,7 @@ The specification requires payment status to describe the customer-facing paymen
 
 The repository also assigns one writer to each table: Payments owns `payment_intents`, while Settlements owns batches, batch items, and adjustments. A physical `settlement_status` column on a Payments-owned row would either make Payments authoritative for settlement or invite Settlements to write another module's table. The conceptual data model's “separate settlement status” does not resolve that physical ownership question.
 
-This ADR records the separate-lifecycle baseline and proposes an ownership interpretation before the Payment Intent create/read slice introduces durable state. It does not authorize capture, authorization, void, refunds, settlement processing, or their endpoints. The repeated partial-refund case is an implied clarification of FR-04 and Table 13; it needs owner confirmation but no new lifecycle state.
+This ADR records the separate-lifecycle baseline and its approved ownership interpretation before the Payment Intent create/read slice introduces durable state. It does not authorize capture, authorization, void, refunds, settlement processing, or their endpoints. The approved repeated partial-refund interpretation clarifies FR-04 and Table 13 without adding a lifecycle state.
 
 Authoritative references:
 
@@ -55,7 +55,7 @@ This directly contradicts the specification and financial invariants and is reje
 
 ## Decision
 
-The proposed decision is **Option A**.
+The decision is **Option A**.
 
 - **Payments** is authoritative for the customer-facing payment lifecycle and owns `payment_intents`, `payment_status`, requested amount/currency, captured/refunded projections, and optimistic version.
 - **Settlements** is authoritative for settlement lifecycle state and owns the records that establish `ELIGIBLE`, `BATCHED`, `SETTLED`, and `ADJUSTMENT_PENDING`.
@@ -73,7 +73,7 @@ The proposed decision is **Option A**.
 - The settlement transitions remain `NOT_ELIGIBLE -> ELIGIBLE -> BATCHED -> SETTLED -> ADJUSTMENT_PENDING`. No payment transition implies a settlement transition unless the owning module's approved command and invariants establish it.
 - Capture/refund later require a payment row lock and atomic payment, ledger, and outbox writes. No generic status setter is permitted.
 
-This proposed physical ownership refines an implementation detail left open by the conceptual data model. Approval must confirm that returning derived `NOT_ELIGIBLE` and later composing a settlement-owned state satisfies the specification; otherwise the ADR must be revised before a migration is created.
+The project owner approves this physical ownership as the implementation refinement left open by the conceptual data model. Returning derived `NOT_ELIGIBLE` until a settlement-owned record exists, and later composing settlement-owned state through a stable read port, satisfies the specification.
 
 ## Consequences
 
@@ -95,7 +95,7 @@ This proposed physical ownership refines an implementation detail left open by t
 - **Derived state mistaken for authority:** Document the owning record and expose one typed read port.
 - **Stale settlement projection:** Define freshness and recovery before M3; never use an API projection to post financial entries.
 - **Unauthorized dormant state:** Command-specific services and database checks prevent writing `AUTHORIZED` before FR-15 approval.
-- **Repeated partial-refund ambiguity:** Treat it as remaining in `PARTIALLY_REFUNDED`; obtain specification-owner confirmation before refund implementation.
+- **Repeated partial-refund ambiguity:** The approved interpretation keeps the payment in `PARTIALLY_REFUNDED` while cumulative refunds remain below capture; refund implementation must prove the cumulative amount rule.
 
 ## Implementation notes
 
@@ -133,8 +133,8 @@ This proposed physical ownership refines an implementation detail left open by t
 
 ## Rollout and recovery
 
-This proposed ADR creates no runtime state. Once payment rows exist, lifecycle corrections use forward-compatible migrations and command-specific forward fixes; they never rewrite posted ledger or audit evidence. A different physical settlement ownership choice requires revising this Proposed ADR before acceptance or superseding it after acceptance.
+This ADR creates no runtime state. Once payment rows exist, lifecycle corrections use forward-compatible migrations and command-specific forward fixes; they never rewrite posted ledger or audit evidence. A different physical settlement ownership choice requires a superseding ADR.
 
 ## Documentation and traceability
 
-If accepted, update the [ADR index](README.md), Payment Request plan, architecture ownership table, Prisma design, OpenAPI descriptions, lifecycle tests, and future settlement plan. Record specification-owner confirmation of the repeated partial-refund interpretation and physical state ownership.
+The [ADR index](README.md) records acceptance. Update the Payment Request plan, architecture ownership table, Prisma design, OpenAPI descriptions, lifecycle tests, and future settlement plan during their affected milestones. Project-owner approval records the repeated partial-refund interpretation and physical state ownership.

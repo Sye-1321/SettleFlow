@@ -107,6 +107,7 @@ model Merchant {
   updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   apiKeys            ApiKey[]
   paymentIntents     PaymentIntent[]
+  refunds            Refund[]
   ledgerAccounts     LedgerAccount[]
   ledgerTransactions LedgerTransaction[]
   idempotencyKeys    IdempotencyKey[]
@@ -147,13 +148,34 @@ model PaymentIntent {
   paymentStatus       PaymentStatus        @default(CREATED) @map("payment_status")
   capturedAmountMinor BigInt               @default(0) @map("captured_amount_minor") @db.BigInt
   refundedAmountMinor BigInt               @default(0) @map("refunded_amount_minor") @db.BigInt
+  capturedAt          DateTime?            @map("captured_at") @db.Timestamptz(6)
+  availableAt         DateTime?            @map("available_at") @db.Timestamptz(6)
   version             Int                  @default(0)
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   merchant            Merchant             @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "payment_intents_merchant_id_fkey")
+  refunds             Refund[]
 
   @@unique([merchantId, externalRef], map: "payment_intents_merchant_id_external_ref_key")
+  @@unique([id, merchantId, currency], map: "payment_intents_id_merchant_id_currency_key")
   @@map("payment_intents")
+}
+
+model Refund {
+  id              String        @id @default(uuid()) @db.Uuid
+  publicId        String        @unique(map: "refunds_public_id_key") @map("public_id") @db.VarChar(29)
+  merchantId      String        @map("merchant_id") @db.Uuid
+  paymentIntentId String        @map("payment_intent_id") @db.Uuid
+  externalRef     String        @map("external_ref") @db.VarChar(255)
+  amountMinor     BigInt        @map("amount_minor") @db.BigInt
+  currency        String        @db.Char(3)
+  createdAt       DateTime      @map("created_at") @db.Timestamptz(6)
+  merchant        Merchant      @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "refunds_merchant_id_fkey")
+  paymentIntent   PaymentIntent @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "refunds_payment_intent_id_merchant_id_currency_fkey")
+
+  @@unique([merchantId, externalRef], map: "refunds_merchant_id_external_ref_key")
+  @@index([merchantId, paymentIntentId, createdAt, id], map: "refunds_merchant_id_payment_intent_id_created_at_idx")
+  @@map("refunds")
 }
 
 model LedgerAccount {
@@ -324,21 +346,25 @@ model WebhookEndpointSecret {
 }
 
 model WebhookEventProjection {
-  eventId       String            @id(map: "webhook_event_projections_pkey") @map("event_id") @db.VarChar(30)
-  eventType     String            @map("event_type") @db.VarChar(128)
-  schemaVersion Int               @map("schema_version")
-  merchantId    String            @map("merchant_id") @db.Uuid
-  paymentId     String            @map("payment_id") @db.VarChar(29)
-  occurredAt    DateTime          @map("occurred_at") @db.Timestamptz(6)
-  requestId     String            @map("request_id") @db.VarChar(128)
-  amountMinor   BigInt            @map("amount_minor") @db.BigInt
-  currency      String            @db.Char(3)
-  paymentStatus String            @map("payment_status") @db.VarChar(32)
-  payloadBytes  Bytes             @map("payload_bytes") @db.ByteA
-  payloadSha256 Bytes             @map("payload_sha256") @db.ByteA
-  projectedAt   DateTime          @map("projected_at") @db.Timestamptz(6)
-  merchant      Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_event_projections_merchant_id_fkey")
-  deliveries    WebhookDelivery[]
+  eventId                       String            @id(map: "webhook_event_projections_pkey") @map("event_id") @db.VarChar(30)
+  eventType                     String            @map("event_type") @db.VarChar(128)
+  schemaVersion                 Int               @map("schema_version")
+  merchantId                    String            @map("merchant_id") @db.Uuid
+  paymentId                     String            @map("payment_id") @db.VarChar(29)
+  occurredAt                    DateTime          @map("occurred_at") @db.Timestamptz(6)
+  requestId                     String            @map("request_id") @db.VarChar(128)
+  amountMinor                   BigInt            @map("amount_minor") @db.BigInt
+  currency                      String            @db.Char(3)
+  paymentStatus                 String?           @map("payment_status") @db.VarChar(32)
+  refundId                      String?           @map("refund_id") @db.VarChar(29)
+  ledgerTransactionId           String?           @map("ledger_transaction_id") @db.VarChar(30)
+  availableOn                   DateTime?         @map("available_on") @db.Timestamptz(6)
+  cumulativeRefundedAmountMinor BigInt?           @map("cumulative_refunded_amount_minor") @db.BigInt
+  payloadBytes                  Bytes             @map("payload_bytes") @db.ByteA
+  payloadSha256                 Bytes             @map("payload_sha256") @db.ByteA
+  projectedAt                   DateTime          @map("projected_at") @db.Timestamptz(6)
+  merchant                      Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_event_projections_merchant_id_fkey")
+  deliveries                    WebhookDelivery[]
 
   @@unique([eventId, merchantId], map: "webhook_event_projections_event_id_merchant_id_key")
   @@index([merchantId, projectedAt], map: "webhook_event_projections_merchant_id_projected_at_idx")

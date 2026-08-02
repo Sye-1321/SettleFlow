@@ -5,7 +5,8 @@ export interface IdempotencyAcquireCommand {
   readonly key: string;
   readonly merchantId: string;
   readonly now: Date;
-  readonly normalizedRoute: '/v1/payment-intents';
+  readonly normalizedRoute:
+    '/v1/payment-intents' | '/v1/payment-intents/{id}/capture' | '/v1/payment-intents/{id}/refunds';
   readonly method: 'POST';
 }
 
@@ -39,7 +40,8 @@ export interface HashedIdempotencyAcquireCommand {
   readonly keyHash: Uint8Array;
   readonly merchantId: string;
   readonly now: Date;
-  readonly normalizedRoute: '/v1/payment-intents';
+  readonly normalizedRoute:
+    '/v1/payment-intents' | '/v1/payment-intents/{id}/capture' | '/v1/payment-intents/{id}/refunds';
   readonly method: 'POST';
   readonly ownerToken: string;
   readonly recordId: string;

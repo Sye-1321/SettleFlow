@@ -1,26 +1,48 @@
 import { findDatabaseConstraint, type PrismaTransactionClient } from '@settleflow/infrastructure';
 
 import { EventIdentifierCollisionError } from './eventing.errors';
-import type { OutboxRepository, PaymentCreatedEvent } from './eventing.types';
+import type { OutboxRepository, PaymentDomainEvent } from './eventing.types';
 
-function toPayload(event: PaymentCreatedEvent): Readonly<Record<string, string | number>> {
-  return {
-    amountMinor: event.amountMinor,
-    currency: event.currency,
+function toPayload(event: PaymentDomainEvent): Readonly<Record<string, string | number>> {
+  const common = {
     eventId: event.eventId,
     eventType: event.eventType,
-    merchantId: event.merchantId,
     occurredAt: event.occurredAt.toISOString(),
-    paymentId: event.paymentId,
     requestId: event.requestId,
-    status: event.status,
+    merchantId: event.merchantId,
+    paymentId: event.paymentId,
+  };
+  if (event.eventType === 'payment.created.v1') {
+    return {
+      ...common,
+      amountMinor: event.amountMinor,
+      currency: event.currency,
+      status: event.status,
+    };
+  }
+  if (event.eventType === 'payment.captured.v1') {
+    return {
+      ...common,
+      capturedAmountMinor: event.capturedAmountMinor,
+      currency: event.currency,
+      availableOn: event.availableOn.toISOString(),
+      ledgerTransactionId: event.ledgerTransactionId,
+    };
+  }
+  return {
+    ...common,
+    refundId: event.refundId,
+    amountMinor: event.amountMinor,
+    currency: event.currency,
+    cumulativeRefundedAmountMinor: event.cumulativeRefundedAmountMinor,
+    ledgerTransactionId: event.ledgerTransactionId,
   };
 }
 
 export class PrismaOutboxRepository implements OutboxRepository {
-  public async insertPaymentCreated(
+  public async insertPaymentEvent(
     transaction: PrismaTransactionClient,
-    event: PaymentCreatedEvent,
+    event: PaymentDomainEvent,
   ): Promise<void> {
     try {
       await transaction.outboxEvent.create({

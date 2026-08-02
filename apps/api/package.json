@@ -12,6 +12,7 @@
     "@settleflow/eventing": "workspace:*",
     "@settleflow/idempotency": "workspace:*",
     "@settleflow/infrastructure": "workspace:*",
+    "@settleflow/ledger": "workspace:*",
     "@settleflow/merchant-access": "workspace:*",
     "@settleflow/operations": "workspace:*",
     "@settleflow/payments": "workspace:*",

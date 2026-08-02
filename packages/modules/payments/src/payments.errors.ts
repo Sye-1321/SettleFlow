@@ -46,3 +46,73 @@ export class IdentifierGenerationExhaustedError extends Error {
     this.name = 'IdentifierGenerationExhaustedError';
   }
 }
+
+export class CaptureAmountMismatchError extends Error {
+  public constructor() {
+    super('The capture amount must equal the full payment amount');
+    this.name = 'CaptureAmountMismatchError';
+  }
+}
+
+export class PaymentIntentNotCapturableError extends Error {
+  public constructor() {
+    super('The payment intent cannot be captured in its current state');
+    this.name = 'PaymentIntentNotCapturableError';
+  }
+}
+
+export class PaymentIntentNotRefundableError extends Error {
+  public constructor() {
+    super('The payment intent cannot be refunded in its current state');
+    this.name = 'PaymentIntentNotRefundableError';
+  }
+}
+
+export class PaymentCurrencyMismatchError extends Error {
+  public constructor() {
+    super('The command currency does not match the payment currency');
+    this.name = 'PaymentCurrencyMismatchError';
+  }
+}
+
+export class RefundAmountExceedsAvailableError extends Error {
+  public constructor() {
+    super('The refund amount exceeds the remaining captured amount');
+    this.name = 'RefundAmountExceedsAvailableError';
+  }
+}
+
+export class RefundExternalReferenceConflictError extends Error {
+  public constructor() {
+    super('The refund external reference is already used by this merchant');
+    this.name = 'RefundExternalReferenceConflictError';
+  }
+}
+
+export class RefundIdentifierCollisionError extends Error {
+  public constructor() {
+    super('The generated refund identifier collided with an existing refund');
+    this.name = 'RefundIdentifierCollisionError';
+  }
+}
+
+export class PaymentProviderDeclinedError extends Error {
+  public constructor() {
+    super('The deterministic payment provider declined the command');
+    this.name = 'PaymentProviderDeclinedError';
+  }
+}
+
+export class PaymentProviderUnavailableError extends Error {
+  public constructor() {
+    super('The deterministic payment provider is unavailable');
+    this.name = 'PaymentProviderUnavailableError';
+  }
+}
+
+export class PaymentProjectionInvariantError extends Error {
+  public constructor() {
+    super('The payment projection update violated its financial contract');
+    this.name = 'PaymentProjectionInvariantError';
+  }
+}

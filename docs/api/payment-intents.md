@@ -1,15 +1,17 @@
 # M1 Payment Intent API
 
-This slice exposes only specification-authorized creation and merchant-owned retrieval. It creates simulated payment state and durable event intent; it never moves funds and does not publish to RabbitMQ.
+This slice exposes specification-authorized creation, merchant-owned retrieval, deterministic direct full capture, and full/partial refunds. All behavior is simulated: it records immutable balanced accounting and durable event intent but never moves real funds or calls a payment rail.
 
 ## Routes
 
-| Route                          | Required scope   | Success |
-| ------------------------------ | ---------------- | ------- |
-| `POST /v1/payment-intents`     | `payments:write` | 201     |
-| `GET /v1/payment-intents/{id}` | `payments:read`  | 200     |
+| Route                                   | Required scope   | Success |
+| --------------------------------------- | ---------------- | ------- |
+| `POST /v1/payment-intents`              | `payments:write` | 201     |
+| `POST /v1/payment-intents/{id}/capture` | `payments:write` | 200     |
+| `POST /v1/payment-intents/{id}/refunds` | `payments:write` | 201     |
+| `GET /v1/payment-intents/{id}`          | `payments:read`  | 200     |
 
-Both routes require `Authorization: Bearer <merchant_api_key>`. POST also requires exactly one `Idempotency-Key` header of 1-255 scalar characters with no surrounding whitespace or control characters. The authenticated merchant ID is the sole ownership source; it is never accepted in a body or query.
+All routes require `Authorization: Bearer <merchant_api_key>`. Every POST also requires exactly one `Idempotency-Key` header of 1-255 scalar characters with no surrounding whitespace or control characters. The authenticated merchant ID is the sole ownership source; it is never accepted in a body or query.
 
 The committed machine-readable contract is [openapi.json](openapi.json). Swagger UI is available at `/docs` while the API is running.
 
@@ -34,19 +36,48 @@ The JSON body contains exactly these fields:
 
 A success returns a `pi_<ULID>` identifier, the accepted creation fields, lowercase `paymentStatus: "created"`, derived `settlementStatus: "NOT_ELIGIBLE"`, zero captured/refunded projections, version zero, and UTC timestamps. Settlement status is not stored on `payment_intents`.
 
+## Direct full capture
+
+`POST /v1/payment-intents/{id}/capture` accepts exactly:
+
+```json
+{
+  "amountMinor": 125000,
+  "currency": "ETB"
+}
+```
+
+The Payment Intent must be merchant-owned and `created`; currency must match and `amountMinor` must equal the entire requested amount. Partial capture is not supported. The deterministic mock provider approves valid commands by default and performs no I/O. A 200 response is the Payment Intent representation in `captured` state plus an `ltx_<ULID>` `ledgerTransactionId`. Capture debits `provider_clearing` and credits `merchant_payable` in one currency. `capturedAt` and internal `availableAt` use the same transaction timestamp; no settlement-status column is added.
+
+## Full and partial refunds
+
+`POST /v1/payment-intents/{id}/refunds` accepts exactly:
+
+```json
+{
+  "externalRef": "refund_1001",
+  "amountMinor": 25000,
+  "currency": "ETB"
+}
+```
+
+The Payment Intent must be captured or partially refunded, and amount/currency follow the same lossless rules as creation. The amount cannot exceed `capturedAmountMinor - refundedAmountMinor`. Each success creates an immutable `rf_<ULID>` Refund and an `ltx_<ULID>` Ledger transaction, returns 201, and reports `paymentStatus` as `partially_refunded` or `refunded` plus the exact cumulative refunded amount. Refund posting debits `merchant_payable` and credits `provider_clearing`. Refund external references are case-sensitive and unique per merchant.
+
 ## Idempotency and durable event intent
 
-The key is SHA-256 hashed at rest and scoped by merchant, method, and normalized route. The validated command is canonically fingerprinted. Creation commits the Payment Intent, completed response snapshot, and one exact nine-field `payment.created.v1` outbox row in a single PostgreSQL transaction.
+The key is SHA-256 hashed at rest and scoped by merchant, method, and normalized route. The validated command is canonically fingerprinted. Each successful create/capture/refund commits its Payment/Refund state, completed response snapshot, one exact outbox row, and—where applicable—the immutable balanced Ledger posting in one PostgreSQL transaction.
 
-- Same key and fingerprint: replay the stored 201 representation without a second payment or event.
+- Same key and fingerprint: replay the stored response with its original 200 or 201 status without a second financial effect or event.
 - Same key with changed fingerprint: `409 idempotency_key_reused`.
 - Same key while an unexpired owner is active: `409 idempotency_request_in_progress` with `Retry-After: 1`.
 - Expired in-progress lease: one conditional takeover may finish the command.
-- Different key with the same merchant `externalRef`: a durable, replayable `409 external_reference_conflict` result.
+- Different key with the same merchant Payment/Refund `externalRef`: a durable, replayable conflict result.
+- Different capture keys racing one Payment Intent: exactly one can capture; locked losers receive `409 payment_intent_not_capturable` without a second posting or event.
+- Concurrent refunds: the payment row lock and database constraints prevent their committed sum from exceeding capture.
 
-M1 does not relay or publish the outbox row. RabbitMQ availability remains part of API readiness, but no broker interaction occurs in the create transaction.
+The API never contacts RabbitMQ in a financial transaction. The worker later relays `payment.created.v1`, `payment.captured.v1`, and `payment.refunded.v1` at least once after publisher confirmation. Webhook projection and signed delivery remain asynchronous.
 
-For safe local diagnosis, use `pnpm db:inspect` and correlate only with the public payment ID or validated request ID. Never copy API-key hashes, idempotency hashes, response snapshots, or raw payloads into logs or tickets. Do not manually update/delete payment, idempotency, or unpublished outbox rows. An abandoned in-progress request becomes eligible for conditional takeover after its lease expires; retry the same validated command with the same key. Privileged replay/repair tooling is deferred and must not be improvised with SQL.
+For safe local diagnosis, use `pnpm db:inspect` and correlate only with public payment/refund/ledger/event IDs or a validated request ID. Never copy API-key hashes, idempotency hashes, response snapshots, amounts, external references, or raw payloads into logs or tickets. Do not manually update/delete Payment, Refund, Ledger, idempotency, or outbox evidence. An abandoned in-progress request becomes eligible for conditional takeover after its lease expires; retry the exact command with the same key. Use the [capture/refund recovery runbook](../runbooks/payment-capture-and-refunds.md) for invariant failures.
 
 ## Errors and correlation
 
@@ -63,4 +94,4 @@ pnpm test:integration
 pnpm openapi:check
 ```
 
-The PostgreSQL integration suite covers atomic persistence, replay and changed-key conflicts, active/stale owners, concurrent same-key requests, external-reference races, exact number handling, scopes, tenant isolation, problem responses, and OpenAPI metadata.
+The PostgreSQL integration suite covers atomic Payment/Refund/Ledger/outbox/snapshot persistence, replay and changed-key conflicts, active/stale owners, 50-way capture contention, concurrent over-refund prevention, exact number handling, scopes, tenant isolation, problem responses, and OpenAPI metadata. RabbitMQ integration proves routing, exact-byte projection, and durable deduplication for all three events.

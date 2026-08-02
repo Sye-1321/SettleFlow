@@ -18,6 +18,7 @@
   "dependencies": {
     "@settleflow/eventing": "workspace:*",
     "@settleflow/idempotency": "workspace:*",
-    "@settleflow/infrastructure": "workspace:*"
+    "@settleflow/infrastructure": "workspace:*",
+    "@settleflow/ledger": "workspace:*"
   }
 }

@@ -19,6 +19,7 @@ import type {
   WebhookSecretRotationPersistence,
   WebhookSubscription,
 } from './webhook.types';
+import { WEBHOOK_SUBSCRIPTIONS } from './webhook.types';
 
 interface PersistedEndpoint {
   readonly createdAt: Date;
@@ -68,10 +69,17 @@ function toStatus(value: string): WebhookEndpointStatus {
 function toSubscriptions(
   values: readonly { readonly eventType: string }[],
 ): readonly WebhookSubscription[] {
-  if (values.length !== 1 || values[0]?.eventType !== 'payment.created.v1') {
+  const persisted = new Set(values.map(({ eventType }) => eventType));
+  if (
+    values.length === 0 ||
+    persisted.size !== values.length ||
+    values.some(
+      ({ eventType }) => !WEBHOOK_SUBSCRIPTIONS.includes(eventType as WebhookSubscription),
+    )
+  ) {
     throw new Error('Persisted webhook subscriptions are outside the supported contract');
   }
-  return ['payment.created.v1'];
+  return WEBHOOK_SUBSCRIPTIONS.filter((eventType) => persisted.has(eventType));
 }
 
 function toRecord(value: PersistedEndpoint): WebhookEndpointRecord {

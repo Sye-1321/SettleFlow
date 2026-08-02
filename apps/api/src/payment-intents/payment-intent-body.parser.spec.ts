@@ -4,7 +4,12 @@ import {
   UnsupportedPaymentCurrencyError,
 } from '@settleflow/payments';
 
-import { exactSafeIntegerFromToken, parsePaymentIntentBody } from './payment-intent-body.parser';
+import {
+  exactSafeIntegerFromToken,
+  parseCaptureBody,
+  parsePaymentIntentBody,
+  parseRefundBody,
+} from './payment-intent-body.parser';
 
 function body(amountMinor: string, overrides = ''): Buffer {
   return Buffer.from(
@@ -62,5 +67,23 @@ describe('Payment Intent raw-body parsing', () => {
         ),
       ),
     ).toThrow(UnsupportedCaptureMethodError);
+  });
+
+  it('uses the same lossless money rules for full capture and refunds', () => {
+    expect(parseCaptureBody(Buffer.from('{"amountMinor":1e3,"currency":"ETB"}'))).toEqual({
+      amountMinor: 1_000,
+      currency: 'ETB',
+    });
+    expect(
+      parseRefundBody(
+        Buffer.from('{"externalRef":"refund_1","amountMinor":1000.0,"currency":"USD"}'),
+      ),
+    ).toEqual({ amountMinor: 1_000, currency: 'USD', externalRef: 'refund_1' });
+    expect(() =>
+      parseCaptureBody(Buffer.from('{"amountMinor":9007199254740992,"currency":"ETB"}')),
+    ).toThrow(InvalidPaymentIntentRequestError);
+    expect(() =>
+      parseRefundBody(Buffer.from('{"externalRef":"refund_1","amountMinor":1.1,"currency":"ETB"}')),
+    ).toThrow(InvalidPaymentIntentRequestError);
   });
 });

@@ -6,13 +6,17 @@ import {
   PaymentCreatedEventContractError,
   serializePaymentCreatedEvent,
 } from './payment-created-event.contract';
+import {
+  PaymentLifecycleEventContractError,
+  serializePaymentLifecycleEvent,
+} from './payment-lifecycle-event.contract';
 import type {
   ClaimedOutboxEvent,
   OutboxPublisher,
   OutboxPublishOutcome,
   OutboxRelaySignalSink,
 } from './outbox-relay.types';
-import { assertOutboxRabbitMqTopology, OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import { assertOutboxRabbitMqTopology } from './rabbitmq-topology';
 
 export interface RabbitMqOutboxPublisherOptions {
   readonly confirmTimeoutMs: number;
@@ -155,11 +159,26 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
         continue;
       }
 
-      let serialized: ReturnType<typeof serializePaymentCreatedEvent>;
+      let serialized:
+        | (ReturnType<typeof serializePaymentCreatedEvent> & {
+            readonly eventType: 'payment.created.v1';
+            readonly routingKey: 'payment.created.v1';
+          })
+        | ReturnType<typeof serializePaymentLifecycleEvent>;
       try {
-        serialized = serializePaymentCreatedEvent(event);
+        serialized =
+          event.eventType === 'payment.created.v1'
+            ? {
+                ...serializePaymentCreatedEvent(event),
+                eventType: 'payment.created.v1',
+                routingKey: 'payment.created.v1',
+              }
+            : serializePaymentLifecycleEvent(event);
       } catch (error: unknown) {
-        if (error instanceof PaymentCreatedEventContractError) {
+        if (
+          error instanceof PaymentCreatedEventContractError ||
+          error instanceof PaymentLifecycleEventContractError
+        ) {
           outcomes.push(
             Promise.resolve({
               code: 'event_contract_invalid',
@@ -188,7 +207,7 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
         messageId: serialized.eventId,
         persistent: true,
         timestamp: Math.floor(serialized.occurredAt.getTime() / 1_000),
-        type: OUTBOX_RABBITMQ_TOPOLOGY.routingKey,
+        type: serialized.eventType,
       };
       const published = this.publishOne(channel, event.eventId, serialized.content, properties);
       outcomes.push(published.outcome);
@@ -302,8 +321,8 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
     let writeAccepted: boolean;
     try {
       writeAccepted = channel.publish(
-        OUTBOX_RABBITMQ_TOPOLOGY.exchange,
-        OUTBOX_RABBITMQ_TOPOLOGY.routingKey,
+        'settleflow.domain-events',
+        properties.type ?? '',
         content,
         properties,
         (error: unknown) => {

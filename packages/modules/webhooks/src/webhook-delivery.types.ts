@@ -47,7 +47,7 @@ export interface WebhookDeliveryContext {
   readonly claim: ClaimedWebhookDelivery;
   readonly currentSecret: StoredWebhookSecret;
   readonly endpointStatus: WebhookEndpointStatus;
-  readonly eventType: 'payment.created.v1';
+  readonly eventType: 'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1';
   readonly normalizedUrl: string;
   readonly previousSecret: StoredWebhookSecret | undefined;
   readonly schemaVersion: 1;

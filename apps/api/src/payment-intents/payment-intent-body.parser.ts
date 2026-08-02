@@ -1,11 +1,17 @@
 import { isLosslessNumber, parse, parseLosslessNumber } from 'lossless-json';
 import {
   InvalidPaymentIntentRequestError,
+  validateCaptureFields,
   validatePaymentIntentFields,
+  validateRefundFields,
+  type ValidatedCaptureFields,
   type ValidatedPaymentIntentFields,
+  type ValidatedRefundFields,
 } from '@settleflow/payments';
 
 const EXPECTED_FIELDS = ['amountMinor', 'captureMethod', 'currency', 'externalRef'] as const;
+const CAPTURE_FIELDS = ['amountMinor', 'currency'] as const;
+const REFUND_FIELDS = ['amountMinor', 'currency', 'externalRef'] as const;
 const JSON_NUMBER_PATTERN = /^(-?)(0|[1-9]\d*)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/u;
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 
@@ -122,7 +128,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function parsePaymentIntentBody(rawBody: Buffer): ValidatedPaymentIntentFields {
+function parseStrictBody(
+  rawBody: Buffer,
+  expectedFields: readonly string[],
+): Record<string, unknown> {
   const text = rawBody.toString('utf8');
   let parsed: unknown;
   try {
@@ -142,20 +151,46 @@ export function parsePaymentIntentBody(rawBody: Buffer): ValidatedPaymentIntentF
 
   const keys = Object.keys(parsed).sort();
   if (
-    keys.length !== EXPECTED_FIELDS.length ||
-    EXPECTED_FIELDS.some((field, index) => keys[index] !== field)
+    keys.length !== expectedFields.length ||
+    expectedFields.some((field, index) => keys[index] !== field)
   ) {
     throw new InvalidPaymentIntentRequestError();
   }
 
+  return parsed;
+}
+
+function readAmount(parsed: Record<string, unknown>): number {
   const amount = parsed['amountMinor'];
   if (!isLosslessNumber(amount)) {
     throw new InvalidPaymentIntentRequestError('amountMinor');
   }
 
+  return exactSafeIntegerFromToken(amount.toString());
+}
+
+export function parsePaymentIntentBody(rawBody: Buffer): ValidatedPaymentIntentFields {
+  const parsed = parseStrictBody(rawBody, EXPECTED_FIELDS);
   return validatePaymentIntentFields({
-    amountMinor: exactSafeIntegerFromToken(amount.toString()),
+    amountMinor: readAmount(parsed),
     captureMethod: parsed['captureMethod'],
+    currency: parsed['currency'],
+    externalRef: parsed['externalRef'],
+  });
+}
+
+export function parseCaptureBody(rawBody: Buffer): ValidatedCaptureFields {
+  const parsed = parseStrictBody(rawBody, CAPTURE_FIELDS);
+  return validateCaptureFields({
+    amountMinor: readAmount(parsed),
+    currency: parsed['currency'],
+  });
+}
+
+export function parseRefundBody(rawBody: Buffer): ValidatedRefundFields {
+  const parsed = parseStrictBody(rawBody, REFUND_FIELDS);
+  return validateRefundFields({
+    amountMinor: readAmount(parsed),
     currency: parsed['currency'],
     externalRef: parsed['externalRef'],
   });
@@ -163,6 +198,9 @@ export function parsePaymentIntentBody(rawBody: Buffer): ValidatedPaymentIntentF
 
 export const paymentIntentBodyParserInternals = {
   EXPECTED_FIELDS,
+  CAPTURE_FIELDS,
+  REFUND_FIELDS,
   assertNoDuplicateTopLevelKeys,
   toExponent,
+  parseStrictBody,
 };

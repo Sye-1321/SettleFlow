@@ -1,7 +1,12 @@
 import type { PrismaTransactionClient } from '@settleflow/infrastructure';
 
 export type WebhookEndpointStatus = 'active' | 'inactive';
-export type WebhookSubscription = 'payment.created.v1';
+export const WEBHOOK_SUBSCRIPTIONS = [
+  'payment.created.v1',
+  'payment.captured.v1',
+  'payment.refunded.v1',
+] as const;
+export type WebhookSubscription = (typeof WEBHOOK_SUBSCRIPTIONS)[number];
 
 export interface MerchantWebhookActor {
   readonly actorApiKeyId: string;
@@ -135,7 +140,11 @@ export interface WebhookEventProjectionRecord {
   readonly payloadBytes: Uint8Array;
   readonly payloadSha256: Uint8Array;
   readonly paymentId: string;
-  readonly paymentStatus: string;
+  readonly paymentStatus: string | undefined;
+  readonly refundId: string | undefined;
+  readonly ledgerTransactionId: string | undefined;
+  readonly availableOn: Date | undefined;
+  readonly cumulativeRefundedAmountMinor: bigint | undefined;
   readonly requestId: string;
   readonly schemaVersion: number;
 }
@@ -144,13 +153,17 @@ export interface CreateWebhookEventProjectionInput {
   readonly amountMinor: bigint;
   readonly currency: 'ETB' | 'USD';
   readonly eventId: string;
-  readonly eventType: 'payment.created.v1';
+  readonly eventType: WebhookSubscription;
   readonly merchantId: string;
   readonly occurredAt: Date;
   readonly payloadBytes: Uint8Array;
   readonly payloadSha256: Uint8Array;
   readonly paymentId: string;
-  readonly paymentStatus: 'CREATED';
+  readonly paymentStatus?: 'CREATED';
+  readonly refundId?: string;
+  readonly ledgerTransactionId?: string;
+  readonly availableOn?: Date;
+  readonly cumulativeRefundedAmountMinor?: bigint;
   readonly projectedAt: Date;
   readonly requestId: string;
   readonly schemaVersion: 1;
@@ -174,6 +187,7 @@ export interface WebhookProjectionRepository {
   findEligibleEndpointIds(
     transaction: PrismaTransactionClient,
     merchantId: string,
+    eventType: WebhookSubscription,
   ): Promise<readonly string[]>;
   findEvent(
     transaction: PrismaTransactionClient,

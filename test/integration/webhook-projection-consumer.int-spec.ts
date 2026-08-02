@@ -198,6 +198,51 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
     };
   }
 
+  function createLifecycleEvent(
+    merchantId: string,
+    eventId: string,
+    paymentId: string,
+    eventType: 'payment.captured.v1' | 'payment.refunded.v1',
+  ): ClaimedOutboxEvent {
+    const occurredAt = new Date(Date.now() - 5_000);
+    const common = {
+      eventId,
+      eventType,
+      occurredAt: occurredAt.toISOString(),
+      requestId: `req_${eventId.slice(4, 14)}`,
+      merchantId,
+      paymentId,
+    };
+    return {
+      aggregateId: paymentId,
+      aggregateType: 'payment_intent',
+      attemptCount: 1,
+      eventId,
+      eventType,
+      id: crypto.randomUUID(),
+      merchantId,
+      occurredAt,
+      payload:
+        eventType === 'payment.captured.v1'
+          ? {
+              ...common,
+              capturedAmountMinor: 75_000,
+              currency: 'ETB',
+              availableOn: occurredAt.toISOString(),
+              ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            }
+          : {
+              ...common,
+              refundId: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+              amountMinor: 25_000,
+              currency: 'ETB',
+              cumulativeRefundedAmountMinor: 25_000,
+              ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAW',
+            },
+      requestId: common.requestId,
+    };
+  }
+
   async function managementRequest(path: string, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
     headers.set(
@@ -403,6 +448,97 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
       'poison message in the DLQ',
     );
     expect(await owner().getClient().inboxMessage.count()).toBe(inboxCountBefore);
+  });
+
+  it('projects exact captured/refunded bytes only to endpoints subscribed at processing time', async () => {
+    const merchant = await owner()
+      .getClient()
+      .merchant.create({ data: { code: 'projection-lifecycle' } });
+    const endpoint = await owner()
+      .getClient()
+      .webhookEndpoint.create({
+        data: {
+          merchantId: merchant.id,
+          normalizedUrl: 'https://lifecycle.example.com/',
+          publicId: 'whe_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+          status: 'ACTIVE',
+          secrets: {
+            create: {
+              algorithm: 'aes-256-gcm',
+              authenticationTag: Uint8Array.from(Buffer.alloc(16, 1)),
+              ciphertext: Uint8Array.from(Buffer.alloc(49, 2)),
+              encryptionKeyId: 'projection-test-v1',
+              lifecycle: 'CURRENT',
+              nonce: Uint8Array.from(Buffer.alloc(12, 3)),
+              secretVersion: 1,
+            },
+          },
+          subscriptions: {
+            createMany: {
+              data: [{ eventType: 'payment.captured.v1' }, { eventType: 'payment.refunded.v1' }],
+            },
+          },
+        },
+      });
+    const capture = createLifecycleEvent(
+      merchant.id,
+      'evt_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      'pi_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      'payment.captured.v1',
+    );
+    const refund = createLifecycleEvent(
+      merchant.id,
+      'evt_01ARZ3NDEKTSV4RRFFQ69G5FB2',
+      'pi_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      'payment.refunded.v1',
+    );
+    const activeConsumer = createConsumer(createProjectionHandler());
+    await expect(activeConsumer.ensureReady()).resolves.toBe(true);
+    await expect(publisher?.publishBatch([capture, refund])).resolves.toEqual([
+      { eventId: capture.eventId, kind: 'confirmed' },
+      { eventId: refund.eventId, kind: 'confirmed' },
+    ]);
+
+    await waitFor(
+      async () =>
+        (await owner()
+          .getClient()
+          .webhookDelivery.count({ where: { endpointId: endpoint.id } })) === 2,
+      'captured and refunded projections',
+    );
+    const projections = await owner()
+      .getClient()
+      .webhookEventProjection.findMany({
+        orderBy: { eventType: 'asc' },
+        where: { merchantId: merchant.id },
+      });
+    expect(projections).toHaveLength(2);
+    expect(projections.map((projection) => projection.eventType)).toEqual([
+      'payment.captured.v1',
+      'payment.refunded.v1',
+    ]);
+    expect(
+      Buffer.from(projections[0]!.payloadBytes).equals(
+        Buffer.from(JSON.stringify(capture.payload)),
+      ),
+    ).toBe(true);
+    expect(
+      Buffer.from(projections[1]!.payloadBytes).equals(Buffer.from(JSON.stringify(refund.payload))),
+    ).toBe(true);
+    expect(projections[0]).toMatchObject({
+      amountMinor: 75_000n,
+      availableOn: capture.occurredAt,
+      ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      paymentStatus: null,
+      refundId: null,
+    });
+    expect(projections[1]).toMatchObject({
+      amountMinor: 25_000n,
+      cumulativeRefundedAmountMinor: 25_000n,
+      ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAW',
+      paymentStatus: null,
+      refundId: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    });
   });
 
   it('allows the runtime role to append but not mutate projection evidence', async () => {

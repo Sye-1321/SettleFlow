@@ -20,7 +20,9 @@ import {
 import {
   InvalidPaymentIntentRequestError,
   PaymentIntentService,
+  type CapturedPaymentIntentRepresentation,
   type PaymentIntentRepresentation,
+  type RefundRepresentation,
 } from '@settleflow/payments';
 import type { MerchantRequestIdentity } from '@settleflow/merchant-access';
 
@@ -34,8 +36,19 @@ import {
   MerchantIdentity,
   RequireMerchantScopes,
 } from '../merchant-access/merchant-access.decorators';
-import { parsePaymentIntentBody } from './payment-intent-body.parser';
-import { createPaymentIntentSchema, paymentIntentSchema } from './payment-intent.openapi';
+import {
+  parseCaptureBody,
+  parsePaymentIntentBody,
+  parseRefundBody,
+} from './payment-intent-body.parser';
+import {
+  capturePaymentIntentSchema,
+  capturedPaymentIntentSchema,
+  createPaymentIntentSchema,
+  paymentIntentSchema,
+  refundPaymentIntentSchema,
+  refundSchema,
+} from './payment-intent.openapi';
 
 interface PaymentIntentHttpRequest extends RequestWithRequestId {
   readonly rawBody?: Buffer;
@@ -151,6 +164,172 @@ export class PaymentIntentController {
       ...fields,
       idempotencyKey,
       merchantId: identity.merchantId,
+      requestId: getRequestId(request),
+    });
+  }
+
+  @Post(':id/capture')
+  @HttpCode(200)
+  @RequireMerchantScopes('payments:write')
+  @ApiExtension('x-required-scopes', ['payments:write'])
+  @ApiOperation({ summary: 'Directly capture the full Payment Intent idempotently' })
+  @ApiConsumes('application/json')
+  @ApiHeader({
+    description: 'Required merchant-scoped command key; 1-255 characters and never logged.',
+    name: 'Idempotency-Key',
+    required: true,
+  })
+  @ApiHeader(requestIdHeader)
+  @ApiParam({
+    example: 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    name: 'id',
+    schema: { pattern: '^pi_[0-7][0-9A-HJKMNP-TV-Z]{25}$', type: 'string' },
+  })
+  @ApiBody({ schema: capturePaymentIntentSchema })
+  @ApiOkResponse({
+    description: 'Captured Payment Intent or equivalent idempotent replay.',
+    headers: requestIdResponseHeaders,
+    schema: capturedPaymentIntentSchema,
+  })
+  @ApiBadRequestResponse({
+    content: problemContent,
+    description: 'Malformed or invalid request.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiUnauthorizedResponse({
+    content: problemContent,
+    description: 'Merchant API key invalid.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiForbiddenResponse({
+    content: problemContent,
+    description: 'Scope missing.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiNotFoundResponse({
+    content: problemContent,
+    description: 'Payment missing or foreign.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiUnprocessableEntityResponse({
+    content: problemContent,
+    description: 'Currency mismatch or simulated provider decline.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Lifecycle, amount, or idempotency conflict.',
+    headers: conflictResponseHeaders,
+    status: 409,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Dependency unavailable.',
+    headers: requestIdResponseHeaders,
+    status: 503,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Unexpected internal failure.',
+    headers: requestIdResponseHeaders,
+    status: 500,
+  })
+  public capture(
+    @Param('id') id: string,
+    @Req() request: RawBodyRequest<PaymentIntentHttpRequest>,
+    @MerchantIdentity() identity: MerchantRequestIdentity,
+  ): Promise<CapturedPaymentIntentRepresentation> {
+    requireJsonContentType(request);
+    const idempotencyKey = requireIdempotencyKey(request);
+    if (request.rawBody === undefined) throw new InvalidPaymentIntentRequestError();
+    return this.payments.capture({
+      ...parseCaptureBody(request.rawBody),
+      idempotencyKey,
+      merchantId: identity.merchantId,
+      paymentId: id,
+      requestId: getRequestId(request),
+    });
+  }
+
+  @Post(':id/refunds')
+  @HttpCode(201)
+  @RequireMerchantScopes('payments:write')
+  @ApiExtension('x-required-scopes', ['payments:write'])
+  @ApiOperation({ summary: 'Create a full or partial refund idempotently' })
+  @ApiConsumes('application/json')
+  @ApiHeader({
+    description: 'Required merchant-scoped command key; 1-255 characters and never logged.',
+    name: 'Idempotency-Key',
+    required: true,
+  })
+  @ApiHeader(requestIdHeader)
+  @ApiParam({
+    example: 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    name: 'id',
+    schema: { pattern: '^pi_[0-7][0-9A-HJKMNP-TV-Z]{25}$', type: 'string' },
+  })
+  @ApiBody({ schema: refundPaymentIntentSchema })
+  @ApiCreatedResponse({
+    description: 'Immutable refund result or equivalent idempotent replay.',
+    headers: requestIdResponseHeaders,
+    schema: refundSchema,
+  })
+  @ApiBadRequestResponse({
+    content: problemContent,
+    description: 'Malformed or invalid request.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiUnauthorizedResponse({
+    content: problemContent,
+    description: 'Merchant API key invalid.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiForbiddenResponse({
+    content: problemContent,
+    description: 'Scope missing.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiNotFoundResponse({
+    content: problemContent,
+    description: 'Payment missing or foreign.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiUnprocessableEntityResponse({
+    content: problemContent,
+    description: 'Currency mismatch or simulated provider decline.',
+    headers: requestIdResponseHeaders,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Lifecycle, amount, reference, or idempotency conflict.',
+    headers: conflictResponseHeaders,
+    status: 409,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Dependency unavailable.',
+    headers: requestIdResponseHeaders,
+    status: 503,
+  })
+  @ApiResponse({
+    content: problemContent,
+    description: 'Unexpected internal failure.',
+    headers: requestIdResponseHeaders,
+    status: 500,
+  })
+  public refund(
+    @Param('id') id: string,
+    @Req() request: RawBodyRequest<PaymentIntentHttpRequest>,
+    @MerchantIdentity() identity: MerchantRequestIdentity,
+  ): Promise<RefundRepresentation> {
+    requireJsonContentType(request);
+    const idempotencyKey = requireIdempotencyKey(request);
+    if (request.rawBody === undefined) throw new InvalidPaymentIntentRequestError();
+    return this.payments.refund({
+      ...parseRefundBody(request.rawBody),
+      idempotencyKey,
+      merchantId: identity.merchantId,
+      paymentId: id,
       requestId: getRequestId(request),
     });
   }

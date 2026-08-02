@@ -220,7 +220,12 @@ export class PrismaWebhookDeliveryRepository implements WebhookDeliveryRepositor
         where: { claimToken: claim.claimToken, id: claim.deliveryId },
       });
       if (record === null) return undefined;
-      if (record.event.eventType !== 'payment.created.v1' || record.event.schemaVersion !== 1) {
+      if (
+        (record.event.eventType !== 'payment.created.v1' &&
+          record.event.eventType !== 'payment.captured.v1' &&
+          record.event.eventType !== 'payment.refunded.v1') ||
+        record.event.schemaVersion !== 1
+      ) {
         throw new Error('Persisted webhook event contract is invalid');
       }
       const current = record.endpoint.secrets.find((secret) => secret.lifecycle === 'CURRENT');
@@ -231,7 +236,7 @@ export class PrismaWebhookDeliveryRepository implements WebhookDeliveryRepositor
         claim,
         currentSecret: toSecret(current),
         endpointStatus: record.endpoint.status === 'ACTIVE' ? 'active' : 'inactive',
-        eventType: 'payment.created.v1',
+        eventType: record.event.eventType,
         normalizedUrl: record.endpoint.normalizedUrl,
         previousSecret: previous === undefined ? undefined : toSecret(previous),
         schemaVersion: 1,

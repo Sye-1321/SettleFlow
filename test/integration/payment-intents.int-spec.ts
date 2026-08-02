@@ -7,6 +7,7 @@ import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { IdempotencyService, idempotencyServiceInternals } from '@settleflow/idempotency';
 import { PrismaDatabase } from '@settleflow/infrastructure';
+import { LedgerService } from '@settleflow/ledger';
 import { MerchantAccessService } from '@settleflow/merchant-access';
 import { paymentIntentServiceInternals } from '@settleflow/payments';
 
@@ -56,6 +57,7 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
   let baseUrl = '';
   let database: PrismaDatabase | undefined;
   let idempotency: IdempotencyService | undefined;
+  let ledger: LedgerService | undefined;
   let merchantAccess: MerchantAccessService | undefined;
   let postgres: StartedPostgreSqlContainer | undefined;
   let merchantSequence = 0;
@@ -72,11 +74,11 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
     process.env['API_HOST'] = '127.0.0.1';
     process.env['API_PORT'] = '3000';
     process.env['DATABASE_URL'] = testRuntimeDatabaseUrl(postgres);
-    process.env['DEPENDENCY_READINESS_TIMEOUT_MS'] = '250';
-    process.env['IDEMPOTENCY_LEASE_MS'] = '30000';
-    process.env['IDEMPOTENCY_LOCK_TIMEOUT_MS'] = '5000';
+    process.env['DEPENDENCY_READINESS_TIMEOUT_MS'] = '10000';
+    process.env['IDEMPOTENCY_LEASE_MS'] = '60000';
+    process.env['IDEMPOTENCY_LOCK_TIMEOUT_MS'] = '10000';
     process.env['IDEMPOTENCY_REPLAY_TTL_HOURS'] = '168';
-    process.env['IDEMPOTENCY_STATEMENT_TIMEOUT_MS'] = '10000';
+    process.env['IDEMPOTENCY_STATEMENT_TIMEOUT_MS'] = '30000';
     process.env['NODE_ENV'] = 'test';
     process.env['RABBITMQ_URL'] = 'amqp://unavailable:unavailable@127.0.0.1:1/unavailable';
     process.env['WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS'] = '[]';
@@ -100,6 +102,7 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
     baseUrl = await app.getUrl();
     database = app.get(PrismaDatabase);
     idempotency = app.get(IdempotencyService);
+    ledger = app.get(LedgerService);
     merchantAccess = app.get(MerchantAccessService);
   }, 120_000);
 
@@ -119,13 +122,16 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
     readonly merchantId: string;
     readonly plaintext: string;
   }> {
-    if (database === undefined || merchantAccess === undefined) {
+    if (database === undefined || ledger === undefined || merchantAccess === undefined) {
       throw new Error('Application services are unavailable');
     }
     merchantSequence += 1;
     const merchant = await database.getClient().merchant.create({
       data: { code: `payment-test-${merchantSequence}` },
     });
+    await database
+      .getClient()
+      .$transaction((transaction) => ledger!.provisionAccounts(transaction, merchant.id));
     const issued = await merchantAccess.issueApiKey({ merchantId: merchant.id, scopes });
     return { merchantId: merchant.id, plaintext: issued.plaintext };
   }
@@ -142,6 +148,44 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
       headers: {
         authorization: `Bearer ${plaintext}`,
         'content-type': contentType,
+        'idempotency-key': idempotencyKey,
+        'x-request-id': requestId,
+      },
+      method: 'POST',
+    });
+  }
+
+  function postCapture(
+    plaintext: string,
+    paymentId: string,
+    idempotencyKey: string,
+    rawBody: string,
+    requestId = 'req_capture_test',
+  ): Promise<Response> {
+    return fetch(`${baseUrl}/v1/payment-intents/${paymentId}/capture`, {
+      body: rawBody,
+      headers: {
+        authorization: `Bearer ${plaintext}`,
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey,
+        'x-request-id': requestId,
+      },
+      method: 'POST',
+    });
+  }
+
+  function postRefund(
+    plaintext: string,
+    paymentId: string,
+    idempotencyKey: string,
+    rawBody: string,
+    requestId = 'req_refund_test',
+  ): Promise<Response> {
+    return fetch(`${baseUrl}/v1/payment-intents/${paymentId}/refunds`, {
+      body: rawBody,
+      headers: {
+        authorization: `Bearer ${plaintext}`,
+        'content-type': 'application/json',
         'idempotency-key': idempotencyKey,
         'x-request-id': requestId,
       },
@@ -514,6 +558,16 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
     expect(document.paths['/v1/payment-intents/{id}']?.get?.['x-required-scopes']).toEqual([
       'payments:read',
     ]);
+    for (const route of ['/v1/payment-intents/{id}/capture', '/v1/payment-intents/{id}/refunds']) {
+      expect(document.paths[route]?.post?.security).toEqual([{ merchantApiKey: [] }]);
+      expect(document.paths[route]?.post?.['x-required-scopes']).toEqual(['payments:write']);
+      expect(document.paths[route]?.post?.parameters).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'Idempotency-Key' })]),
+      );
+      expect(document.paths[route]?.post?.responses?.['409']?.content).toHaveProperty(
+        'application/problem+json',
+      );
+    }
   });
 
   it('rolls back payment and outbox writes when completion fails before the snapshot', async () => {
@@ -586,6 +640,295 @@ describe('M1 Payment Intent API with real PostgreSQL', () => {
         where: { keyHash: digest('idempotency-rollback'), merchantId: access.merchantId },
       }),
     ).resolves.toMatchObject({ state: 'IN_PROGRESS' });
+  });
+
+  it('atomically captures, partially refunds, fully refunds, and replays each financial result', async () => {
+    if (database === undefined) {
+      throw new Error('Database is unavailable');
+    }
+    const access = await issueKey(['payments:read', 'payments:write']);
+    const createdResponse = await post(
+      access.plaintext,
+      'financial-create',
+      '{"externalRef":"financial-order","amountMinor":1000,"currency":"ETB","captureMethod":"manual"}',
+      'req_financial_create',
+    );
+    const created = (await createdResponse.json()) as { readonly id: string };
+
+    const captureResponse = await postCapture(
+      access.plaintext,
+      created.id,
+      'financial-capture',
+      '{"amountMinor":1000.0,"currency":"ETB"}',
+      'req_financial_capture',
+    );
+    expect(captureResponse.status).toBe(200);
+    const captured = (await captureResponse.json()) as Record<string, unknown>;
+    expect(captured).toMatchObject({
+      capturedAmountMinor: 1_000,
+      id: created.id,
+      paymentStatus: 'captured',
+      refundedAmountMinor: 0,
+      settlementStatus: 'NOT_ELIGIBLE',
+      version: 1,
+    });
+    expect(captured['ledgerTransactionId']).toMatch(/^ltx_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u);
+
+    const captureReplay = await postCapture(
+      access.plaintext,
+      created.id,
+      'financial-capture',
+      '{"amountMinor":1e3,"currency":"ETB"}',
+      'req_financial_capture_replay',
+    );
+    expect(captureReplay.status).toBe(200);
+    await expect(captureReplay.json()).resolves.toEqual(captured);
+
+    const partialResponse = await postRefund(
+      access.plaintext,
+      created.id,
+      'financial-refund-partial',
+      '{"externalRef":"financial-refund-1","amountMinor":400,"currency":"ETB"}',
+      'req_financial_refund_1',
+    );
+    expect(partialResponse.status).toBe(201);
+    const partial = (await partialResponse.json()) as Record<string, unknown>;
+    expect(partial).toMatchObject({
+      amountMinor: 400,
+      cumulativeRefundedAmountMinor: 400,
+      paymentId: created.id,
+      paymentStatus: 'partially_refunded',
+    });
+    expect(partial['id']).toMatch(/^rf_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u);
+    expect(partial['ledgerTransactionId']).toMatch(/^ltx_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u);
+
+    const partialReplay = await postRefund(
+      access.plaintext,
+      created.id,
+      'financial-refund-partial',
+      '{"externalRef":"financial-refund-1","amountMinor":400.0,"currency":"ETB"}',
+      'req_financial_refund_1_replay',
+    );
+    expect(partialReplay.status).toBe(201);
+    await expect(partialReplay.json()).resolves.toEqual(partial);
+
+    const fullResponse = await postRefund(
+      access.plaintext,
+      created.id,
+      'financial-refund-full',
+      '{"externalRef":"financial-refund-2","amountMinor":600,"currency":"ETB"}',
+      'req_financial_refund_2',
+    );
+    expect(fullResponse.status).toBe(201);
+    await expect(fullResponse.json()).resolves.toMatchObject({
+      amountMinor: 600,
+      cumulativeRefundedAmountMinor: 1_000,
+      paymentId: created.id,
+      paymentStatus: 'refunded',
+    });
+
+    const overRefund = await postRefund(
+      access.plaintext,
+      created.id,
+      'financial-refund-excess',
+      '{"externalRef":"financial-refund-3","amountMinor":1,"currency":"ETB"}',
+    );
+    expect(overRefund.status).toBe(409);
+    await expect(overRefund.json()).resolves.toMatchObject({
+      code: 'payment_intent_not_refundable',
+      status: 409,
+    });
+
+    const storedPayment = await database.getClient().paymentIntent.findFirstOrThrow({
+      where: { merchantId: access.merchantId, publicId: created.id },
+    });
+    expect(storedPayment).toMatchObject({
+      amountMinor: 1_000n,
+      capturedAmountMinor: 1_000n,
+      paymentStatus: 'REFUNDED',
+      refundedAmountMinor: 1_000n,
+      version: 3,
+    });
+    expect(storedPayment.capturedAt).not.toBeNull();
+    expect(storedPayment.availableAt).toEqual(storedPayment.capturedAt);
+
+    const ledgerTransactions = await database.getClient().ledgerTransaction.findMany({
+      include: { entries: { include: { account: true }, orderBy: { entrySeq: 'asc' } } },
+      orderBy: { occurredAt: 'asc' },
+      where: { merchantId: access.merchantId },
+    });
+    expect(ledgerTransactions).toHaveLength(3);
+    expect(ledgerTransactions.map((row) => row.businessType)).toEqual([
+      'CAPTURE',
+      'REFUND',
+      'REFUND',
+    ]);
+    for (const transaction of ledgerTransactions) {
+      expect(transaction.postedAt).not.toBeNull();
+      expect(transaction.entries).toHaveLength(2);
+      const debits = transaction.entries
+        .filter((entry) => entry.side === 'DEBIT')
+        .reduce((sum, entry) => sum + entry.amountMinor, 0n);
+      const credits = transaction.entries
+        .filter((entry) => entry.side === 'CREDIT')
+        .reduce((sum, entry) => sum + entry.amountMinor, 0n);
+      expect(debits).toBe(credits);
+    }
+
+    const outbox = await database.getClient().outboxEvent.findMany({
+      orderBy: { occurredAt: 'asc' },
+      where: { merchantId: access.merchantId },
+    });
+    expect(outbox.map((row) => row.eventType)).toEqual([
+      'payment.created.v1',
+      'payment.captured.v1',
+      'payment.refunded.v1',
+      'payment.refunded.v1',
+    ]);
+    expect(Object.keys(outbox[1]?.payload as object)).toHaveLength(10);
+    expect(Object.keys(outbox[2]?.payload as object)).toHaveLength(11);
+    expect(
+      await database.getClient().refund.count({ where: { merchantId: access.merchantId } }),
+    ).toBe(2);
+    expect(
+      await database.getClient().idempotencyKey.count({
+        where: { merchantId: access.merchantId, state: 'COMPLETED' },
+      }),
+    ).toBe(5);
+    expect(
+      await database.getClient().auditEvent.count({ where: { merchantId: access.merchantId } }),
+    ).toBe(0);
+    await expect(
+      database
+        .getClient()
+        .$executeRawUnsafe('UPDATE "refunds" SET "external_ref" = "external_ref"'),
+    ).rejects.toThrow(/permission denied/iu);
+    await expect(database.getClient().$executeRawUnsafe('DELETE FROM "refunds"')).rejects.toThrow(
+      /permission denied/iu,
+    );
+    await expect(
+      database.getClient().$executeRawUnsafe('TRUNCATE TABLE "refunds"'),
+    ).rejects.toThrow(/permission denied/iu);
+  });
+
+  it('serializes fifty distinct capture keys so only one financial effect commits', async () => {
+    if (database === undefined) {
+      throw new Error('Database is unavailable');
+    }
+    const access = await issueKey(['payments:write']);
+    const createdResponse = await post(
+      access.plaintext,
+      'capture-race-create',
+      '{"externalRef":"capture-race-order","amountMinor":750,"currency":"USD","captureMethod":"manual"}',
+    );
+    const created = (await createdResponse.json()) as { readonly id: string };
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, (_unused, index) =>
+        postCapture(
+          access.plaintext,
+          created.id,
+          `capture-race-${String(index)}`,
+          '{"amountMinor":750,"currency":"USD"}',
+          `req_capture_race_${String(index)}`,
+        ),
+      ),
+    );
+    expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
+    expect(responses.filter((response) => response.status === 409)).toHaveLength(49);
+    await Promise.all(responses.map((response) => response.arrayBuffer()));
+    expect(
+      await database.getClient().ledgerTransaction.count({
+        where: { businessType: 'CAPTURE', merchantId: access.merchantId },
+      }),
+    ).toBe(1);
+    expect(
+      await database.getClient().outboxEvent.count({
+        where: { eventType: 'payment.captured.v1', merchantId: access.merchantId },
+      }),
+    ).toBe(1);
+  }, 60_000);
+
+  it('serializes concurrent refunds and never permits the committed total to exceed capture', async () => {
+    if (database === undefined) {
+      throw new Error('Database is unavailable');
+    }
+    const access = await issueKey(['payments:write']);
+    const createdResponse = await post(
+      access.plaintext,
+      'refund-race-create',
+      '{"externalRef":"refund-race-order","amountMinor":1000,"currency":"ETB","captureMethod":"manual"}',
+    );
+    const created = (await createdResponse.json()) as { readonly id: string };
+    expect(
+      (
+        await postCapture(
+          access.plaintext,
+          created.id,
+          'refund-race-capture',
+          '{"amountMinor":1000,"currency":"ETB"}',
+        )
+      ).status,
+    ).toBe(200);
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, (_unused, index) =>
+        postRefund(
+          access.plaintext,
+          created.id,
+          `refund-race-${String(index)}`,
+          `{"externalRef":"refund-race-${String(index)}","amountMinor":200,"currency":"ETB"}`,
+          `req_refund_race_${String(index)}`,
+        ),
+      ),
+    );
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(5);
+    expect(responses.filter((response) => response.status === 409)).toHaveLength(5);
+    await Promise.all(responses.map((response) => response.arrayBuffer()));
+    const storedPayment = await database.getClient().paymentIntent.findFirstOrThrow({
+      where: { merchantId: access.merchantId, publicId: created.id },
+    });
+    expect(storedPayment.refundedAmountMinor).toBe(1_000n);
+    expect(storedPayment.paymentStatus).toBe('REFUNDED');
+    const refunds = await database.getClient().refund.findMany({
+      where: { merchantId: access.merchantId },
+    });
+    expect(refunds).toHaveLength(5);
+    expect(refunds.reduce((sum, refund) => sum + refund.amountMinor, 0n)).toBe(1_000n);
+    expect(
+      await database.getClient().ledgerTransaction.count({
+        where: { businessType: 'REFUND', merchantId: access.merchantId },
+      }),
+    ).toBe(5);
+  }, 60_000);
+
+  it('keeps capture and refund commands tenant-scoped and payments:write protected', async () => {
+    const owner = await issueKey(['payments:write']);
+    const foreign = await issueKey(['payments:write']);
+    const readOnly = await issueKey(['payments:read']);
+    const createdResponse = await post(
+      owner.plaintext,
+      'financial-tenant-create',
+      '{"externalRef":"financial-tenant-order","amountMinor":300,"currency":"USD","captureMethod":"manual"}',
+    );
+    const created = (await createdResponse.json()) as { readonly id: string };
+
+    const foreignCapture = await postCapture(
+      foreign.plaintext,
+      created.id,
+      'foreign-capture',
+      '{"amountMinor":300,"currency":"USD"}',
+    );
+    const forbiddenCapture = await postCapture(
+      readOnly.plaintext,
+      created.id,
+      'forbidden-capture',
+      '{"amountMinor":300,"currency":"USD"}',
+    );
+    expect(foreignCapture.status).toBe(404);
+    expect(forbiddenCapture.status).toBe(403);
+    await expect(foreignCapture.json()).resolves.toMatchObject({
+      code: 'payment_intent_not_found',
+    });
   });
 
   it('returns a non-leaking RFC problem when PostgreSQL becomes unavailable', async () => {

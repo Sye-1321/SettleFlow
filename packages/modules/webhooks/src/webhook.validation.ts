@@ -1,5 +1,9 @@
 import { InvalidWebhookEndpointRequestError, UnsupportedWebhookEventError } from './webhook.errors';
-import type { WebhookEndpointStatus, WebhookSubscription } from './webhook.types';
+import {
+  WEBHOOK_SUBSCRIPTIONS,
+  type WebhookEndpointStatus,
+  type WebhookSubscription,
+} from './webhook.types';
 
 const WEBHOOK_ID_PATTERN = /^whe_[0-9A-HJKMNP-TV-Z]{26}$/u;
 
@@ -30,10 +34,11 @@ export function parseSubscriptions(value: unknown): readonly WebhookSubscription
   if (new Set(value).size !== value.length) {
     throw new InvalidWebhookEndpointRequestError('subscriptions');
   }
-  if (value.some((item) => item !== 'payment.created.v1')) {
+  if (value.some((item) => !WEBHOOK_SUBSCRIPTIONS.includes(item as WebhookSubscription))) {
     throw new UnsupportedWebhookEventError();
   }
-  return ['payment.created.v1'];
+  const selected = new Set(value as WebhookSubscription[]);
+  return WEBHOOK_SUBSCRIPTIONS.filter((eventType) => selected.has(eventType));
 }
 
 export interface ParsedCreateWebhookEndpoint {
@@ -78,4 +83,9 @@ export function parsePatchWebhookEndpoint(value: unknown): ParsedPatchWebhookEnd
   };
 }
 
-export const webhookValidationInternals = { WEBHOOK_ID_PATTERN, assertExactKeys, isPlainRecord };
+export const webhookValidationInternals = {
+  SUPPORTED_SUBSCRIPTIONS: WEBHOOK_SUBSCRIPTIONS,
+  WEBHOOK_ID_PATTERN,
+  assertExactKeys,
+  isPlainRecord,
+};

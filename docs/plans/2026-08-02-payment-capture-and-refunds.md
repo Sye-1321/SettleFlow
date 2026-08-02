@@ -1,11 +1,11 @@
 # Implementation Plan: Payment Capture and Refund Processing
 
-- **Status:** Draft
+- **Status:** Completed
 - **Owner:** SettleFlow Project
 - **Created:** 2026-08-02
 - **Last updated:** 2026-08-02
 - **Related issue/PR:** To be decided
-- **Related ADRs:** [ADR-0003](../adr/0003-postgresql-prisma-and-financial-data-access.md), [ADR-0004](../adr/0004-rabbitmq-outbox-inbox-and-message-delivery.md), [ADR-0005](../adr/0005-local-development-and-test-environment.md), [ADR-0006](../adr/0006-payment-and-settlement-lifecycle-state-ownership.md), [ADR-0007](../adr/0007-idempotency-key-concurrency-and-response-snapshots.md), [ADR-0008](../adr/0008-api-version-path-and-compatibility.md), [ADR-0009](../adr/0009-public-payment-identifiers.md), [ADR-0010](../adr/0010-payment-currencies-and-amount-range.md), [ADR-0011](../adr/0011-payment-intent-external-reference-and-capture-method.md), [ADR-0012](../adr/0012-payment-created-outbox-timing.md), [ADR-0013](../adr/0013-problem-details-audit-and-retention-boundaries.md), [ADR-0016](../adr/0016-webhook-endpoint-api-ownership-and-subscriptions.md), [ADR-0018](../adr/0018-signed-webhook-delivery-contract.md), and [ADR-0019](../adr/0019-webhook-delivery-reliability-and-lifecycle.md)
+- **Related ADRs:** [ADR-0003](../adr/0003-postgresql-prisma-and-financial-data-access.md), [ADR-0004](../adr/0004-rabbitmq-outbox-inbox-and-message-delivery.md), [ADR-0005](../adr/0005-local-development-and-test-environment.md), [ADR-0006](../adr/0006-payment-and-settlement-lifecycle-state-ownership.md), [ADR-0007](../adr/0007-idempotency-key-concurrency-and-response-snapshots.md), [ADR-0008](../adr/0008-api-version-path-and-compatibility.md), [ADR-0009](../adr/0009-public-payment-identifiers.md), [ADR-0010](../adr/0010-payment-currencies-and-amount-range.md), [ADR-0011](../adr/0011-payment-intent-external-reference-and-capture-method.md), [ADR-0012](../adr/0012-payment-created-outbox-timing.md), [ADR-0013](../adr/0013-problem-details-audit-and-retention-boundaries.md), [ADR-0016](../adr/0016-webhook-endpoint-api-ownership-and-subscriptions.md), [ADR-0018](../adr/0018-signed-webhook-delivery-contract.md), [ADR-0019](../adr/0019-webhook-delivery-reliability-and-lifecycle.md), and [ADR-0020](../adr/0020-immutable-double-entry-ledger-foundation.md)
 
 ## Goal
 
@@ -18,14 +18,14 @@ The intended public surface is:
 
 The release evidence must prove exact integer-minor-unit handling, merchant isolation, allowed lifecycle transitions, no over-capture or over-refund, response-equivalent idempotent replay, immutable balanced postings, atomic outbox intent, and the mandatory same-key/distinct-key capture and concurrent-refund races against real PostgreSQL.
 
-This plan is intentionally **not implementation-ready yet**. FR-03, FR-04, FR-05, FR-06, and FR-07 authorize the capability, but the repository has no Ledger module. The financial invariants prohibit enabling either endpoint until a separately planned, accepted, implemented, and verified Ledger Foundation supplies the posting port, schema, constraints, deferred triggers, immutable runtime permissions, account policy, and public transaction identifiers described under [Required approval gates](#required-approval-gates).
+The plan became implementation-ready after the owner approved its recommended command, availability, deterministic-provider, event/topology, and Webhook-compatibility decisions and accepted ADR-0020. The Ledger Foundation was implemented and verified at commit `1e0f8af`; the current milestone is authorized to compose its transaction-aware posting port without exposing a Ledger API.
 
 ### Non-goals
 
 - No partial capture. The specification classifies partial capture as P2/document-only; the v1 command captures the full Payment Intent amount or fails without an effect.
 - No authorization, authorization expiry, void, automatic capture, additional capture methods, payment-method data, PAN/CVV, bank credentials, or real movement of funds.
 - No real card, bank, mobile-money, payout, or provider API integration. A future external provider cannot be placed behind the local stub without a new durable external-effect/recovery design.
-- No ledger/balance implementation in this plan. Ledger is a mandatory prerequisite owned by its own plan and ADR; capture/refund code must not emulate postings or ship without it.
+- No new Ledger foundation, balance projection, or Ledger read API. This slice composes the accepted Ledger posting port delivered at `1e0f8af`; capture/refund code does not emulate accounting records.
 - No settlement batching, eligibility processing, settlement adjustment implementation, reconciliation, fees, FX, tax, disputes, chargebacks, or frontend/dashboard work.
 - No new list/read refund endpoint, payment list/search endpoint, manual replay API, operator mutation, retention deletion, or destructive recovery path.
 - No synchronous RabbitMQ publish, Webhook delivery, Settlement write, or network call inside a financial transaction.
@@ -45,7 +45,7 @@ The apparent scope tension is resolved as follows:
 - P0 **full or partial refunds** means every refund command supplies a positive amount; an amount below the unrefunded captured value is partial, and an amount equal to the remaining value is full.
 - Refunds after a future settlement require a Settlements-owned adjustment. Because no settlement record can exist in the current repository, this slice may prove pre-settlement refunds only. The cross-milestone post-settlement contract must be accepted before Settlement and refund processing coexist.
 
-## Existing behavior
+## Historical baseline at plan creation
 
 Evidence inspected at clean commit `71d8f27`:
 
@@ -62,11 +62,11 @@ Evidence inspected at clean commit `71d8f27`:
 
 Inspection included the authoritative specification, [module boundaries](../architecture/module-boundaries.md), [financial invariants](../architecture/financial-invariants.md), all accepted ADRs, `prisma/schema.prisma`, all migrations, Payments/Idempotency/Eventing/Webhooks code, worker lifecycle, OpenAPI/API/event documentation, runbooks, integration tests, and prior plans.
 
-## Required approval gates
+## Approved implementation decisions
 
-Implementation must not start until these decisions are accepted. Material choices should be recorded in ADR-0020 onward using the repository template; exact grouping/numbering may be adjusted when the ADR milestone is authorized.
+The owner approved all five gates. ADR-0020 records the Ledger decisions; the remaining bounded public-command/provider/event choices are recorded by this approved living plan and the implementation authorization.
 
-### Gate 1: Ledger Foundation — blocking
+### Gate 1: Ledger Foundation — accepted and implemented
 
 **Recommended decision:** create a separate Ledger Foundation ADR and implementation plan before this plan is approved. It must define:
 
@@ -84,7 +84,7 @@ Implementation must not start until these decisions are accepted. Material choic
 
 **Rejected alternatives:** payment-only transitions, fake ledger rows owned by Payments, an asynchronous ledger consumer, a mutable balance column, or direct Payments writes to Ledger tables.
 
-### Gate 2: Public command/resource contract — owner approval required
+### Gate 2: Public command/resource contract — accepted
 
 The specification authorizes the routes and money semantics but not their complete bodies/status codes/refund representation. The recommended contract is:
 
@@ -101,7 +101,7 @@ The specification authorizes the routes and money semantics but not their comple
 
 Approval must also fix the exact RFC 9457 code/status matrix below and whether the capture response preserves `externalRef`/`captureMethod` fields already present in the Payment Intent representation.
 
-### Gate 3: Capture availability and post-settlement coordination — owner approval required
+### Gate 3: Capture availability and post-settlement coordination — accepted
 
 `payment.captured.v1` requires `availableOn`, but neither the specification nor an accepted ADR defines its type or calculation. The recommended reference policy is:
 
@@ -114,7 +114,7 @@ Before M3, a Settlement ADR must define how a captured event/read port establish
 
 **Alternative:** use a date plus merchant settlement timezone. That couples capture to the unresolved M3 cutoff/calendar policy and is not recommended without a Settlement decision.
 
-### Gate 4: Deterministic mock-provider boundary — owner approval required
+### Gate 4: Deterministic mock-provider boundary — accepted
 
 The specification says provider behavior is simulated but does not define capture/refund provider outcomes. The recommended v1 boundary is:
 
@@ -129,7 +129,7 @@ The decline problem code/status and any synthetic provider-reference format are 
 
 A real provider cannot reuse this call sequence. External capture/refund has an unknown-outcome/crash boundary and requires a new durable attempt/state/idempotency design before any network adapter is authorized.
 
-### Gate 5: Captured/refunded event and Webhook compatibility — owner approval required
+### Gate 5: Captured/refunded event and Webhook compatibility — accepted
 
 The specification fixes minimum payload semantics but not exact envelopes. Preserve the current flat event style and propose:
 
@@ -365,7 +365,7 @@ The planning milestone changes only this file. The following is the expected lat
 | `test/integration/outbox-relay.int-spec.ts` and Webhook consumer/delivery suites                   | Routing, confirmation, exact-byte, dedupe, projection, and no-historical-fanout proof    | Post-commit at-least-once evidence                                                   |
 | `test/integration/prisma-data-foundation.int-spec.ts`                                              | Constraint/trigger/runtime-role/empty-upgrade proof                                      | Database remains final enforcement boundary                                          |
 | `README.md`, `docs/api/payment-intents.md`, `docs/runbooks/README.md`, new payment/ledger runbooks | Exact commands, limitations, safe diagnosis, invariant incident response                 | No raw SQL repair guidance                                                           |
-| `package.json`/workspace package manifests                                                         | Add focused scripts/package edges only if required                                       | No new third-party dependency is expected; lockfile should remain unchanged          |
+| `package.json`/workspace package manifests                                                         | Add focused scripts and the required Payments-to-Ledger workspace edge                   | No new third-party dependency; lockfile changes are limited to the workspace edge    |
 
 No Compose, Docker image, secret environment variable, new deployable, frontend, or provider dependency is expected. Any such need is a plan deviation requiring review.
 
@@ -485,7 +485,7 @@ Migration rollback that drops/reforges financial evidence is prohibited after fi
 
 | Risk or assumption                                                  | Impact                                                    | Mitigation/validation                                                                             | Owner/deadline                                     |
 | ------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| Ledger is absent and excluded from this task                        | Any capture/refund implementation would violate FR-06     | Gate this plan on accepted/implemented Ledger Foundation and INV-01..06 proof                     | Project/Ledger owner / before plan approval        |
+| Ledger was absent when this plan was drafted                        | Any capture/refund implementation would violate FR-06     | Resolved by accepted ADR-0020 and the Ledger Foundation committed at `1e0f8af`                    | Resolved before implementation                     |
 | Partial capture wording is confused with partial refunds            | Unauthorized partial capture or incorrect state           | Explicit full-only capture; P2 remains deferred; contract/race tests                              | Payments owner / before API ADR acceptance         |
 | Capture/refund bodies and response codes are underspecified         | Permanent public/idempotency compatibility error          | Accept Gate 2 ADR with exact schemas/status/problem codes                                         | Project owner / before schema/API code             |
 | Refund public ID/external-reference contract is not accepted        | Irreversible resource/business-key design                 | Approve `rf_<ULID>` and exact reference policy before migration                                   | Project owner / before migration                   |
@@ -518,27 +518,41 @@ Migration rollback that drops/reforges financial evidence is prohibited after fi
 - [x] Governance, specification, architecture, invariants, ADRs, current schema/code/tests, event/Webhook flow, and prior plans inspected.
 - [x] Specification authorization and P0/P2 boundary recorded.
 - [x] Missing Ledger prerequisite and material contract decisions identified.
-- [ ] Gates 1-5 and required ADRs approved.
-- [ ] Ledger Foundation implemented and all INV-01 through INV-06 gates pass.
-- [ ] Capture/refund/Eventing/Webhook compatibility implementation and migrations completed.
-- [ ] Financial, concurrency, failure, security, permission, and regression tests pass.
-- [ ] Documentation/runbooks/OpenAPI/event schemas updated.
-- [ ] Commands/results/deviations recorded below.
+- [x] Gates 1-5 and required ADRs approved.
+- [x] Ledger Foundation implemented and all INV-01 through INV-06 gates pass.
+- [x] Capture/refund/Eventing/Webhook compatibility implementation and migrations completed.
+- [x] Financial, concurrency, failure, security, permission, and regression tests pass.
+- [x] Documentation/runbooks/OpenAPI/event schemas updated.
+- [x] Commands/results/deviations recorded below.
 
 ## Verification record
 
-| Command or review                                 | Result  | Date/evidence                                                                                                               |
-| ------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Baseline status and HEAD                          | Pass    | 2026-08-02: clean `## main...origin/main` at `71d8f27`                                                                      |
-| Authoritative document/repository inspection      | Pass    | 2026-08-02: specification, invariants, boundaries, ADRs, schema/migrations, packages, APIs, event/Webhook flow, tests/plans |
-| Specification authorization                       | Partial | FR-03..07 authorize capability; partial capture excluded; Ledger/contract/event decisions block implementation              |
-| Plan-specific Markdown formatting                 | Pass    | 2026-08-02: direct Prettier write/check passed for this plan only                                                           |
-| Local Markdown-link validation                    | Pass    | 2026-08-02: all 16 local Markdown links resolve                                                                             |
-| `git diff --check` and untracked whitespace check | Pass    | 2026-08-02: tracked diff check plus untracked trailing-whitespace/final-LF check passed                                     |
-| Implementation verification                       | Not run | Documentation-only planning milestone; no implementation authorized                                                         |
+| Command or review                            | Result | Date/evidence                                                                                                                                                                          |
+| -------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline status and HEAD                     | Pass   | 2026-08-02: clean `## main...origin/main` at `1e0f8af`                                                                                                                                 |
+| Authoritative document/repository inspection | Pass   | Specification, invariants, boundaries, accepted ADRs, schema/migrations, packages, API, event/Webhook flow, tests, and plans reviewed                                                  |
+| Specification authorization                  | Pass   | FR-03..07 authorize direct full capture and partial/full refund; partial capture and real providers remain excluded                                                                    |
+| Dependency installation                      | Pass   | `corepack pnpm@11.18.0 install --frozen-lockfile`; workspace already current, with no new third-party dependency                                                                       |
+| Local infrastructure                         | Pass   | PostgreSQL 18.4 and RabbitMQ 4.3.4 reported healthy through Compose                                                                                                                    |
+| Prisma checks                                | Pass   | Prisma 7.9.1 validation and generation passed; a disposable PostgreSQL database applied all eight migrations and passed the four-case data-foundation suite                            |
+| Formatting, lint, and type-check             | Pass   | `pnpm format:check`, `pnpm lint`, and `pnpm typecheck` passed                                                                                                                          |
+| Unit and contract tests                      | Pass   | 37 suites / 172 tests passed; focused Payments and event-contract suites also passed                                                                                                   |
+| Integration tests                            | Pass   | 9 suites / 60 tests passed against real PostgreSQL and RabbitMQ, including capture/refund races, Ledger/outbox atomicity, projection, delivery, permissions, readiness, and migrations |
+| Production build                             | Pass   | API and worker production builds passed with the repository-pinned pnpm 11.18.0 through a process-local Corepack shim                                                                  |
+| OpenAPI and JSON artifacts                   | Pass   | Generated OpenAPI drift check passed; OpenAPI and all three Payment lifecycle JSON Schemas parsed successfully                                                                         |
+| Documentation and repository hygiene         | Pass   | Markdown links, formatting, JSON/OpenAPI checks, and `git diff --check` passed; final status is recorded in the implementation report                                                  |
+
+### Implementation outcomes and deviations
+
+- The implementation adds no third-party package. The lockfile change records only the Payments-to-Ledger workspace dependency required for atomic postings.
+- Payment locking now obtains the database command timestamp after the tenant-scoped `FOR UPDATE` lock and clamps it against `updated_at`. This preserves monotonic lifecycle timestamps for queued concurrent commands.
+- The inbox database contract was generalized to exact consumer/event-type pairs for `payment.created.v1`, `payment.captured.v1`, and `payment.refunded.v1`; arbitrary combinations remain rejected.
+- Ordinary merchant capture/refund commands create no separate Operations audit row under ADR-0013. Immutable Payment/Refund rows, Ledger transactions/entries, idempotency snapshots, and outbox events are the durable audit evidence.
+- Existing created-event behavior and signed Webhook delivery semantics remain compatible. Eventing and Webhook projection were extended consumer-before-producer for the two new exact contracts.
+- Test fixture time margins and dependency startup bounds were made deterministic across the host and disposable containers; production timing behavior was not relaxed.
 
 ## Definition of done
 
-Planning is complete when this file is the only worktree change, all authoritative requirements/invariants and current constraints are traced, the Ledger blocker and every material approval are explicit, exact future files/order/tests/recovery are reviewable, Markdown/link/whitespace checks pass, and Git status is recorded without implementation, migration, dependency, commit, or push activity.
+The planning milestone was complete when all authoritative requirements/invariants and current constraints were traced, the Ledger blocker and material approvals were explicit, and the future files/order/tests/recovery were reviewable.
 
 Implementation is complete only after all five approval gates and the Ledger prerequisite are satisfied; full direct capture and full/partial refunds atomically commit payment/refund state, balanced immutable entries, one exact outbox event, and one replay snapshot; every tenant, validation, error, event/Webhook, permission, crash, and mandatory race gate passes with real dependencies; no partial capture, real provider, Settlement/reconciliation, frontend, replay, or unrelated work enters scope; and the plan records complete evidence and deviations.

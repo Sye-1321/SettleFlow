@@ -107,6 +107,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       'merchants',
       'outbox_events',
       'payment_intents',
+      'refunds',
       'webhook_deliveries',
       'webhook_delivery_attempts',
       'webhook_endpoint_secrets',
@@ -115,7 +116,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       'webhook_event_projections',
     ]);
     expect(appliedMigrations.exitCode).toBe(0);
-    expect(appliedMigrations.stdout.trim()).toBe('7');
+    expect(appliedMigrations.stdout.trim()).toBe('8');
   });
 
   it('supports an atomic M1 persistence set and enforces the approved database invariants', async () => {
@@ -418,7 +419,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       '--tuples-only',
       '--no-align',
       '--command',
-      "SELECT conname FROM pg_constraint WHERE conrelid IN ('payment_intents'::regclass, 'idempotency_keys'::regclass, 'outbox_events'::regclass) ORDER BY conname;",
+      "SELECT conname FROM pg_constraint WHERE conrelid IN ('payment_intents'::regclass, 'refunds'::regclass, 'idempotency_keys'::regclass, 'outbox_events'::regclass, 'inbox_messages'::regclass) ORDER BY conname;",
     ]);
     const indexes = await postgres.exec([
       'psql',
@@ -429,7 +430,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       '--tuples-only',
       '--no-align',
       '--command',
-      "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename IN ('payment_intents', 'idempotency_keys', 'outbox_events') ORDER BY indexname;",
+      "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename IN ('payment_intents', 'refunds', 'idempotency_keys', 'outbox_events') ORDER BY indexname;",
     ]);
 
     expect(constraints.exitCode).toBe(0);
@@ -438,6 +439,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
         'idempotency_keys_key_hash_length_check',
         'idempotency_keys_minimum_replay_window_check',
         'idempotency_keys_state_consistency_check',
+        'inbox_messages_consumer_event_match_check',
         'outbox_events_event_id_format_check',
         'outbox_events_lock_consistency_check',
         'outbox_events_payload_contract_check',
@@ -445,6 +447,9 @@ describe('Prisma data foundation with real PostgreSQL', () => {
         'payment_intents_currency_allowlist_check',
         'payment_intents_public_id_format_check',
         'payment_intents_status_projection_check',
+        'refunds_amount_minor_range_check',
+        'refunds_currency_allowlist_check',
+        'refunds_public_id_format_check',
       ]),
     );
     expect(indexes.exitCode).toBe(0);
@@ -457,6 +462,8 @@ describe('Prisma data foundation with real PostgreSQL', () => {
         'outbox_events_pending_available_at_idx',
         'payment_intents_merchant_id_external_ref_key',
         'payment_intents_public_id_key',
+        'refunds_merchant_id_external_ref_key',
+        'refunds_public_id_key',
       ]),
     );
   });

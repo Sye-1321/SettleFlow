@@ -7,13 +7,14 @@ import { PermanentMessageProcessingError } from './eventing.errors';
 import { calculateFullJitterBackoff } from './outbox-retry';
 import {
   PaymentCreatedMessageContractError,
-  validatePaymentCreatedMessage,
-  type ValidatedPaymentCreatedMessage,
+  validatePaymentEventMessage,
+  type ValidatedPaymentEventMessage,
 } from './payment-created-event.contract';
-import { assertOutboxRabbitMqTopology, OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import { PaymentLifecycleMessageContractError } from './payment-lifecycle-event.contract';
+import { assertOutboxRabbitMqTopology, PAYMENT_EVENT_ROUTES } from './rabbitmq-topology';
 
 export interface PaymentCreatedMessageHandler {
-  handle(message: ValidatedPaymentCreatedMessage): Promise<{
+  handle(message: ValidatedPaymentEventMessage): Promise<{
     readonly kind: 'duplicate' | 'processed';
     readonly value?: { readonly alreadyProjected: boolean; readonly deliveryCount: number };
   }>;
@@ -91,7 +92,7 @@ export class RabbitMqPaymentCreatedConsumer {
   private closed = false;
   private connection: ChannelModel | undefined;
   private connectionAttempt = 0;
-  private consumerTag: string | undefined;
+  private consumerTags: string[] = [];
   private readonly inFlight = new Set<Promise<void>>();
   private ready = false;
   private readyPromise: Promise<boolean> | undefined;
@@ -116,7 +117,7 @@ export class RabbitMqPaymentCreatedConsumer {
       this.ready &&
       this.connection !== undefined &&
       this.channel !== undefined &&
-      this.consumerTag !== undefined
+      this.consumerTags.length === Object.keys(PAYMENT_EVENT_ROUTES).length
     );
   }
 
@@ -161,13 +162,15 @@ export class RabbitMqPaymentCreatedConsumer {
     this.beginShutdown();
     this.closed = true;
     const channel = this.channel;
-    const consumerTag = this.consumerTag;
-    this.consumerTag = undefined;
-    if (channel !== undefined && consumerTag !== undefined) {
-      try {
-        await channel.cancel(consumerTag);
-      } catch {
-        // Closing the channel below also stops delivery and requeues unacked messages.
+    const consumerTags = this.consumerTags;
+    this.consumerTags = [];
+    if (channel !== undefined) {
+      for (const consumerTag of consumerTags) {
+        try {
+          await channel.cancel(consumerTag);
+        } catch {
+          // Closing the channel below also stops delivery and requeues unacked messages.
+        }
       }
     }
 
@@ -217,7 +220,7 @@ export class RabbitMqPaymentCreatedConsumer {
       if (this.connection === connection) {
         this.connection = undefined;
         this.channel = undefined;
-        this.consumerTag = undefined;
+        this.consumerTags = [];
         this.ready = false;
         this.options.signal?.({
           code: 'connection_closed',
@@ -235,7 +238,7 @@ export class RabbitMqPaymentCreatedConsumer {
     channel.on('close', () => {
       if (this.channel === channel) {
         this.channel = undefined;
-        this.consumerTag = undefined;
+        this.consumerTags = [];
         this.ready = false;
         this.options.signal?.({
           code: 'channel_closed',
@@ -247,33 +250,38 @@ export class RabbitMqPaymentCreatedConsumer {
 
     await withTimeout(assertOutboxRabbitMqTopology(channel), this.options.connectionTimeoutMs);
     await channel.prefetch(this.options.prefetch);
-    const reply = await channel.consume(
-      OUTBOX_RABBITMQ_TOPOLOGY.queue,
-      (message) => {
-        if (message === null) {
-          void this.invalidateChannel(channel, 'consumer_cancelled');
-          return;
-        }
-        const operation = this.processMessage(channel, message);
-        this.inFlight.add(operation);
-        void operation.finally(() => {
-          this.inFlight.delete(operation);
-        });
-      },
-      { noAck: false },
-    );
-    this.consumerTag = reply.consumerTag;
+    for (const route of Object.values(PAYMENT_EVENT_ROUTES)) {
+      const reply = await channel.consume(
+        route.queue,
+        (message) => {
+          if (message === null) {
+            void this.invalidateChannel(channel, 'consumer_cancelled');
+            return;
+          }
+          const operation = this.processMessage(channel, message);
+          this.inFlight.add(operation);
+          void operation.finally(() => {
+            this.inFlight.delete(operation);
+          });
+        },
+        { noAck: false },
+      );
+      this.consumerTags.push(reply.consumerTag);
+    }
     this.ready = true;
     this.options.signal?.({ event: 'webhook.projection.consumer.ready' });
   }
 
   private async processMessage(channel: Channel, raw: ConsumeMessage): Promise<void> {
     const startedAt = performance.now();
-    let message: ValidatedPaymentCreatedMessage;
+    let message: ValidatedPaymentEventMessage;
     try {
-      message = validatePaymentCreatedMessage(raw, this.options.bodyLimitBytes);
+      message = validatePaymentEventMessage(raw, this.options.bodyLimitBytes);
     } catch (error: unknown) {
-      if (error instanceof PaymentCreatedMessageContractError) {
+      if (
+        error instanceof PaymentCreatedMessageContractError ||
+        error instanceof PaymentLifecycleMessageContractError
+      ) {
         this.rejectIfOwned(channel, raw, error.code);
         return;
       }
@@ -328,7 +336,7 @@ export class RabbitMqPaymentCreatedConsumer {
     channel: Channel,
     raw: ConsumeMessage,
     code: string,
-    message?: ValidatedPaymentCreatedMessage,
+    message?: ValidatedPaymentEventMessage,
   ): void {
     if (this.channel !== channel) {
       return;
@@ -396,7 +404,7 @@ export class RabbitMqPaymentCreatedConsumer {
     const connection = this.connection;
     this.channel = undefined;
     this.connection = undefined;
-    this.consumerTag = undefined;
+    this.consumerTags = [];
     await closeSafely(channel);
     await closeSafely(connection);
   }

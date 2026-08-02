@@ -103,7 +103,7 @@ export class WebhookEndpointService {
             actorApiKeyId: command.actorApiKeyId,
             details: {
               status: 'active',
-              subscriptions: ['payment.created.v1'],
+              subscriptions: command.subscriptions,
               version: 0,
             },
             merchantId: command.merchantId,
@@ -200,8 +200,8 @@ export class WebhookEndpointService {
           action: 'webhook_endpoint.subscriptions_changed',
           actorApiKeyId: command.actorApiKeyId,
           details: {
-            from: current.subscriptions as readonly ['payment.created.v1'],
-            to: desiredSubscriptions as readonly ['payment.created.v1'],
+            from: current.subscriptions,
+            to: desiredSubscriptions,
             version,
           },
           merchantId: command.merchantId,

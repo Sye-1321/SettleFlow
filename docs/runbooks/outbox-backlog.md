@@ -2,7 +2,7 @@
 
 ## Purpose and trigger
 
-Use this runbook when the worker is not ready, `outbox.relay.dependency_unavailable`, `outbox.topology.failed`, returned/timeout signals, or an increasing unpublished backlog indicates that `payment.created.v1` delivery is delayed. The specification release target is publish-lag p95 below 10 seconds while RabbitMQ is healthy; the production alert threshold and severity remain **To be decided** by the Operations owner.
+Use this runbook when the worker is not ready, `outbox.relay.dependency_unavailable`, `outbox.topology.failed`, returned/timeout signals, or an increasing unpublished backlog indicates that `payment.created.v1`, `payment.captured.v1`, or `payment.refunded.v1` delivery is delayed. The specification release target is publish-lag p95 below 10 seconds while RabbitMQ is healthy; the production alert threshold and severity remain **To be decided** by the Operations owner.
 
 Required role: read-only database and RabbitMQ diagnostic access. Any deployment restart, credential change, topology migration, or future manual replay requires the environment's authorized operator role and incident change record; those environment-specific identities are **To be decided**.
 

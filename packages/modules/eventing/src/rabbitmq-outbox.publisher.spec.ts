@@ -3,7 +3,7 @@ import type { ChannelModel, ConfirmChannel, Options, Replies } from 'amqplib';
 
 import type { ClaimedOutboxEvent } from './outbox-relay.types';
 import { RabbitMqOutboxPublisher, type RabbitMqConnector } from './rabbitmq-outbox.publisher';
-import { OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import { OUTBOX_RABBITMQ_TOPOLOGY, PAYMENT_EVENT_ROUTES } from './rabbitmq-topology';
 
 const EVENT: ClaimedOutboxEvent = {
   aggregateId: 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -137,6 +137,18 @@ describe('RabbitMqOutboxPublisher', () => {
       durable: true,
       exclusive: false,
     });
+    for (const route of Object.values(PAYMENT_EVENT_ROUTES)) {
+      expect(broker.assertQueue).toHaveBeenCalledWith(route.queue, {
+        arguments: {
+          'x-dead-letter-exchange': route.deadLetterExchange,
+          'x-dead-letter-routing-key': route.deadLetterRoutingKey,
+          'x-queue-type': 'quorum',
+        },
+        autoDelete: false,
+        durable: true,
+        exclusive: false,
+      });
+    }
 
     await expect(publisher.publishBatch([EVENT])).resolves.toEqual([
       { eventId: EVENT.eventId, kind: 'confirmed' },

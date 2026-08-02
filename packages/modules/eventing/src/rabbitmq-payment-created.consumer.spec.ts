@@ -7,7 +7,7 @@ import {
   type PaymentCreatedMessageHandler,
   type RabbitMqConsumerConnector,
 } from './rabbitmq-payment-created.consumer';
-import { OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import { OUTBOX_RABBITMQ_TOPOLOGY, PAYMENT_EVENT_ROUTES } from './rabbitmq-topology';
 
 const EVENT_ID = 'evt_01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const PAYMENT_ID = 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -150,11 +150,12 @@ describe('RabbitMqPaymentCreatedConsumer', () => {
     await expect(consumer.ensureReady()).resolves.toBe(true);
     expect(consumer.isReady()).toBe(true);
     expect(broker.prefetch).toHaveBeenCalledWith(2);
-    expect(broker.consume).toHaveBeenCalledWith(
-      OUTBOX_RABBITMQ_TOPOLOGY.queue,
-      expect.any(Function),
-      { noAck: false },
-    );
+    expect(broker.consume).toHaveBeenCalledTimes(3);
+    for (const route of Object.values(PAYMENT_EVENT_ROUTES)) {
+      expect(broker.consume).toHaveBeenCalledWith(route.queue, expect.any(Function), {
+        noAck: false,
+      });
+    }
 
     broker.deliver(createMessage());
     await new Promise((resolve) => setImmediate(resolve));

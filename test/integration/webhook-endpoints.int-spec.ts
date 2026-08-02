@@ -49,7 +49,9 @@ interface EndpointResponse {
   readonly id: string;
   readonly secret?: string;
   readonly status: 'active' | 'inactive';
-  readonly subscriptions: readonly ['payment.created.v1'];
+  readonly subscriptions: readonly (
+    'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+  )[];
   readonly url: string;
   readonly version: number;
 }
@@ -137,10 +139,11 @@ describe('Webhook Endpoint Foundation with real PostgreSQL', () => {
     access: Access,
     path: string,
     requestId = `req_create_${String(sequence)}`,
+    subscriptions: EndpointResponse['subscriptions'] = ['payment.created.v1'],
   ): Promise<Response> {
     return fetch(`${baseUrl}/v1/webhook-endpoints`, {
       body: JSON.stringify({
-        subscriptions: ['payment.created.v1'],
+        subscriptions,
         url: `http://127.0.0.1:8080/${path}`,
       }),
       headers: {
@@ -157,14 +160,18 @@ describe('Webhook Endpoint Foundation with real PostgreSQL', () => {
       throw new Error('Database is unavailable');
     }
     const access = await issueKey(['webhooks:manage', 'webhooks:read']);
-    const response = await createEndpoint(access, 'create-once', 'req_webhook_create');
+    const response = await createEndpoint(access, 'create-once', 'req_webhook_create', [
+      'payment.refunded.v1',
+      'payment.created.v1',
+      'payment.captured.v1',
+    ]);
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('etag')).toMatch(/^"whe_[0-9A-HJKMNP-TV-Z]{26}\.v0"$/u);
     const created = (await response.json()) as EndpointResponse;
     expect(created).toMatchObject({
       status: 'active',
-      subscriptions: ['payment.created.v1'],
+      subscriptions: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
       url: 'http://127.0.0.1:8080/create-once',
       version: 0,
     });
@@ -175,7 +182,11 @@ describe('Webhook Endpoint Foundation with real PostgreSQL', () => {
       include: { secrets: true, subscriptions: true },
       where: { merchantId: access.merchantId, publicId: created.id },
     });
-    expect(endpoint.subscriptions.map((row) => row.eventType)).toEqual(['payment.created.v1']);
+    expect(endpoint.subscriptions.map((row) => row.eventType).sort()).toEqual([
+      'payment.captured.v1',
+      'payment.created.v1',
+      'payment.refunded.v1',
+    ]);
     expect(endpoint.secrets).toHaveLength(1);
     expect(endpoint.secrets[0]).toMatchObject({
       algorithm: 'aes-256-gcm',

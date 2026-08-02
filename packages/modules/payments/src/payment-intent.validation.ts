@@ -3,9 +3,15 @@ import {
   UnsupportedCaptureMethodError,
   UnsupportedPaymentCurrencyError,
 } from './payments.errors';
-import type { PaymentCurrency, ValidatedPaymentIntentFields } from './payments.types';
+import type {
+  PaymentCurrency,
+  ValidatedCaptureFields,
+  ValidatedPaymentIntentFields,
+  ValidatedRefundFields,
+} from './payments.types';
 
 const PAYMENT_ID_PATTERN = /^pi_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
+const REFUND_ID_PATTERN = /^rf_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/u;
 const UNICODE_CONTROL_PATTERN = /\p{Cc}/u;
 const LONE_SURROGATE_PATTERN = /[\uD800-\uDFFF]/u;
@@ -76,6 +82,28 @@ export function validatePaymentIntentFields(input: {
   };
 }
 
+export function validateCaptureFields(input: {
+  readonly amountMinor: unknown;
+  readonly currency: unknown;
+}): ValidatedCaptureFields {
+  return {
+    amountMinor: validateAmountMinor(input.amountMinor),
+    currency: validatePaymentCurrency(input.currency),
+  };
+}
+
+export function validateRefundFields(input: {
+  readonly amountMinor: unknown;
+  readonly currency: unknown;
+  readonly externalRef: unknown;
+}): ValidatedRefundFields {
+  return {
+    amountMinor: validateAmountMinor(input.amountMinor),
+    currency: validatePaymentCurrency(input.currency),
+    externalRef: validateExternalReference(input.externalRef),
+  };
+}
+
 export function isValidPaymentIntentId(value: string): boolean {
   return PAYMENT_ID_PATTERN.test(value);
 }
@@ -84,6 +112,10 @@ export function assertValidPaymentIntentId(value: string): void {
   if (!isValidPaymentIntentId(value)) {
     throw new InvalidPaymentIntentRequestError('id');
   }
+}
+
+export function isValidRefundId(value: string): boolean {
+  return REFUND_ID_PATTERN.test(value);
 }
 
 export const paymentIntentValidationInternals = {

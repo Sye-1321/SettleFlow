@@ -2,7 +2,7 @@
 
 ## Purpose and trigger
 
-Use this runbook when worker readiness reports the RabbitMQ projection consumer down, `webhook.projection.consumer.unavailable` or reconnect signals persist, the `settleflow.webhook-projection.payment-created.v1` queue grows, pending projections stop advancing, or the `.dlq` count/age rises.
+Use this runbook when worker readiness reports the RabbitMQ projection consumer down, `webhook.projection.consumer.unavailable` or reconnect signals persist, any `settleflow.webhook-projection.payment-{created,captured,refunded}.v1` queue grows, pending projections stop advancing, or a matching `.dlq` count/age rises.
 
 Severity, paging thresholds, alert destination, incident system, and authorized production operator identities are **To be decided**. Required access is read-only PostgreSQL/RabbitMQ diagnostics; deployment, credential, topology, or future replay actions require the environment's authorized operator and change record.
 
@@ -32,7 +32,7 @@ docker compose exec rabbitmq rabbitmqctl -p settleflow list_queues name type sta
 Use the approved read-only query interface outside local development. These local queries expose identifiers and bounded timing/count data, not payload bytes or endpoint destinations:
 
 ```shell
-docker compose exec postgres psql --username settleflow --dbname settleflow --command "SELECT count(*) AS completed_count, min(completed_at) AS oldest_completion FROM inbox_messages WHERE consumer_name = 'webhook-projection.payment-created.v1';"
+docker compose exec postgres psql --username settleflow --dbname settleflow --command "SELECT consumer_name, count(*) AS completed_count, min(completed_at) AS oldest_completion FROM inbox_messages WHERE consumer_name IN ('webhook-projection.payment-created.v1', 'webhook-projection.payment-captured.v1', 'webhook-projection.payment-refunded.v1') GROUP BY consumer_name ORDER BY consumer_name;"
 docker compose exec postgres psql --username settleflow --dbname settleflow --command "SELECT count(*) AS projected_count, count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM webhook_deliveries d WHERE d.event_id = p.event_id)) AS zero_delivery_events, min(projected_at) AS oldest_projection FROM webhook_event_projections p;"
 docker compose exec postgres psql --username settleflow --dbname settleflow --command "SELECT count(*) AS pending_count, min(next_attempt_at) AS oldest_next_attempt_at FROM webhook_deliveries WHERE status = 'pending';"
 docker compose exec postgres psql --username settleflow --dbname settleflow --command "SELECT p.event_id, p.payment_id, p.request_id, p.projected_at, d.public_id AS delivery_id, d.created_at FROM webhook_event_projections p LEFT JOIN webhook_deliveries d ON d.event_id = p.event_id AND d.merchant_id = p.merchant_id WHERE p.event_id = 'evt_REPLACE_WITH_APPROVED_IDENTIFIER' ORDER BY d.id;"

@@ -13,8 +13,11 @@ export const webhookEndpointSchema = {
     },
     status: { enum: ['active', 'inactive'], type: 'string' },
     subscriptions: {
-      items: { enum: ['payment.created.v1'], type: 'string' },
-      maxItems: 1,
+      items: {
+        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        type: 'string',
+      },
+      maxItems: 3,
       minItems: 1,
       type: 'array',
       uniqueItems: true,
@@ -32,8 +35,11 @@ export const createWebhookEndpointSchema = {
   properties: {
     url: { maxLength: 2048, minLength: 1, type: 'string' },
     subscriptions: {
-      items: { enum: ['payment.created.v1'], type: 'string' },
-      maxItems: 1,
+      items: {
+        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        type: 'string',
+      },
+      maxItems: 3,
       minItems: 1,
       type: 'array',
       uniqueItems: true,
@@ -64,8 +70,11 @@ export const patchWebhookEndpointSchema = {
   properties: {
     status: { enum: ['active', 'inactive'], type: 'string' },
     subscriptions: {
-      items: { enum: ['payment.created.v1'], type: 'string' },
-      maxItems: 1,
+      items: {
+        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        type: 'string',
+      },
+      maxItems: 3,
       minItems: 1,
       type: 'array',
       uniqueItems: true,

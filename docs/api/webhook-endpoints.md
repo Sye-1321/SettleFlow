@@ -18,12 +18,12 @@ The machine-readable contract is [openapi.json](openapi.json).
 
 ## Create and one-time secret disclosure
 
-Create accepts only a URL and the nonempty subscription set. `payment.created.v1` is the only supported event in this milestone.
+Create accepts only a URL and a nonempty subscription set. The supported events are `payment.created.v1`, `payment.captured.v1`, and `payment.refunded.v1`. Subscription changes affect only events projected after the change; they never cause historical fanout.
 
 ```json
 {
   "url": "https://merchant.example/webhooks/settleflow",
-  "subscriptions": ["payment.created.v1"]
+  "subscriptions": ["payment.created.v1", "payment.captured.v1", "payment.refunded.v1"]
 }
 ```
 
@@ -46,7 +46,7 @@ PATCH accepts `status`, `subscriptions`, or both and requires exactly one strong
 ```json
 {
   "status": "inactive",
-  "subscriptions": ["payment.created.v1"]
+  "subscriptions": ["payment.captured.v1", "payment.refunded.v1"]
 }
 ```
 

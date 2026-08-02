@@ -20,6 +20,7 @@ describe('webhook delivery signatures', () => {
       current,
       deliveryId,
       eventId,
+      eventType: 'payment.created.v1',
       previous,
       timestamp,
     });
@@ -39,7 +40,14 @@ describe('webhook delivery signatures', () => {
   });
 
   it('emits current first and omits previous when it is not selected', () => {
-    const headers = buildWebhookRequestHeaders({ body, current, deliveryId, eventId, timestamp });
+    const headers = buildWebhookRequestHeaders({
+      body,
+      current,
+      deliveryId,
+      eventId,
+      eventType: 'payment.created.v1',
+      timestamp,
+    });
     expect(headers['SettleFlow-Signature']).toBe('v1,I2MICsDTowv6jd1lrOABxV_qUccUSCAtF5LT7_lmBus');
   });
 
@@ -49,6 +57,7 @@ describe('webhook delivery signatures', () => {
       current,
       deliveryId,
       eventId,
+      eventType: 'payment.created.v1',
       timestamp,
     })['SettleFlow-Signature']!;
     expect(

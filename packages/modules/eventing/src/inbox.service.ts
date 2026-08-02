@@ -11,10 +11,13 @@ import type {
   InboxServiceOptions,
 } from './inbox.types';
 import { calculateFullJitterBackoff } from './outbox-retry';
-import type { ValidatedPaymentCreatedMessage } from './payment-created-event.contract';
+import type { ValidatedPaymentEventMessage } from './payment-created-event.contract';
 
 const RETRYABLE_TRANSACTION_CODES = new Set(['40001', '40P01', 'P2034']);
-const CONSUMER_NAME = 'webhook-projection.payment-created.v1';
+
+function consumerName(message: ValidatedPaymentEventMessage): string {
+  return `webhook-projection.${message.event.eventType.replace('payment.', 'payment-')}`;
+}
 
 function defaultSleep(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
@@ -40,15 +43,16 @@ export class InboxService {
   }
 
   public async process<T>(
-    message: ValidatedPaymentCreatedMessage,
+    message: ValidatedPaymentEventMessage,
     effect: InboxEffect<T>,
   ): Promise<InboxProcessingResult<T>> {
     for (let attempt = 1; attempt <= this.options.retryAttempts; attempt += 1) {
       try {
         return await this.repository.withSerializableTransaction(async (context) => {
+          const selectedConsumerName = consumerName(message);
           const reservation = await this.repository.reserve(context.transaction, {
             completedAt: context.processedAt,
-            consumerName: CONSUMER_NAME,
+            consumerName: selectedConsumerName,
             correlationId: message.event.requestId,
             eventType: message.event.eventType,
             messageId: message.event.eventId,
@@ -59,7 +63,7 @@ export class InboxService {
           if (reservation.kind === 'existing') {
             const existing = reservation.record;
             if (
-              existing.consumerName !== CONSUMER_NAME ||
+              existing.consumerName !== selectedConsumerName ||
               existing.messageId !== message.event.eventId ||
               existing.eventType !== message.event.eventType ||
               existing.schemaVersion !== message.schemaVersion ||
@@ -94,7 +98,7 @@ export class InboxService {
 }
 
 export const inboxServiceInternals = {
-  CONSUMER_NAME,
   RETRYABLE_TRANSACTION_CODES,
   bytesEqual,
+  consumerName,
 };

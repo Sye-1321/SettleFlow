@@ -20,12 +20,14 @@ describe('DependencyConnections with real services', () => {
         .withDatabase('settleflow_test')
         .withUsername('settleflow_test')
         .withPassword('settleflow_test_only')
+        .withStartupTimeout(120_000)
         .start(),
       new RabbitMQContainer(RABBITMQ_IMAGE)
         .withEnvironment({
           RABBITMQ_DEFAULT_PASS: RABBITMQ_PASSWORD,
           RABBITMQ_DEFAULT_USER: RABBITMQ_USER,
         })
+        .withStartupTimeout(120_000)
         .start(),
     ]);
   }, 120_000);

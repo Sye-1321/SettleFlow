@@ -9,7 +9,9 @@ export type WebhookLifecycleAuditAction =
 export type WebhookLifecycleAuditDetails =
   | {
       readonly status: 'active';
-      readonly subscriptions: readonly ['payment.created.v1'];
+      readonly subscriptions: readonly (
+        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+      )[];
       readonly version: 0;
     }
   | {
@@ -22,8 +24,12 @@ export type WebhookLifecycleAuditDetails =
       readonly version: number;
     }
   | {
-      readonly from: readonly ['payment.created.v1'];
-      readonly to: readonly ['payment.created.v1'];
+      readonly from: readonly (
+        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+      )[];
+      readonly to: readonly (
+        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+      )[];
       readonly version: number;
     };
 

@@ -21,10 +21,18 @@ import {
   isTransientTransactionError,
 } from '@settleflow/infrastructure';
 import {
+  CaptureAmountMismatchError,
   ExternalReferenceConflictError,
   IdentifierGenerationExhaustedError,
   InvalidPaymentIntentRequestError,
+  PaymentCurrencyMismatchError,
+  PaymentIntentNotCapturableError,
   PaymentIntentNotFoundError,
+  PaymentIntentNotRefundableError,
+  PaymentProviderDeclinedError,
+  PaymentProviderUnavailableError,
+  RefundAmountExceedsAvailableError,
+  RefundExternalReferenceConflictError,
   UnsupportedCaptureMethodError,
   UnsupportedPaymentCurrencyError,
 } from '@settleflow/payments';
@@ -174,6 +182,62 @@ function descriptor(error: unknown): ProblemDescriptor {
       title: 'External reference conflict',
     };
   }
+  if (error instanceof PaymentCurrencyMismatchError) {
+    return {
+      code: 'currency_mismatch',
+      detail: 'The command currency does not match the payment currency.',
+      status: HttpStatus.UNPROCESSABLE_ENTITY,
+      title: 'Currency mismatch',
+    };
+  }
+  if (error instanceof CaptureAmountMismatchError) {
+    return {
+      code: 'capture_amount_mismatch',
+      detail: 'The capture amount must equal the full payment amount.',
+      status: HttpStatus.CONFLICT,
+      title: 'Capture amount mismatch',
+    };
+  }
+  if (error instanceof PaymentIntentNotCapturableError) {
+    return {
+      code: 'payment_intent_not_capturable',
+      detail: 'The payment intent cannot be captured in its current state.',
+      status: HttpStatus.CONFLICT,
+      title: 'Payment intent not capturable',
+    };
+  }
+  if (error instanceof PaymentIntentNotRefundableError) {
+    return {
+      code: 'payment_intent_not_refundable',
+      detail: 'The payment intent cannot be refunded in its current state.',
+      status: HttpStatus.CONFLICT,
+      title: 'Payment intent not refundable',
+    };
+  }
+  if (error instanceof RefundAmountExceedsAvailableError) {
+    return {
+      code: 'refund_amount_exceeds_available',
+      detail: 'The refund amount exceeds the remaining captured amount.',
+      status: HttpStatus.CONFLICT,
+      title: 'Refund amount exceeds available',
+    };
+  }
+  if (error instanceof RefundExternalReferenceConflictError) {
+    return {
+      code: 'refund_external_reference_conflict',
+      detail: 'The refund external reference is already used by this merchant.',
+      status: HttpStatus.CONFLICT,
+      title: 'Refund external reference conflict',
+    };
+  }
+  if (error instanceof PaymentProviderDeclinedError) {
+    return {
+      code: 'payment_provider_declined',
+      detail: 'The simulated payment provider declined the command.',
+      status: HttpStatus.UNPROCESSABLE_ENTITY,
+      title: 'Payment provider declined',
+    };
+  }
   if (error instanceof WebhookEndpointUrlConflictError) {
     return {
       code: 'webhook_endpoint_url_conflict',
@@ -232,6 +296,7 @@ function descriptor(error: unknown): ProblemDescriptor {
   }
   if (
     error instanceof IdentifierGenerationExhaustedError ||
+    error instanceof PaymentProviderUnavailableError ||
     error instanceof WebhookEndpointIdentifierCollisionError ||
     error instanceof WebhookEndpointIdentifierGenerationExhaustedError ||
     error instanceof WebhookEndpointUrlResolutionUnavailableError ||

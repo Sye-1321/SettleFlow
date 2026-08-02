@@ -38,13 +38,28 @@ export {
   PaymentCreatedMessageContractError,
   paymentCreatedEventContractInternals,
   serializePaymentCreatedEvent,
+  validatePaymentEventMessage,
   validatePaymentCreatedMessage,
 } from './payment-created-event.contract';
 export type {
   PaymentCreatedMessageContractFailureCode,
   SerializedPaymentCreatedEvent,
   ValidatedPaymentCreatedMessage,
+  ValidatedPaymentEventMessage,
 } from './payment-created-event.contract';
+export {
+  PAYMENT_LIFECYCLE_MESSAGE_MAX_BYTES,
+  PaymentLifecycleEventContractError,
+  PaymentLifecycleMessageContractError,
+  paymentLifecycleEventContractInternals,
+  serializePaymentLifecycleEvent,
+  validatePaymentLifecycleMessage,
+} from './payment-lifecycle-event.contract';
+export type {
+  PaymentLifecycleEvent,
+  SerializedPaymentLifecycleEvent,
+  ValidatedPaymentLifecycleMessage,
+} from './payment-lifecycle-event.contract';
 export { PrismaInboxRepository } from './prisma-inbox.repository';
 export type { PrismaInboxRepositoryOptions } from './prisma-inbox.repository';
 export { PrismaOutboxRelayRepository } from './prisma-outbox-relay.repository';
@@ -54,7 +69,12 @@ export type {
   RabbitMqConnector,
   RabbitMqOutboxPublisherOptions,
 } from './rabbitmq-outbox.publisher';
-export { assertOutboxRabbitMqTopology, OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+export {
+  assertOutboxRabbitMqTopology,
+  OUTBOX_RABBITMQ_TOPOLOGY,
+  PAYMENT_EVENT_ROUTES,
+  paymentEventRoute,
+} from './rabbitmq-topology';
 export { RabbitMqPaymentCreatedConsumer } from './rabbitmq-payment-created.consumer';
 export type {
   PaymentCreatedMessageHandler,
@@ -65,8 +85,14 @@ export type {
 } from './rabbitmq-payment-created.consumer';
 export type {
   OutboxRepository,
+  PaymentCapturedEvent,
+  PaymentCapturedEventInput,
   PaymentCreatedEvent,
   PaymentCreatedEventInput,
+  PaymentDomainEvent,
+  PaymentDomainEventType,
+  PaymentRefundedEvent,
+  PaymentRefundedEventInput,
 } from './eventing.types';
 export {
   PrismaOutboxRepository,

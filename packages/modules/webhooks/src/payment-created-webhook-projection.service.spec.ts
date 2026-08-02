@@ -91,7 +91,7 @@ describe('PaymentCreatedWebhookProjectionService', () => {
       value: { alreadyProjected: false, deliveryCount: 2 },
     });
     expect((repository.findEligibleEndpointIds as jest.Mock).mock.calls).toEqual([
-      [expect.anything(), '11111111-1111-4111-8111-111111111111'],
+      [expect.anything(), '11111111-1111-4111-8111-111111111111', 'payment.created.v1'],
     ]);
     expect((repository.create as jest.Mock).mock.calls).toEqual([
       [

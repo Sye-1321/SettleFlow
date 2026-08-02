@@ -6,19 +6,24 @@ import type {
   CreateWebhookEventProjectionInput,
   WebhookEventProjectionRecord,
   WebhookProjectionRepository,
+  WebhookSubscription,
 } from './webhook.types';
 
 const projectionSelection = {
   amountMinor: true,
+  availableOn: true,
+  cumulativeRefundedAmountMinor: true,
   currency: true,
   eventId: true,
   eventType: true,
+  ledgerTransactionId: true,
   merchantId: true,
   occurredAt: true,
   payloadBytes: true,
   payloadSha256: true,
   paymentId: true,
   paymentStatus: true,
+  refundId: true,
   requestId: true,
   schemaVersion: true,
 } as const;
@@ -32,12 +37,22 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
       select: projectionSelection,
       where: { eventId },
     });
-    return record ?? undefined;
+    return record === null
+      ? undefined
+      : {
+          ...record,
+          availableOn: record.availableOn ?? undefined,
+          cumulativeRefundedAmountMinor: record.cumulativeRefundedAmountMinor ?? undefined,
+          ledgerTransactionId: record.ledgerTransactionId ?? undefined,
+          paymentStatus: record.paymentStatus ?? undefined,
+          refundId: record.refundId ?? undefined,
+        };
   }
 
   public async findEligibleEndpointIds(
     transaction: PrismaTransactionClient,
     merchantId: string,
+    eventType: WebhookSubscription,
   ): Promise<readonly string[]> {
     const endpoints = await transaction.webhookEndpoint.findMany({
       orderBy: { id: 'asc' },
@@ -45,7 +60,7 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
       where: {
         merchantId,
         status: 'ACTIVE',
-        subscriptions: { some: { eventType: 'payment.created.v1' } },
+        subscriptions: { some: { eventType } },
       },
     });
     return endpoints.map((endpoint) => endpoint.id);
@@ -60,16 +75,20 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
       await transaction.webhookEventProjection.create({
         data: {
           amountMinor: event.amountMinor,
+          availableOn: event.availableOn ?? null,
+          cumulativeRefundedAmountMinor: event.cumulativeRefundedAmountMinor ?? null,
           currency: event.currency,
           eventId: event.eventId,
           eventType: event.eventType,
+          ledgerTransactionId: event.ledgerTransactionId ?? null,
           merchantId: event.merchantId,
           occurredAt: event.occurredAt,
           payloadBytes: Uint8Array.from(event.payloadBytes),
           payloadSha256: Uint8Array.from(event.payloadSha256),
           paymentId: event.paymentId,
-          paymentStatus: event.paymentStatus,
+          paymentStatus: event.paymentStatus ?? null,
           projectedAt: event.projectedAt,
+          refundId: event.refundId ?? null,
           requestId: event.requestId,
           schemaVersion: event.schemaVersion,
         },

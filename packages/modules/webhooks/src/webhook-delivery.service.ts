@@ -186,6 +186,7 @@ export class WebhookDeliveryService {
       current,
       deliveryId: claim.publicId,
       eventId: claim.eventId,
+      eventType: context.eventType,
       ...(selectedPrevious === undefined ? {} : { previous: selectedPrevious }),
       timestamp: attempt.signatureTimestamp,
     });

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   InboxService,
   type InboxProcessingResult,
-  type ValidatedPaymentCreatedMessage,
+  type ValidatedPaymentEventMessage,
 } from '@settleflow/eventing';
 import { MonotonicUlidGenerator, type PrismaTransactionClient } from '@settleflow/infrastructure';
 
@@ -12,7 +12,11 @@ import {
   WebhookDeliveryIdentifierGenerationExhaustedError,
   WebhookEventProjectionConflictError,
 } from './webhook.errors';
-import type { WebhookEventProjectionRecord, WebhookProjectionRepository } from './webhook.types';
+import type {
+  CreateWebhookEventProjectionInput,
+  WebhookEventProjectionRecord,
+  WebhookProjectionRepository,
+} from './webhook.types';
 
 const MAX_IDENTIFIER_ATTEMPTS = 3;
 
@@ -22,7 +26,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 
 function eventMatches(
   existing: WebhookEventProjectionRecord,
-  message: ValidatedPaymentCreatedMessage,
+  message: ValidatedPaymentEventMessage,
 ): boolean {
   const event = message.event;
   return (
@@ -33,12 +37,52 @@ function eventMatches(
     existing.paymentId === event.paymentId &&
     existing.occurredAt.getTime() === event.occurredAt.getTime() &&
     existing.requestId === event.requestId &&
-    existing.amountMinor === BigInt(event.amountMinor) &&
     existing.currency === event.currency &&
-    existing.paymentStatus === event.status &&
     bytesEqual(existing.payloadBytes, message.payloadBytes) &&
     bytesEqual(existing.payloadSha256, message.payloadSha256)
   );
+}
+
+function projectionInput(
+  message: ValidatedPaymentEventMessage,
+  projectedAt: Date,
+): CreateWebhookEventProjectionInput {
+  const event = message.event;
+  const common = {
+    currency: event.currency,
+    eventId: event.eventId,
+    eventType: event.eventType,
+    merchantId: event.merchantId,
+    occurredAt: event.occurredAt,
+    payloadBytes: message.payloadBytes,
+    payloadSha256: message.payloadSha256,
+    paymentId: event.paymentId,
+    projectedAt,
+    requestId: event.requestId,
+    schemaVersion: 1 as const,
+  };
+  if (event.eventType === 'payment.created.v1') {
+    return {
+      ...common,
+      amountMinor: BigInt(event.amountMinor),
+      paymentStatus: 'CREATED',
+    };
+  }
+  if (event.eventType === 'payment.captured.v1') {
+    return {
+      ...common,
+      amountMinor: BigInt(event.capturedAmountMinor),
+      availableOn: event.availableOn,
+      ledgerTransactionId: event.ledgerTransactionId,
+    };
+  }
+  return {
+    ...common,
+    amountMinor: BigInt(event.amountMinor),
+    cumulativeRefundedAmountMinor: BigInt(event.cumulativeRefundedAmountMinor),
+    ledgerTransactionId: event.ledgerTransactionId,
+    refundId: event.refundId,
+  };
 }
 
 export interface WebhookProjectionResult {
@@ -48,6 +92,7 @@ export interface WebhookProjectionResult {
 
 export type WebhookProjectionProcessingResult = InboxProcessingResult<WebhookProjectionResult>;
 
+/** Handles the created/captured/refunded payment event family. */
 export class PaymentCreatedWebhookProjectionService {
   public constructor(
     private readonly inbox: InboxService,
@@ -57,7 +102,7 @@ export class PaymentCreatedWebhookProjectionService {
   ) {}
 
   public async handle(
-    message: ValidatedPaymentCreatedMessage,
+    message: ValidatedPaymentEventMessage,
   ): Promise<WebhookProjectionProcessingResult> {
     for (let attempt = 1; attempt <= MAX_IDENTIFIER_ATTEMPTS; attempt += 1) {
       try {
@@ -66,9 +111,7 @@ export class PaymentCreatedWebhookProjectionService {
         );
       } catch (error: unknown) {
         if (error instanceof WebhookDeliveryIdentifierCollisionError) {
-          if (attempt < MAX_IDENTIFIER_ATTEMPTS) {
-            continue;
-          }
+          if (attempt < MAX_IDENTIFIER_ATTEMPTS) continue;
           throw new WebhookDeliveryIdentifierGenerationExhaustedError();
         }
         throw error;
@@ -80,19 +123,18 @@ export class PaymentCreatedWebhookProjectionService {
   private async project(
     transaction: PrismaTransactionClient,
     projectedAt: Date,
-    message: ValidatedPaymentCreatedMessage,
+    message: ValidatedPaymentEventMessage,
   ): Promise<WebhookProjectionResult> {
     const existing = await this.repository.findEvent(transaction, message.event.eventId);
     if (existing !== undefined) {
-      if (!eventMatches(existing, message)) {
-        throw new WebhookEventProjectionConflictError();
-      }
+      if (!eventMatches(existing, message)) throw new WebhookEventProjectionConflictError();
       return { alreadyProjected: true, deliveryCount: 0 };
     }
 
     const endpointIds = await this.repository.findEligibleEndpointIds(
       transaction,
       message.event.merchantId,
+      message.event.eventType,
     );
     const deliveries = endpointIds.map((endpointId) => ({
       endpointId,
@@ -102,25 +144,7 @@ export class PaymentCreatedWebhookProjectionService {
       projectedAt,
       publicId: `whd_${this.identifiers.generate(projectedAt.getTime())}`,
     }));
-    await this.repository.create(
-      transaction,
-      {
-        amountMinor: BigInt(message.event.amountMinor),
-        currency: message.event.currency,
-        eventId: message.event.eventId,
-        eventType: message.event.eventType,
-        merchantId: message.event.merchantId,
-        occurredAt: message.event.occurredAt,
-        payloadBytes: message.payloadBytes,
-        payloadSha256: message.payloadSha256,
-        paymentId: message.event.paymentId,
-        paymentStatus: message.event.status,
-        projectedAt,
-        requestId: message.event.requestId,
-        schemaVersion: message.schemaVersion,
-      },
-      deliveries,
-    );
+    await this.repository.create(transaction, projectionInput(message, projectedAt), deliveries);
     return { alreadyProjected: false, deliveryCount: deliveries.length };
   }
 }
@@ -129,4 +153,5 @@ export const paymentCreatedWebhookProjectionServiceInternals = {
   MAX_IDENTIFIER_ATTEMPTS,
   bytesEqual,
   eventMatches,
+  projectionInput,
 };

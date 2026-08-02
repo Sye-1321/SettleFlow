@@ -96,6 +96,7 @@ export type {
   WebhookSubscription,
   WebhookUrlPolicy,
 } from './webhook.types';
+export { WEBHOOK_SUBSCRIPTIONS } from './webhook.types';
 export type {
   ClaimedWebhookDelivery,
   ResolvedWebhookDestination,

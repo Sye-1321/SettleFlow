@@ -9,6 +9,7 @@ import {
   type IdempotentOperation,
 } from '@settleflow/idempotency';
 import { MonotonicUlidGenerator, type PrismaTransactionClient } from '@settleflow/infrastructure';
+import type { LedgerPostingPort } from '@settleflow/ledger';
 
 import {
   ExternalReferenceConflictError,
@@ -17,6 +18,7 @@ import {
   PaymentIntentNotFoundError,
 } from './payments.errors';
 import { PaymentIntentService, paymentIntentServiceInternals } from './payment-intent.service';
+import type { PaymentExecutionPort } from './payment-execution';
 import type {
   CreatePaymentIntentCommand,
   PaymentIntentRecord,
@@ -37,11 +39,14 @@ describe('PaymentIntentService', () => {
   const paymentId = 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV';
   const record: PaymentIntentRecord = {
     amountMinor: 125_000,
+    availableAt: undefined,
     captureMethod: 'manual',
     capturedAmountMinor: 0,
+    capturedAt: undefined,
     createdAt: now,
     currency: 'ETB',
     externalRef: 'order_1001',
+    id: '11111111-1111-4111-8111-111111111111',
     merchantId: 'merchant-id',
     paymentStatus: 'created',
     publicId: paymentId,
@@ -54,6 +59,8 @@ describe('PaymentIntentService', () => {
     readonly eventing: jest.Mocked<EventingService>;
     readonly idempotency: jest.Mocked<IdempotencyService>;
     readonly identifiers: jest.Mocked<MonotonicUlidGenerator>;
+    readonly ledger: jest.Mocked<LedgerPostingPort>;
+    readonly execution: jest.Mocked<PaymentExecutionPort>;
     readonly repository: jest.Mocked<PaymentIntentRepository>;
     readonly service: PaymentIntentService;
     readonly transaction: PrismaTransactionClient;
@@ -61,7 +68,11 @@ describe('PaymentIntentService', () => {
     const transaction = {} as PrismaTransactionClient;
     const repository: jest.Mocked<PaymentIntentRepository> = {
       create: jest.fn().mockResolvedValue(record),
+      applyRefund: jest.fn(),
+      capture: jest.fn(),
+      createRefund: jest.fn(),
       findByPublicId: jest.fn().mockResolvedValue(record),
+      lockByPublicId: jest.fn(),
     };
     const event: PaymentCreatedEvent = {
       amountMinor: 125_000,
@@ -93,13 +104,32 @@ describe('PaymentIntentService', () => {
     const identifiers = {
       generate: jest.fn().mockReturnValue('01ARZ3NDEKTSV4RRFFQ69G5FAV'),
     } as unknown as jest.Mocked<MonotonicUlidGenerator>;
+    const ledger = {
+      postCapture: jest.fn(),
+      postRefund: jest.fn(),
+      reverse: jest.fn(),
+    } as unknown as jest.Mocked<LedgerPostingPort>;
+    const execution = {
+      capture: jest.fn().mockResolvedValue({ kind: 'approved' }),
+      refund: jest.fn().mockResolvedValue({ kind: 'approved' }),
+    } as unknown as jest.Mocked<PaymentExecutionPort>;
 
     return {
+      execution,
       eventing,
       idempotency,
       identifiers,
+      ledger,
       repository,
-      service: new PaymentIntentService(repository, idempotency, eventing, identifiers, () => now),
+      service: new PaymentIntentService(
+        repository,
+        idempotency,
+        eventing,
+        ledger,
+        execution,
+        identifiers,
+        () => now,
+      ),
       transaction,
     };
   }

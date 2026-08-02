@@ -2,8 +2,13 @@ import { MonotonicUlidGenerator, type PrismaTransactionClient } from '@settleflo
 
 import type {
   OutboxRepository,
+  PaymentCapturedEvent,
+  PaymentCapturedEventInput,
   PaymentCreatedEvent,
   PaymentCreatedEventInput,
+  PaymentDomainEvent,
+  PaymentRefundedEvent,
+  PaymentRefundedEventInput,
 } from './eventing.types';
 
 export class EventingService {
@@ -19,7 +24,7 @@ export class EventingService {
     return {
       amountMinor: input.amountMinor,
       currency: input.currency,
-      eventId: `evt_${this.identifiers.generate(occurredAt.getTime())}`,
+      eventId: this.eventId(occurredAt),
       eventType: 'payment.created.v1',
       merchantId: input.merchantId,
       occurredAt,
@@ -29,10 +34,58 @@ export class EventingService {
     };
   }
 
+  public createPaymentCapturedEvent(
+    input: PaymentCapturedEventInput,
+    occurredAt: Date,
+  ): PaymentCapturedEvent {
+    return {
+      availableOn: input.availableOn,
+      capturedAmountMinor: input.capturedAmountMinor,
+      currency: input.currency,
+      eventId: this.eventId(occurredAt),
+      eventType: 'payment.captured.v1',
+      ledgerTransactionId: input.ledgerTransactionId,
+      merchantId: input.merchantId,
+      occurredAt,
+      paymentId: input.paymentId,
+      requestId: input.requestId,
+    };
+  }
+
+  public createPaymentRefundedEvent(
+    input: PaymentRefundedEventInput,
+    occurredAt: Date,
+  ): PaymentRefundedEvent {
+    return {
+      amountMinor: input.amountMinor,
+      cumulativeRefundedAmountMinor: input.cumulativeRefundedAmountMinor,
+      currency: input.currency,
+      eventId: this.eventId(occurredAt),
+      eventType: 'payment.refunded.v1',
+      ledgerTransactionId: input.ledgerTransactionId,
+      merchantId: input.merchantId,
+      occurredAt,
+      paymentId: input.paymentId,
+      refundId: input.refundId,
+      requestId: input.requestId,
+    };
+  }
+
   public persistPaymentCreated(
     transaction: PrismaTransactionClient,
     event: PaymentCreatedEvent,
   ): Promise<void> {
-    return this.repository.insertPaymentCreated(transaction, event);
+    return this.persistPaymentEvent(transaction, event);
+  }
+
+  public persistPaymentEvent(
+    transaction: PrismaTransactionClient,
+    event: PaymentDomainEvent,
+  ): Promise<void> {
+    return this.repository.insertPaymentEvent(transaction, event);
+  }
+
+  private eventId(occurredAt: Date): string {
+    return `evt_${this.identifiers.generate(occurredAt.getTime())}`;
   }
 }

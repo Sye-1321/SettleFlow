@@ -6,6 +6,11 @@ import type { Message } from 'amqplib';
 import type { PaymentCreatedEvent } from './eventing.types';
 import type { ClaimedOutboxEvent } from './outbox-relay.types';
 import { OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import {
+  PaymentLifecycleMessageContractError,
+  validatePaymentLifecycleMessage,
+  type ValidatedPaymentLifecycleMessage,
+} from './payment-lifecycle-event.contract';
 
 const EVENT_ID_PATTERN = /^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const PAYMENT_ID_PATTERN = /^pi_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
@@ -52,6 +57,9 @@ export interface ValidatedPaymentCreatedMessage {
   readonly redelivered: boolean;
   readonly schemaVersion: 1;
 }
+
+export type ValidatedPaymentEventMessage =
+  ValidatedPaymentCreatedMessage | ValidatedPaymentLifecycleMessage;
 
 export class PaymentCreatedEventContractError extends Error {
   public constructor() {
@@ -281,6 +289,22 @@ export function validatePaymentCreatedMessage(
     redelivered: message.fields.redelivered,
     schemaVersion,
   };
+}
+
+export function validatePaymentEventMessage(
+  message: Message,
+  maxBodyBytes = PAYMENT_CREATED_MESSAGE_MAX_BYTES,
+): ValidatedPaymentEventMessage {
+  if (message.properties.type === 'payment.created.v1') {
+    return validatePaymentCreatedMessage(message, maxBodyBytes);
+  }
+  if (
+    message.properties.type === 'payment.captured.v1' ||
+    message.properties.type === 'payment.refunded.v1'
+  ) {
+    return validatePaymentLifecycleMessage(message, maxBodyBytes);
+  }
+  throw new PaymentLifecycleMessageContractError('message_schema_unsupported');
 }
 
 export function serializePaymentCreatedEvent(

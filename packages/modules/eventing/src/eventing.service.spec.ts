@@ -7,7 +7,7 @@ import { prismaOutboxRepositoryInternals } from './prisma-outbox.repository';
 describe('EventingService', () => {
   it('builds the approved flat nine-field payment.created.v1 contract', async () => {
     const repository: jest.Mocked<OutboxRepository> = {
-      insertPaymentCreated: jest.fn().mockResolvedValue(undefined),
+      insertPaymentEvent: jest.fn().mockResolvedValue(undefined),
     };
     const identifiers = {
       generate: jest.fn().mockReturnValue('01ARZ3NDEKTSV4RRFFQ69G5FAV'),
@@ -41,6 +41,6 @@ describe('EventingService', () => {
 
     const transaction = {} as PrismaTransactionClient;
     await service.persistPaymentCreated(transaction, event);
-    expect(repository.insertPaymentCreated.mock.calls[0]).toEqual([transaction, event]);
+    expect(repository.insertPaymentEvent.mock.calls[0]).toEqual([transaction, event]);
   });
 });

@@ -4,9 +4,12 @@ import {
   InboxMessageConflictError,
   MessageTransactionRetryExhaustedError,
 } from './eventing.errors';
-import { InboxService } from './inbox.service';
+import { InboxService, inboxServiceInternals } from './inbox.service';
 import type { InboxRepository, InboxTransactionContext } from './inbox.types';
-import type { ValidatedPaymentCreatedMessage } from './payment-created-event.contract';
+import type {
+  ValidatedPaymentCreatedMessage,
+  ValidatedPaymentEventMessage,
+} from './payment-created-event.contract';
 
 const EVENT_ID = 'evt_01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const HASH = Buffer.alloc(32, 7);
@@ -51,6 +54,51 @@ function createRepository(
 }
 
 describe('InboxService', () => {
+  it('uses one stable durable consumer identity per supported event contract', () => {
+    const created = createMessage();
+    const captured: ValidatedPaymentEventMessage = {
+      ...created,
+      event: {
+        availableOn: created.event.occurredAt,
+        capturedAmountMinor: created.event.amountMinor,
+        currency: created.event.currency,
+        eventId: created.event.eventId,
+        eventType: 'payment.captured.v1',
+        ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        merchantId: created.event.merchantId,
+        occurredAt: created.event.occurredAt,
+        paymentId: created.event.paymentId,
+        requestId: created.event.requestId,
+      },
+    };
+    const refunded: ValidatedPaymentEventMessage = {
+      ...created,
+      event: {
+        amountMinor: 250,
+        cumulativeRefundedAmountMinor: 250,
+        currency: created.event.currency,
+        eventId: created.event.eventId,
+        eventType: 'payment.refunded.v1',
+        ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAW',
+        merchantId: created.event.merchantId,
+        occurredAt: created.event.occurredAt,
+        paymentId: created.event.paymentId,
+        refundId: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        requestId: created.event.requestId,
+      },
+    };
+
+    expect(inboxServiceInternals.consumerName(created)).toBe(
+      'webhook-projection.payment-created.v1',
+    );
+    expect(inboxServiceInternals.consumerName(captured)).toBe(
+      'webhook-projection.payment-captured.v1',
+    );
+    expect(inboxServiceInternals.consumerName(refunded)).toBe(
+      'webhook-projection.payment-refunded.v1',
+    );
+  });
+
   it('reserves a new message and runs the effect inside the same transaction', async () => {
     const reserve = jest.fn().mockResolvedValue({ kind: 'reserved' });
     const repository = createRepository(reserve);

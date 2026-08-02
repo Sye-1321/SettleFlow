@@ -14,6 +14,7 @@ export interface BuildWebhookRequestHeadersInput {
   readonly current: WebhookSigningSecret;
   readonly deliveryId: string;
   readonly eventId: string;
+  readonly eventType: 'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1';
   readonly previous?: WebhookSigningSecret;
   readonly timestamp: bigint;
 }
@@ -52,7 +53,7 @@ export function buildWebhookRequestHeaders(
     'Content-Type': 'application/json',
     'SettleFlow-Event-Id': input.eventId,
     'SettleFlow-Event-Schema-Version': '1',
-    'SettleFlow-Event-Type': 'payment.created.v1',
+    'SettleFlow-Event-Type': input.eventType,
     'SettleFlow-Signature': signatures.join(';'),
     'SettleFlow-Timestamp': String(input.timestamp),
     'SettleFlow-Webhook-Id': input.deliveryId,

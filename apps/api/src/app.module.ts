@@ -13,8 +13,13 @@ import {
   MerchantAccessService,
   PrismaMerchantAccessRepository,
 } from '@settleflow/merchant-access';
+import { LedgerService, PrismaLedgerRepository } from '@settleflow/ledger';
 import { AuditService, PrismaAuditRepository } from '@settleflow/operations';
-import { PaymentIntentService, PrismaPaymentIntentRepository } from '@settleflow/payments';
+import {
+  DeterministicMockPaymentExecution,
+  PaymentIntentService,
+  PrismaPaymentIntentRepository,
+} from '@settleflow/payments';
 import {
   LocalWebhookKeyring,
   NodeWebhookUrlPolicy,
@@ -31,6 +36,7 @@ import { ProblemDetailsFilter } from './http/problem-details.filter';
 import { RequestIdMiddleware } from './http/request-id';
 import { MerchantApiKeyGuard } from './merchant-access/merchant-api-key.guard';
 import { PaymentIntentController } from './payment-intents/payment-intent.controller';
+import { PaymentCommandSignalService } from './payment-intents/payment-command-signal.service';
 import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.controller';
 
 @Module({
@@ -120,14 +126,48 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
         new PrismaPaymentIntentRepository(database),
     },
     {
+      provide: PrismaLedgerRepository,
+      inject: [PrismaDatabase],
+      useFactory: (database: PrismaDatabase): PrismaLedgerRepository =>
+        new PrismaLedgerRepository(database),
+    },
+    {
+      provide: LedgerService,
+      inject: [PrismaLedgerRepository],
+      useFactory: (repository: PrismaLedgerRepository): LedgerService =>
+        new LedgerService(repository, new MonotonicUlidGenerator()),
+    },
+    DeterministicMockPaymentExecution,
+    PaymentCommandSignalService,
+    {
       provide: PaymentIntentService,
-      inject: [PrismaPaymentIntentRepository, IdempotencyService, EventingService],
+      inject: [
+        PrismaPaymentIntentRepository,
+        IdempotencyService,
+        EventingService,
+        LedgerService,
+        DeterministicMockPaymentExecution,
+        PaymentCommandSignalService,
+      ],
       useFactory: (
         repository: PrismaPaymentIntentRepository,
         idempotency: IdempotencyService,
         eventing: EventingService,
+        ledger: LedgerService,
+        execution: DeterministicMockPaymentExecution,
+        observer: PaymentCommandSignalService,
       ): PaymentIntentService =>
-        new PaymentIntentService(repository, idempotency, eventing, new MonotonicUlidGenerator()),
+        new PaymentIntentService(
+          repository,
+          idempotency,
+          eventing,
+          ledger,
+          execution,
+          new MonotonicUlidGenerator(),
+          undefined,
+          undefined,
+          observer,
+        ),
     },
     PrismaAuditRepository,
     {

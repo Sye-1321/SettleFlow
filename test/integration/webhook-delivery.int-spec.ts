@@ -280,7 +280,7 @@ describe('signed HTTP webhook delivery with real PostgreSQL', () => {
             eventId,
             id: deliveryId,
             merchantId,
-            nextAttemptAt: now,
+            nextAttemptAt: new Date(now.getTime() - 60_000),
             publicId: deliveryPublicId,
             status: options.status ?? 'PENDING',
             updatedAt: now,
@@ -359,7 +359,7 @@ describe('signed HTTP webhook delivery with real PostgreSQL', () => {
 
   it('omits an expired previous secret instead of extending the overlap', async () => {
     responseStatus = 204;
-    const fixture = await createFixture({ previousOverlapMs: -1, previousSecret: true });
+    const fixture = await createFixture({ previousOverlapMs: -60_000, previousSecret: true });
     await expect(service().runOnce('webhook_expired_previous', 4)).resolves.toMatchObject({
       delivered: 1,
     });

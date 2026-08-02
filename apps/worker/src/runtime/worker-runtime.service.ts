@@ -13,17 +13,22 @@ import {
   RabbitMqPaymentCreatedConsumer,
 } from '@settleflow/eventing';
 import { PrismaDatabase } from '@settleflow/infrastructure';
+import { WebhookDeliveryService } from '@settleflow/webhooks';
 
 import { WorkerEnvironment } from '../config/environment';
 import { WorkerHealthService } from '../health/worker-health.service';
 import { OutboxRelaySignalService } from './outbox-relay-signal.service';
+import { WebhookDeliverySignalService } from './webhook-delivery-signal.service';
 
 @Injectable()
 export class WorkerRuntimeService
   implements OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown
 {
   private readonly logger = new Logger(WorkerRuntimeService.name);
-  private readonly workerId = `outbox_${randomUUID()}`;
+  private readonly deliveryWorkerId = `webhook_${randomUUID()}`;
+  private readonly outboxWorkerId = `outbox_${randomUUID()}`;
+  private deliveryInFlight: Promise<number> | undefined;
+  private deliveryTimer: NodeJS.Timeout | undefined;
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private postgresqlUnavailableReported = false;
   private rabbitmqPublisherUnavailableReported = false;
@@ -31,6 +36,7 @@ export class WorkerRuntimeService
   private relayTimer: NodeJS.Timeout | undefined;
   private readinessRefresh: Promise<void> | undefined;
   private stopping = false;
+  private webhookDeliveryUnavailableReported = false;
 
   public constructor(
     private readonly config: ConfigService<WorkerEnvironment, true>,
@@ -38,8 +44,10 @@ export class WorkerRuntimeService
     private readonly publisher: RabbitMqOutboxPublisher,
     private readonly consumer: RabbitMqPaymentCreatedConsumer,
     private readonly relay: OutboxRelayService,
+    private readonly delivery: WebhookDeliveryService,
     private readonly health: WorkerHealthService,
     private readonly signals: OutboxRelaySignalService,
+    private readonly deliverySignals: WebhookDeliverySignalService,
   ) {}
 
   public async onApplicationBootstrap(): Promise<void> {
@@ -54,17 +62,24 @@ export class WorkerRuntimeService
     await this.refreshReadiness();
     this.health.markRunning();
     this.signals.record({ event: 'outbox.relay.started' });
+    this.deliverySignals.record({ event: 'webhook.delivery.dispatcher_started' });
     this.scheduleRelay(0);
+    this.scheduleDelivery(0);
   }
 
   public beforeApplicationShutdown(signal?: string): void {
     this.stopping = true;
     this.consumer.beginShutdown();
+    this.delivery.beginShutdown();
     this.clearTimers();
     this.health.markStopping();
     this.signals.record({
       code: signal ?? 'application',
       event: 'outbox.relay.stopping',
+    });
+    this.deliverySignals.record({
+      code: signal ?? 'application',
+      event: 'webhook.delivery.dispatcher_stopping',
     });
   }
 
@@ -73,19 +88,33 @@ export class WorkerRuntimeService
     this.clearTimers();
 
     const activeRelay = this.relayInFlight;
+    const activeDelivery = this.deliveryInFlight;
     const drainTimeoutMs = this.config.get('OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS', {
       infer: true,
     });
-    const [relayDrained, consumerDrained] = await Promise.all([
+    const deliveryDrainTimeoutMs = this.config.get('WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS', {
+      infer: true,
+    });
+    const [relayDrained, consumerDrained, deliveryDrained] = await Promise.all([
       activeRelay === undefined
         ? Promise.resolve(true)
-        : this.waitForRelay(activeRelay, drainTimeoutMs),
+        : this.waitForOperation(activeRelay, drainTimeoutMs),
       this.consumer.close(),
+      activeDelivery === undefined
+        ? Promise.resolve(true)
+        : this.waitForOperation(activeDelivery, deliveryDrainTimeoutMs),
     ]);
 
+    if (!deliveryDrained && activeDelivery !== undefined) {
+      this.delivery.abortActive();
+      await this.waitForOperation(
+        activeDelivery,
+        this.config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+      );
+    }
     await this.publisher.close();
     if (!relayDrained && activeRelay !== undefined) {
-      await this.waitForRelay(
+      await this.waitForOperation(
         activeRelay,
         this.config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
       );
@@ -99,6 +128,10 @@ export class WorkerRuntimeService
     if (!consumerDrained) {
       this.logger.warn(JSON.stringify({ event: 'webhook.projection.consumer.drain_timeout' }));
     }
+    this.deliverySignals.record({
+      code: deliveryDrained ? 'drained' : 'drain_timeout',
+      event: 'webhook.delivery.dispatcher_stopped',
+    });
   }
 
   private async recordHeartbeat(): Promise<void> {
@@ -117,9 +150,15 @@ export class WorkerRuntimeService
       this.prisma.checkConnectivity(),
       this.publisher.ensureReady(),
       this.consumer.ensureReady(),
+      this.delivery.ensureReady(),
     ])
-      .then(([postgresql, rabbitmqPublisher, rabbitmqConsumer]) => {
-        this.updateDependencyReadiness(postgresql, rabbitmqPublisher, rabbitmqConsumer);
+      .then(([postgresql, rabbitmqPublisher, rabbitmqConsumer, webhookDelivery]) => {
+        this.updateDependencyReadiness(
+          postgresql,
+          rabbitmqPublisher,
+          rabbitmqConsumer,
+          webhookDelivery,
+        );
       })
       .finally(() => {
         this.readinessRefresh = undefined;
@@ -140,6 +179,61 @@ export class WorkerRuntimeService
     this.relayTimer.unref();
   }
 
+  private scheduleDelivery(delayMs: number): void {
+    if (this.stopping || this.deliveryTimer !== undefined) return;
+    this.deliveryTimer = setTimeout(() => {
+      this.deliveryTimer = undefined;
+      void this.runDeliveryCycle();
+    }, delayMs);
+    this.deliveryTimer.unref();
+  }
+
+  private async runDeliveryCycle(): Promise<void> {
+    if (this.stopping || this.deliveryInFlight !== undefined) return;
+    const operation = this.executeDeliveryCycle();
+    this.deliveryInFlight = operation;
+    const nextDelayMs = await operation;
+    if (this.deliveryInFlight === operation) this.deliveryInFlight = undefined;
+    this.scheduleDelivery(nextDelayMs);
+  }
+
+  private async executeDeliveryCycle(): Promise<number> {
+    let nextDelayMs = this.config.get('WEBHOOK_DELIVERY_POLL_INTERVAL_MS', { infer: true });
+    try {
+      const batchSize = Math.min(
+        this.config.get('WEBHOOK_DELIVERY_BATCH_SIZE', { infer: true }),
+        this.config.get('WEBHOOK_DELIVERY_CONCURRENCY', { infer: true }),
+      );
+      const result = await this.delivery.runOnce(this.deliveryWorkerId, batchSize);
+      this.updateDependencyReadiness(
+        true,
+        this.publisher.isReady(),
+        this.consumer.isReady(),
+        result.dispatcherReady,
+      );
+      if (result.claimed > 0 || result.ownershipLost > 0 || result.recoveredUnknown > 0) {
+        this.deliverySignals.record({
+          claimed: result.claimed,
+          count: result.claimed,
+          deadLettered: result.deadLettered,
+          delivered: result.delivered,
+          event: 'webhook.delivery.dispatcher_batch',
+          ownershipLost: result.ownershipLost,
+          recoveredUnknown: result.recoveredUnknown,
+          retrying: result.retrying,
+        });
+      }
+      if (result.claimed === batchSize) nextDelayMs = 0;
+    } catch {
+      await this.refreshReadiness();
+      this.deliverySignals.record({
+        code: 'cycle_failed',
+        event: 'webhook.delivery.dispatcher_unavailable',
+      });
+    }
+    return nextDelayMs;
+  }
+
   private async runRelayCycle(): Promise<void> {
     if (this.stopping || this.relayInFlight !== undefined) {
       return;
@@ -157,9 +251,14 @@ export class WorkerRuntimeService
   private async executeRelayCycle(): Promise<number> {
     let nextDelayMs = this.config.get('OUTBOX_RELAY_POLL_INTERVAL_MS', { infer: true });
     try {
-      const result = await this.relay.runOnce(this.workerId);
+      const result = await this.relay.runOnce(this.outboxWorkerId);
       if (result.publisherReady) {
-        this.updateDependencyReadiness(true, true, this.consumer.isReady());
+        this.updateDependencyReadiness(
+          true,
+          true,
+          this.consumer.isReady(),
+          this.delivery.isReady(),
+        );
       } else {
         await this.refreshReadiness();
       }
@@ -196,12 +295,17 @@ export class WorkerRuntimeService
       clearTimeout(this.relayTimer);
       this.relayTimer = undefined;
     }
+    if (this.deliveryTimer !== undefined) {
+      clearTimeout(this.deliveryTimer);
+      this.deliveryTimer = undefined;
+    }
   }
 
   private updateDependencyReadiness(
     postgresql: boolean,
     rabbitmqPublisher: boolean,
     rabbitmqConsumer: boolean,
+    webhookDelivery: boolean,
   ): void {
     if (!postgresql && !this.postgresqlUnavailableReported) {
       this.signals.record({
@@ -217,14 +321,22 @@ export class WorkerRuntimeService
     }
     this.postgresqlUnavailableReported = !postgresql;
     this.rabbitmqPublisherUnavailableReported = !rabbitmqPublisher;
+    if (!webhookDelivery && !this.webhookDeliveryUnavailableReported) {
+      this.deliverySignals.record({
+        code: 'dispatcher_dependency_unavailable',
+        event: 'webhook.delivery.dispatcher_unavailable',
+      });
+    }
+    this.webhookDeliveryUnavailableReported = !webhookDelivery;
     this.health.updateDependencies({
       postgresql: { status: postgresql ? 'up' : 'down' },
       rabbitmqConsumer: { status: rabbitmqConsumer ? 'up' : 'down' },
       rabbitmqPublisher: { status: rabbitmqPublisher ? 'up' : 'down' },
+      webhookDelivery: { status: webhookDelivery ? 'up' : 'down' },
     });
   }
 
-  private async waitForRelay(operation: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  private async waitForOperation(operation: Promise<unknown>, timeoutMs: number): Promise<boolean> {
     let timeout: NodeJS.Timeout | undefined;
     const timedOut = new Promise<false>((resolve) => {
       timeout = setTimeout(() => {

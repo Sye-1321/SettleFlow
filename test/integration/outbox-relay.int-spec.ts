@@ -343,6 +343,11 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     process.env['OUTBOX_RELAY_RETRY_MAX_MS'] = '60000';
     process.env['OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS'] = '10000';
     process.env['RABBITMQ_URL'] = rabbitmqUrl;
+    process.env['WEBHOOK_KEYRING_PROVIDER'] = 'local';
+    process.env['WEBHOOK_LOCAL_ACTIVE_KEY_ID'] = 'local-v1';
+    process.env['WEBHOOK_LOCAL_KEYS_JSON'] = JSON.stringify({
+      'local-v1': Buffer.alloc(32, 7).toString('base64url'),
+    });
     process.env['WORKER_HEARTBEAT_INTERVAL_MS'] = '30000';
     const { WorkerModule } = await import('../../apps/worker/src/worker.module.js');
     const app = await NestFactory.createApplicationContext(WorkerModule, { logger: false });

@@ -5,10 +5,12 @@ import type {
   RabbitMqPaymentCreatedConsumer,
 } from '@settleflow/eventing';
 import type { PrismaDatabase } from '@settleflow/infrastructure';
+import type { WebhookDeliveryService } from '@settleflow/webhooks';
 
 import type { WorkerEnvironment } from '../config/environment';
 import { WorkerHealthService } from '../health/worker-health.service';
 import { OutboxRelaySignalService } from './outbox-relay-signal.service';
+import { WebhookDeliverySignalService } from './webhook-delivery-signal.service';
 import { WorkerRuntimeService } from './worker-runtime.service';
 
 function createConfig(): ConfigService<WorkerEnvironment, true> {
@@ -24,12 +26,27 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
     OUTBOX_RELAY_RETRY_MAX_MS: 60_000,
     OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS: 10_000,
     RABBITMQ_URL: 'amqp://settleflow:local@127.0.0.1:5672/settleflow',
+    WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS: 8_000,
+    WEBHOOK_DELIVERY_BATCH_SIZE: 4,
+    WEBHOOK_DELIVERY_CONCURRENCY: 4,
+    WEBHOOK_DELIVERY_LEASE_MS: 30_000,
+    WEBHOOK_DELIVERY_POLL_INTERVAL_MS: 500,
+    WEBHOOK_DELIVERY_RESPONSE_LIMIT_BYTES: 65_536,
+    WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS: 10_000,
+    WEBHOOK_DELIVERY_TRANSACTION_RETRIES: 3,
+    WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS: [],
+    WEBHOOK_KEYRING_PROVIDER: 'local',
+    WEBHOOK_LOCAL_ACTIVE_KEY_ID: 'local-v1',
+    WEBHOOK_LOCAL_KEYS_JSON: JSON.stringify({
+      'local-v1': Buffer.alloc(32, 1).toString('base64url'),
+    }),
     WEBHOOK_PROJECTION_BODY_LIMIT_BYTES: 16_384,
     WEBHOOK_PROJECTION_PREFETCH: 2,
     WEBHOOK_PROJECTION_RECONNECT_BASE_MS: 1_000,
     WEBHOOK_PROJECTION_RECONNECT_MAX_MS: 60_000,
     WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS: 10_000,
     WEBHOOK_PROJECTION_TRANSACTION_RETRIES: 3,
+    WEBHOOK_URL_POLICY_MODE: 'development',
     WORKER_HEARTBEAT_INTERVAL_MS: 30_000,
   };
   return {
@@ -38,6 +55,25 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
 }
 
 describe('WorkerRuntimeService', () => {
+  function createDelivery(overrides: Partial<WebhookDeliveryService> = {}): WebhookDeliveryService {
+    return {
+      abortActive: jest.fn(),
+      beginShutdown: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+      runOnce: jest.fn().mockResolvedValue({
+        claimed: 0,
+        deadLettered: 0,
+        delivered: 0,
+        dispatcherReady: true,
+        ownershipLost: 0,
+        recoveredUnknown: 0,
+        retrying: 0,
+      }),
+      ...overrides,
+    } as unknown as WebhookDeliveryService;
+  }
+
   it('requires PostgreSQL plus the confirmed topology before becoming ready', async () => {
     jest.useFakeTimers();
     const prisma = {
@@ -65,14 +101,17 @@ describe('WorkerRuntimeService', () => {
     const health = new WorkerHealthService();
     const record = jest.fn();
     const signals = { record } as unknown as OutboxRelaySignalService;
+    const delivery = createDelivery();
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
       publisher,
       consumer,
       relay,
+      delivery,
       health,
       signals,
+      { record: jest.fn() } as unknown as WebhookDeliverySignalService,
     );
 
     await runtime.onApplicationBootstrap();
@@ -120,14 +159,17 @@ describe('WorkerRuntimeService', () => {
     } as unknown as RabbitMqPaymentCreatedConsumer;
     const runOnce = jest.fn().mockReturnValue(activeCycle);
     const relay = { runOnce } as unknown as OutboxRelayService;
+    const delivery = createDelivery();
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
       publisher,
       consumer,
       relay,
+      delivery,
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
+      { record: jest.fn() } as unknown as WebhookDeliverySignalService,
     );
 
     await runtime.onApplicationBootstrap();
@@ -156,6 +198,87 @@ describe('WorkerRuntimeService', () => {
     jest.useRealTimers();
   });
 
+  it('caps Webhook delivery at batch four and never overlaps dispatcher cycles', async () => {
+    jest.useFakeTimers();
+    let releaseDelivery:
+      | ((value: {
+          claimed: number;
+          deadLettered: number;
+          delivered: number;
+          dispatcherReady: boolean;
+          ownershipLost: number;
+          recoveredUnknown: number;
+          retrying: number;
+        }) => void)
+      | undefined;
+    const activeDelivery = new Promise<{
+      claimed: number;
+      deadLettered: number;
+      delivered: number;
+      dispatcherReady: boolean;
+      ownershipLost: number;
+      recoveredUnknown: number;
+      retrying: number;
+    }>((resolve) => {
+      releaseDelivery = resolve;
+    });
+    const prisma = {
+      checkConnectivity: jest.fn().mockResolvedValue(true),
+    } as unknown as PrismaDatabase;
+    const publisher = {
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+    } as unknown as RabbitMqOutboxPublisher;
+    const consumer = {
+      beginShutdown: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+    } as unknown as RabbitMqPaymentCreatedConsumer;
+    const relay = {
+      runOnce: jest.fn().mockResolvedValue({
+        claimed: 0,
+        ownershipLost: 0,
+        published: 0,
+        publisherReady: true,
+        retryScheduled: 0,
+      }),
+    } as unknown as OutboxRelayService;
+    const runOnce = jest.fn().mockReturnValue(activeDelivery);
+    const delivery = createDelivery({ runOnce });
+    const runtime = new WorkerRuntimeService(
+      createConfig(),
+      prisma,
+      publisher,
+      consumer,
+      relay,
+      delivery,
+      new WorkerHealthService(),
+      { record: jest.fn() } as unknown as OutboxRelaySignalService,
+      { record: jest.fn() } as unknown as WebhookDeliverySignalService,
+    );
+
+    await runtime.onApplicationBootstrap();
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(runOnce).toHaveBeenCalledTimes(1);
+    expect(runOnce).toHaveBeenCalledWith(expect.stringMatching(/^webhook_/u), 4);
+
+    releaseDelivery?.({
+      claimed: 0,
+      deadLettered: 0,
+      delivered: 0,
+      dispatcherReady: true,
+      ownershipLost: 0,
+      recoveredUnknown: 0,
+      retrying: 0,
+    });
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(500);
+    expect(runOnce).toHaveBeenCalledTimes(2);
+
+    runtime.beforeApplicationShutdown('SIGTERM');
+    jest.useRealTimers();
+  });
+
   it('stops new work, drains, and closes publisher before Prisma', async () => {
     const closeOrder: string[] = [];
     const prisma = {
@@ -178,19 +301,26 @@ describe('WorkerRuntimeService', () => {
       }),
     } as unknown as RabbitMqPaymentCreatedConsumer;
     const relay = {} as OutboxRelayService;
+    const beginDeliveryShutdown = jest.fn();
+    const abortActive = jest.fn();
+    const delivery = createDelivery({ abortActive, beginShutdown: beginDeliveryShutdown });
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
       publisher,
       consumer,
       relay,
+      delivery,
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
+      { record: jest.fn() } as unknown as WebhookDeliverySignalService,
     );
 
     runtime.beforeApplicationShutdown('SIGTERM');
     await runtime.onApplicationShutdown();
 
+    expect(beginDeliveryShutdown).toHaveBeenCalledTimes(1);
+    expect(abortActive).not.toHaveBeenCalled();
     expect(closeOrder).toEqual(['consumer', 'publisher', 'prisma']);
   });
 });

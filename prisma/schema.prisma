@@ -67,9 +67,21 @@ enum WebhookSecretLifecycle {
 }
 
 enum WebhookDeliveryStatus {
-  PENDING @map("pending")
+  PENDING       @map("pending")
+  RETRYING      @map("retrying")
+  DELIVERED     @map("delivered")
+  DEAD_LETTERED @map("dead_lettered")
 
   @@map("webhook_delivery_status")
+}
+
+enum WebhookDeliveryAttemptOutcome {
+  DELIVERED             @map("delivered")
+  RETRYABLE_FAILURE     @map("retryable_failure")
+  NON_RETRYABLE_FAILURE @map("non_retryable_failure")
+  UNKNOWN               @map("unknown")
+
+  @@map("webhook_delivery_attempt_outcome")
 }
 
 model Merchant {
@@ -263,21 +275,57 @@ model WebhookEventProjection {
 }
 
 model WebhookDelivery {
-  id            String                 @id @default(uuid()) @db.Uuid
-  publicId      String                 @unique(map: "webhook_deliveries_public_id_key") @map("public_id") @db.VarChar(30)
-  merchantId    String                 @map("merchant_id") @db.Uuid
-  endpointId    String                 @map("endpoint_id") @db.Uuid
-  eventId       String                 @map("event_id") @db.VarChar(30)
-  status        WebhookDeliveryStatus  @default(PENDING)
-  attemptCount  Int                    @default(0) @map("attempt_count")
-  nextAttemptAt DateTime               @map("next_attempt_at") @db.Timestamptz(6)
-  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  endpoint      WebhookEndpoint        @relation(fields: [endpointId, merchantId], references: [id, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_endpoint_id_merchant_id_fkey")
-  event         WebhookEventProjection @relation(fields: [eventId, merchantId], references: [eventId, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_event_id_merchant_id_fkey")
+  id                          String                   @id @default(uuid()) @db.Uuid
+  publicId                    String                   @unique(map: "webhook_deliveries_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId                  String                   @map("merchant_id") @db.Uuid
+  endpointId                  String                   @map("endpoint_id") @db.Uuid
+  eventId                     String                   @map("event_id") @db.VarChar(30)
+  status                      WebhookDeliveryStatus    @default(PENDING)
+  attemptCount                Int                      @default(0) @map("attempt_count")
+  nextAttemptAt               DateTime?                @map("next_attempt_at") @db.Timestamptz(6)
+  lockedBy                    String?                  @map("locked_by") @db.VarChar(128)
+  claimToken                  String?                  @map("claim_token") @db.Uuid
+  lockedAt                    DateTime?                @map("locked_at") @db.Timestamptz(6)
+  leaseExpiresAt              DateTime?                @map("lease_expires_at") @db.Timestamptz(6)
+  activeAttemptNumber         Int?                     @map("active_attempt_number")
+  activeAttemptStartedAt      DateTime?                @map("active_attempt_started_at") @db.Timestamptz(6)
+  activeSignatureTimestamp    BigInt?                  @map("active_signature_timestamp") @db.BigInt
+  activeCurrentSecretVersion  Int?                     @map("active_current_secret_version")
+  activePreviousSecretVersion Int?                     @map("active_previous_secret_version")
+  deliveredAt                 DateTime?                @map("delivered_at") @db.Timestamptz(6)
+  deadLetteredAt              DateTime?                @map("dead_lettered_at") @db.Timestamptz(6)
+  createdAt                   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  endpoint                    WebhookEndpoint          @relation(fields: [endpointId, merchantId], references: [id, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_endpoint_id_merchant_id_fkey")
+  event                       WebhookEventProjection   @relation(fields: [eventId, merchantId], references: [eventId, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_event_id_merchant_id_fkey")
+  attempts                    WebhookDeliveryAttempt[]
 
   @@unique([endpointId, eventId], map: "webhook_deliveries_endpoint_id_event_id_key")
   @@map("webhook_deliveries")
+}
+
+model WebhookDeliveryAttempt {
+  id                    String                        @id @default(uuid()) @db.Uuid
+  deliveryId            String                        @map("delivery_id") @db.Uuid
+  attemptNumber         Int                           @map("attempt_number")
+  outcome               WebhookDeliveryAttemptOutcome
+  startedAt             DateTime                      @map("started_at") @db.Timestamptz(6)
+  completedAt           DateTime                      @map("completed_at") @db.Timestamptz(6)
+  durationMs            Int                           @map("duration_ms")
+  httpStatus            Int?                          @map("http_status") @db.SmallInt
+  errorCode             String?                       @map("error_code") @db.VarChar(64)
+  responseBodySha256    Bytes?                        @map("response_body_sha256") @db.ByteA
+  responseBodyTruncated Boolean                       @default(false) @map("response_body_truncated")
+  signatureVersion      String?                       @map("signature_version") @db.VarChar(8)
+  signatureTimestamp    BigInt?                       @map("signature_timestamp") @db.BigInt
+  currentSecretVersion  Int?                          @map("current_secret_version")
+  previousSecretVersion Int?                          @map("previous_secret_version")
+  createdAt             DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  delivery              WebhookDelivery               @relation(fields: [deliveryId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_delivery_attempts_delivery_id_fkey")
+
+  @@unique([deliveryId, attemptNumber], map: "webhook_delivery_attempts_delivery_id_attempt_number_key")
+  @@index([outcome, completedAt, id], map: "webhook_delivery_attempts_outcome_completed_at_id_idx")
+  @@map("webhook_delivery_attempts")
 }
 
 model AuditEvent {

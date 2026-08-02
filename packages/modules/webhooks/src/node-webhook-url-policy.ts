@@ -9,6 +9,10 @@ import {
   WebhookEndpointUrlUnresolvableError,
 } from './webhook.errors';
 import type { WebhookUrlPolicy } from './webhook.types';
+import type {
+  ResolvedWebhookDestination,
+  WebhookDeliveryUrlPolicy,
+} from './webhook-delivery.types';
 
 export interface WebhookDnsResolver {
   cancel(): void;
@@ -138,7 +142,7 @@ function isProhibitedAddress(address: string): boolean {
   return true;
 }
 
-export class NodeWebhookUrlPolicy implements WebhookUrlPolicy {
+export class NodeWebhookUrlPolicy implements WebhookDeliveryUrlPolicy, WebhookUrlPolicy {
   private readonly allowedDevelopmentOrigins: ReadonlySet<string>;
   private readonly maxAnswers: number;
   private readonly mode: 'development' | 'production';
@@ -160,6 +164,33 @@ export class NodeWebhookUrlPolicy implements WebhookUrlPolicy {
 
   public async normalizeAndValidate(rawUrl: string): Promise<string> {
     const parsed = normalize(rawUrl);
+    await this.resolveAndValidate(parsed);
+    return parsed.href;
+  }
+
+  public async resolveForDelivery(normalizedUrl: string): Promise<ResolvedWebhookDestination> {
+    const parsed = normalize(normalizedUrl);
+    if (parsed.href !== normalizedUrl) {
+      throw new WebhookEndpointUrlProhibitedError();
+    }
+    const addresses = await this.resolveAndValidate(parsed);
+    const selected = addresses[0];
+    if (selected === undefined) {
+      throw new WebhookEndpointUrlUnresolvableError();
+    }
+    const family = isIP(selected);
+    if (family !== 4 && family !== 6) {
+      throw new WebhookEndpointUrlProhibitedError();
+    }
+    return {
+      address: selected,
+      family,
+      hostname: hostnameWithoutBrackets(parsed.hostname),
+      url: parsed.href,
+    };
+  }
+
+  private async resolveAndValidate(parsed: URL): Promise<readonly string[]> {
     const developmentException =
       this.mode === 'development' && this.allowedDevelopmentOrigins.has(parsed.origin);
     if (!developmentException && (parsed.protocol !== 'https:' || parsed.port !== '')) {
@@ -182,7 +213,7 @@ export class NodeWebhookUrlPolicy implements WebhookUrlPolicy {
       throw new WebhookEndpointUrlProhibitedError();
     }
 
-    return parsed.href;
+    return distinct;
   }
 
   private async resolve(hostname: string): Promise<readonly string[]> {

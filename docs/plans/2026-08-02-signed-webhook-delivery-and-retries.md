@@ -1,6 +1,6 @@
 # Implementation Plan: Signed HTTP Webhook Delivery and Retry Processing
 
-- **Status:** Approved
+- **Status:** Completed
 - **Owner:** SettleFlow Project
 - **Created:** 2026-08-02
 - **Last updated:** 2026-08-02
@@ -482,24 +482,35 @@ No unresolved design decision blocks implementation of this approved local/refer
 
 - [x] Design and boundaries reviewed through accepted ADR-0018 and ADR-0019.
 - [x] Required architecture decisions approved.
-- [ ] Plan status changed to `In progress` when implementation begins.
-- [ ] Schema/migration, grants, and immutability evidence completed.
-- [ ] Signature, SSRF, HTTP resource, retry, recovery, and concurrency implementation completed.
-- [ ] Worker lifecycle/readiness and safe configuration completed.
-- [ ] Unit, real-dependency, failure, security, and regression tests pass.
-- [ ] Documentation, receiver guidance, and runbook updated.
-- [ ] Commands/results and deviations recorded below.
+- [x] Plan status changed to `In progress` when implementation begins.
+- [x] Schema/migration, grants, and immutability evidence completed.
+- [x] Signature, SSRF, HTTP resource, retry, recovery, and concurrency implementation completed.
+- [x] Worker lifecycle/readiness and safe configuration completed.
+- [x] Unit, real-dependency, failure, security, and regression tests pass.
+- [x] Documentation, receiver guidance, and runbook updated.
+- [x] Commands/results and deviations recorded below.
 
 ## Verification record
 
-| Command or review                                      | Result                                                         | Date/evidence                    |
-| ------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------- |
-| Git baseline at `980d053`                              | Clean `main`, synchronized with `origin/main`                  | 2026-08-02 planning inspection   |
-| ADR-0018/ADR-0019 and current schema/worker inspection | Complete; plan introduces no conflicting decision              | 2026-08-02 planning inspection   |
-| Markdown formatting for this plan                      | Passed targeted Prettier check                                 | 2026-08-02 planning verification |
-| Local Markdown link resolution                         | Passed; all 11 referenced local targets resolved               | 2026-08-02 planning verification |
-| `git diff --check` and final status                    | Passed; only this plan is untracked                            | 2026-08-02 planning verification |
-| Implementation verification matrix                     | Not run; no implementation is authorized in this planning task | Future implementation milestone  |
+| Command or review                                        | Result                                                                                                   | Date/evidence                    |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Git baseline at `980d053`                                | Clean `main`, synchronized with `origin/main`                                                            | 2026-08-02 planning inspection   |
+| ADR-0018/ADR-0019 and current schema/worker inspection   | Complete; plan introduces no conflicting decision                                                        | 2026-08-02 planning inspection   |
+| Markdown formatting for this plan                        | Passed targeted Prettier check                                                                           | 2026-08-02 planning verification |
+| Local Markdown link resolution                           | Passed; all 11 referenced local targets resolved                                                         | 2026-08-02 planning verification |
+| `git diff --check` and planning status                   | Passed; only this plan was untracked                                                                     | 2026-08-02 planning verification |
+| Implementation baseline at `9336306`                     | Clean `main`, synchronized with `origin/main`                                                            | 2026-08-02 implementation start  |
+| `corepack pnpm@11.18.0 install --frozen-lockfile`        | Passed; all 10 workspace projects already matched the lockfile                                           | 2026-08-02 implementation        |
+| Compose/provision/Prisma validation and migration checks | PostgreSQL 18.4 and RabbitMQ 4.3.4 healthy; runtime role provisioned; schema valid; 6 migrations current | 2026-08-02 implementation        |
+| `pnpm format:check`, `pnpm lint`, `pnpm typecheck`       | Passed with zero warnings/errors                                                                         | 2026-08-02 implementation        |
+| Focused Webhooks/worker/event-contract unit tests        | Passed: 49 Webhooks, 10 worker, and 15 event-contract tests                                              | 2026-08-02 implementation        |
+| Focused real PostgreSQL delivery integration             | Passed: 6 tests covering exact bytes/signatures, overlap, seven attempts, recovery, inactivity, races    | 2026-08-02 implementation        |
+| `pnpm test:integration`                                  | Passed on final run: 8 suites, 49 tests; see note below                                                  | 2026-08-02 implementation        |
+| `pnpm test`                                              | Passed: 32 suites, 141 tests across all 8 unit projects                                                  | 2026-08-02 implementation        |
+| `pnpm build` and `pnpm openapi:check`                    | Passed; API and worker production builds succeeded and OpenAPI remained byte-stable                      | 2026-08-02 implementation        |
+| Markdown links, `git diff --check`, and final status     | Passed; implementation changes remain uncommitted                                                        | 2026-08-02 implementation        |
+
+The first complete integration run exposed a missing synthetic worker-keyring fixture in the existing outbox-relay composition test; the fixture was updated and its nine tests passed. A later complete run had one transient failure in the pre-existing Payment Intent concurrency storm under container load. That suite then passed alone (13 tests), and the complete integration matrix passed on rerun (49 tests). No product behavior or test expectation was weakened.
 
 ## Definition of done
 

@@ -222,7 +222,7 @@ pnpm openapi:check
 pnpm dev:worker
 ```
 
-The worker is a standalone Nest application context, not an HTTP server. It relays committed `payment.created.v1` rows with at-least-once delivery and consumes the Webhook projection queue through a separate RabbitMQ connection/channel. Readiness requires PostgreSQL, a healthy publisher-confirm channel, the complete declared topology, and an actively registered projection consumer. It remains running but not ready during a dependency outage. Shutdown stops new relay claims, cancels the consumer, drains both paths for at most 10 seconds, then closes consumer, publisher, and Prisma resources.
+The worker is a standalone Nest application context, not an HTTP server. It relays committed `payment.created.v1` rows with at-least-once delivery, consumes the Webhook projection queue through a separate RabbitMQ connection/channel, and dispatches due Webhook delivery projections. Readiness requires PostgreSQL, a healthy publisher-confirm channel, the complete declared topology, an actively registered projection consumer, and a ready Webhook dispatcher/keyring. It remains running but not ready during a dependency outage. Shutdown stops new relay claims and delivery claims, cancels the consumer, drains all three paths for at most 10 seconds, aborts any Webhook sockets that exceed the drain, then closes consumer, publisher, and Prisma resources.
 
 The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID. The projection consumer deduplicates it under consumer name `webhook-projection.payment-created.v1`, using one serializable transaction for inbox completion, retained event evidence, endpoint eligibility, and pending deliveries. It acknowledges only after commit; invalid or unsupported messages are rejected to the existing DLQ, while transient dependency failures remain unacknowledged for reconnect/redelivery.
 
@@ -243,6 +243,14 @@ Validated worker settings and approved defaults are:
 | `WEBHOOK_PROJECTION_RECONNECT_MAX_MS`    |   60000 |
 | `WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS` |   10000 |
 | `WEBHOOK_PROJECTION_TRANSACTION_RETRIES` |       3 |
+| `WEBHOOK_DELIVERY_BATCH_SIZE`            |       4 |
+| `WEBHOOK_DELIVERY_CONCURRENCY`           |       4 |
+| `WEBHOOK_DELIVERY_POLL_INTERVAL_MS`      |     500 |
+| `WEBHOOK_DELIVERY_LEASE_MS`              |   30000 |
+| `WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS`    |    8000 |
+| `WEBHOOK_DELIVERY_RESPONSE_LIMIT_BYTES`  |   65536 |
+| `WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS`   |   10000 |
+| `WEBHOOK_DELIVERY_TRANSACTION_RETRIES`   |       3 |
 | `DEPENDENCY_READINESS_TIMEOUT_MS`        |    2000 |
 | `WORKER_HEARTBEAT_INTERVAL_MS`           |   30000 |
 
@@ -252,7 +260,9 @@ RabbitMQ topology is:
 - durable quorum queue `settleflow.webhook-projection.payment-created.v1`;
 - durable topic DLX `settleflow.dead-letter` and quorum DLQ `settleflow.webhook-projection.payment-created.v1.dlq`.
 
-The consumer selects only endpoints owned by the event merchant that are active and subscribed at processing time. It creates `PENDING` `whd_<ULID>` records with attempt count zero and does not perform HTTP delivery. Inspect relay backlog using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md), and diagnose projection or DLQ state using the [Webhook projection runbook](docs/runbooks/webhook-projection-consumer.md). See the [versioned event contract](docs/events/README.md) for payload and AMQP metadata.
+The consumer selects only endpoints owned by the event merchant that are active and subscribed at processing time and creates `PENDING` `whd_<ULID>` records with attempt count zero. The dispatcher claims at most four due `PENDING`/`RETRYING` rows for 30 seconds, re-resolves and validates each destination immediately before contact, sends the exact retained event bytes, and records immutable attempt evidence. A `2xx` is delivered; `408`, `429`, `5xx`, and transient transport failures use seven-attempt full-jitter retries with ceilings of 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours, and 24 hours. Redirects, other `4xx`, prohibited destinations, TLS verification failures, inactive endpoints, and an exhausted attempt budget become database `DEAD_LETTERED` records without an automatic replay path.
+
+For local delivery, load the same ignored local keyring values used by the API, set `WEBHOOK_URL_POLICY_MODE=development`, and allow only exact synthetic origins in `WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS`, for example `["http://127.0.0.1:8080"]`. Production rejects the local keyring provider and requires HTTPS on port 443; its KMS adapter remains a deployment prerequisite. Inspect relay backlog using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md), projection or broker-DLQ state using the [Webhook projection runbook](docs/runbooks/webhook-projection-consumer.md), and outbound attempts using the [Webhook delivery runbook](docs/runbooks/webhook-delivery.md). See the [versioned event and signed-delivery contract](docs/events/README.md) for receiver guidance.
 
 ### Quality and production commands
 
@@ -272,9 +282,9 @@ pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` producer and consumer contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including endpoint permission/audit/concurrency, relay race/failure, inbox/deduplication, commit-before-ack, tenant-safe projection, and poison-DLQ scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` producer and consumer contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires a working Docker runtime. It covers endpoint permission/audit/concurrency, relay race/failure, inbox/deduplication, commit-before-ack, tenant-safe projection, poison-DLQ scenarios, outbound claim exclusion, exact-byte signing, retries, lease recovery, and immutable delivery evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-The API readiness behavior is unchanged. Worker readiness independently reports its publisher and projection-consumer paths; the worker performs no HTTP webhook request, signing, delivery retry, provider, ledger, settlement, or real-funds operation.
+The API readiness behavior is unchanged. Worker readiness independently reports publisher, projection-consumer, and Webhook-dispatcher paths. Webhook endpoint failures affect only their deliveries; a dispatcher schema, grant, keyring, database, or lifecycle failure makes the worker non-ready. The worker still performs no provider, ledger, settlement, or real-funds operation.
 
 For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoint Foundation runbook](docs/runbooks/webhook-endpoint-foundation.md). Never run an application as the migration owner or manually edit endpoint, encrypted-secret, or audit rows.
 

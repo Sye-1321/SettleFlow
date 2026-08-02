@@ -16,6 +16,24 @@ const rabbitmqUrlSchema = z
     message: 'RABBITMQ_URL must use amqp:// or amqps://',
   });
 
+const developmentOriginsSchema = z
+  .string()
+  .default('[]')
+  .transform((value, context) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      context.addIssue({ code: 'custom', message: 'must be a JSON array of canonical origins' });
+      return z.NEVER;
+    }
+    if (!Array.isArray(parsed) || parsed.some((origin) => typeof origin !== 'string')) {
+      context.addIssue({ code: 'custom', message: 'must be a JSON array of canonical origins' });
+      return z.NEVER;
+    }
+    return parsed as readonly string[];
+  });
+
 const workerEnvironmentSchema = z
   .object({
     DATABASE_URL: databaseUrlSchema,
@@ -34,6 +52,33 @@ const workerEnvironmentSchema = z
       .max(60_000)
       .default(10_000),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(8_000)
+      .max(8_000)
+      .default(8_000),
+    WEBHOOK_DELIVERY_BATCH_SIZE: z.coerce.number().int().min(4).max(4).default(4),
+    WEBHOOK_DELIVERY_CONCURRENCY: z.coerce.number().int().min(4).max(4).default(4),
+    WEBHOOK_DELIVERY_LEASE_MS: z.coerce.number().int().min(30_000).max(30_000).default(30_000),
+    WEBHOOK_DELIVERY_POLL_INTERVAL_MS: z.coerce.number().int().min(500).max(500).default(500),
+    WEBHOOK_DELIVERY_RESPONSE_LIMIT_BYTES: z.coerce
+      .number()
+      .int()
+      .min(65_536)
+      .max(65_536)
+      .default(65_536),
+    WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(10_000)
+      .default(10_000),
+    WEBHOOK_DELIVERY_TRANSACTION_RETRIES: z.coerce.number().int().min(3).max(3).default(3),
+    WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS: developmentOriginsSchema,
+    WEBHOOK_KEYRING_PROVIDER: z.literal('local'),
+    WEBHOOK_LOCAL_ACTIVE_KEY_ID: z.string().min(1).max(64),
+    WEBHOOK_LOCAL_KEYS_JSON: z.string().min(1).max(4_096),
     WEBHOOK_PROJECTION_BODY_LIMIT_BYTES: z.coerce
       .number()
       .int()
@@ -60,6 +105,7 @@ const workerEnvironmentSchema = z
       .max(10_000)
       .default(10_000),
     WEBHOOK_PROJECTION_TRANSACTION_RETRIES: z.coerce.number().int().min(3).max(3).default(3),
+    WEBHOOK_URL_POLICY_MODE: z.enum(['development', 'production']).default('production'),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
   })
   .superRefine((environment, context) => {
@@ -75,6 +121,40 @@ const workerEnvironmentSchema = z
         code: 'custom',
         message: 'OUTBOX_RELAY_RETRY_BASE_MS must not exceed OUTBOX_RELAY_RETRY_MAX_MS',
         path: ['OUTBOX_RELAY_RETRY_BASE_MS'],
+      });
+    }
+    if (environment.WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS >= environment.WEBHOOK_DELIVERY_LEASE_MS) {
+      context.addIssue({
+        code: 'custom',
+        message: 'WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS must be shorter than the lease',
+        path: ['WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS'],
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      environment.WEBHOOK_URL_POLICY_MODE !== 'production'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Production requires WEBHOOK_URL_POLICY_MODE=production',
+        path: ['WEBHOOK_URL_POLICY_MODE'],
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      environment.WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS.length > 0
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Production cannot configure development webhook origins',
+        path: ['WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS'],
+      });
+    }
+    if (environment.NODE_ENV === 'production' && environment.WEBHOOK_KEYRING_PROVIDER === 'local') {
+      context.addIssue({
+        code: 'custom',
+        message: 'The local webhook keyring provider is forbidden in production',
+        path: ['WEBHOOK_KEYRING_PROVIDER'],
       });
     }
   });

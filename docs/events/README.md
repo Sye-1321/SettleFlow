@@ -26,4 +26,18 @@ AMQP `messageId` is the stable body `eventId`, `type` is `payment.created.v1`, a
 
 The consumer accepts no body larger than 16 KiB and validates exact UTF-8 JSON bytes, the nine-field payload, and every application-controlled property/header before persistence. Its durable identity is `(webhook-projection.payment-created.v1, messageId)`. One serializable transaction inserts completed inbox evidence, retains the exact validated bytes and SHA-256 fingerprint in the Webhooks marker, evaluates active/subscribed endpoints for that merchant, and inserts pending projections. A matching duplicate is acknowledged without another effect; an identity/fingerprint conflict is poison. RabbitMQ acknowledgement occurs only after the transaction commits.
 
+## Signed HTTP delivery
+
+The outbound `POST` body is the exact retained event byte sequence above; SettleFlow does not parse and reserialize it. Each request carries `Content-Type: application/json`, `User-Agent: SettleFlow-Webhooks/1.0`, `SettleFlow-Webhook-Id`, `SettleFlow-Event-Id`, `SettleFlow-Event-Type`, `SettleFlow-Event-Schema-Version`, `SettleFlow-Timestamp`, and `SettleFlow-Signature`, plus the exact byte `Content-Length`.
+
+For each eligible secret, the `v1` signature is the unpadded base64url HMAC-SHA-256 of:
+
+```text
+ASCII(timestamp) + "." + ASCII(deliveryId) + "." + rawBodyBytes
+```
+
+`SettleFlow-Signature` is `v1,<current-signature>` or, during an unexpired rotation overlap, `v1,<current-signature>;v1,<previous-signature>` in that order and without whitespace. A receiver must read the raw request bytes, require the event/delivery headers to match the body and supported contract, reject timestamps outside a five-minute default recency window, calculate candidate HMACs, compare equal-length values in constant time, and durably deduplicate by `SettleFlow-Webhook-Id` before applying an effect. The stable event ID alone is not a delivery-attempt identifier. An automatic retry keeps the same delivery ID and exact body but gets a new timestamp/signature.
+
+The sender follows no redirects and treats delivery as at least once: a remote system can accept a request before SettleFlow loses the response or its final database write. Receivers must therefore make the durable deduplication write and their business effect atomic. Do not parse JSON before verifying the signature over the original bytes.
+
 Run `pnpm test:event-contract` after changing the schema, serializer, example, or metadata mapping. A new field, event type, or incompatible semantic change requires a new version and a reviewed producer/relay/consumer rollout; never silently change this `v1` contract.

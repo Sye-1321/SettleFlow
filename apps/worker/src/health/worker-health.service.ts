@@ -14,6 +14,7 @@ export interface WorkerReadiness {
     readonly postgresql: DependencyStatus;
     readonly rabbitmqConsumer: DependencyStatus;
     readonly rabbitmqPublisher: DependencyStatus;
+    readonly webhookDelivery: DependencyStatus;
   };
   readonly service: 'worker';
   readonly status: 'not_ready' | 'ready';
@@ -25,10 +26,12 @@ export class WorkerHealthService {
     postgresql: { status: DependencyStatus };
     rabbitmqConsumer: { status: DependencyStatus };
     rabbitmqPublisher: { status: DependencyStatus };
+    webhookDelivery: { status: DependencyStatus };
   } = {
     postgresql: { status: 'down' },
     rabbitmqConsumer: { status: 'down' },
     rabbitmqPublisher: { status: 'down' },
+    webhookDelivery: { status: 'down' },
   };
   private state: WorkerState = 'starting';
 
@@ -46,13 +49,15 @@ export class WorkerHealthService {
         postgresql: this.dependencies.postgresql.status,
         rabbitmqConsumer: this.dependencies.rabbitmqConsumer.status,
         rabbitmqPublisher: this.dependencies.rabbitmqPublisher.status,
+        webhookDelivery: this.dependencies.webhookDelivery.status,
       },
       service: 'worker',
       status:
         this.state === 'running' &&
         this.dependencies.postgresql.status === 'up' &&
         this.dependencies.rabbitmqConsumer.status === 'up' &&
-        this.dependencies.rabbitmqPublisher.status === 'up'
+        this.dependencies.rabbitmqPublisher.status === 'up' &&
+        this.dependencies.webhookDelivery.status === 'up'
           ? 'ready'
           : 'not_ready',
     };
@@ -70,6 +75,7 @@ export class WorkerHealthService {
     readonly postgresql: { readonly status: DependencyStatus };
     readonly rabbitmqConsumer: { readonly status: DependencyStatus };
     readonly rabbitmqPublisher: { readonly status: DependencyStatus };
+    readonly webhookDelivery: { readonly status: DependencyStatus };
   }): void {
     this.dependencies = dependencies;
   }

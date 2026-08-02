@@ -105,13 +105,14 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       'outbox_events',
       'payment_intents',
       'webhook_deliveries',
+      'webhook_delivery_attempts',
       'webhook_endpoint_secrets',
       'webhook_endpoint_subscriptions',
       'webhook_endpoints',
       'webhook_event_projections',
     ]);
     expect(appliedMigrations.exitCode).toBe(0);
-    expect(appliedMigrations.stdout.trim()).toBe('5');
+    expect(appliedMigrations.stdout.trim()).toBe('6');
   });
 
   it('supports an atomic M1 persistence set and enforces the approved database invariants', async () => {

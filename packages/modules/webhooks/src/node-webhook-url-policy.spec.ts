@@ -35,6 +35,27 @@ describe('NodeWebhookUrlPolicy', () => {
     expect(dns.resolve6).toHaveBeenCalledWith('example.com');
   });
 
+  it('re-resolves a canonical URL for every delivery and returns one pinned approved address', async () => {
+    const first = resolver(['93.184.216.34']);
+    const second = resolver(['8.8.8.8']);
+    const resolvers = [first, second];
+    const policy = new NodeWebhookUrlPolicy({
+      developmentAllowedOrigins: [],
+      mode: 'production',
+      resolverFactory: (): WebhookDnsResolver => resolvers.shift() ?? second,
+    });
+
+    await expect(policy.resolveForDelivery('https://example.com/hook')).resolves.toEqual({
+      address: '93.184.216.34',
+      family: 4,
+      hostname: 'example.com',
+      url: 'https://example.com/hook',
+    });
+    await expect(policy.resolveForDelivery('https://example.com/hook')).resolves.toMatchObject({
+      address: '8.8.8.8',
+    });
+  });
+
   it.each([
     ['private IPv4 literal', 'https://10.0.0.1/hook'],
     ['IPv4-mapped loopback literal', 'https://[::ffff:127.0.0.1]/hook'],

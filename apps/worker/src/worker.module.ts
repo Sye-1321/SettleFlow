@@ -11,13 +11,20 @@ import {
 } from '@settleflow/eventing';
 import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
 import {
+  LocalWebhookKeyring,
+  NodeWebhookHttpClient,
+  NodeWebhookUrlPolicy,
   PaymentCreatedWebhookProjectionService,
+  PrismaWebhookDeliveryRepository,
   PrismaWebhookProjectionRepository,
+  WebhookDeliveryService,
+  WebhookSecretCipher,
 } from '@settleflow/webhooks';
 
 import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
 import { OutboxRelaySignalService } from './runtime/outbox-relay-signal.service';
+import { WebhookDeliverySignalService } from './runtime/webhook-delivery-signal.service';
 import { WebhookProjectionSignalService } from './runtime/webhook-projection-signal.service';
 import { WorkerRuntimeService } from './runtime/worker-runtime.service';
 
@@ -34,8 +41,46 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
     WorkerHealthService,
     OutboxRelaySignalService,
     WebhookProjectionSignalService,
+    WebhookDeliverySignalService,
     WorkerRuntimeService,
     MonotonicUlidGenerator,
+    {
+      provide: LocalWebhookKeyring,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): LocalWebhookKeyring =>
+        new LocalWebhookKeyring({
+          activeKeyId: config.get('WEBHOOK_LOCAL_ACTIVE_KEY_ID', { infer: true }),
+          keysJson: config.get('WEBHOOK_LOCAL_KEYS_JSON', { infer: true }),
+          nodeEnvironment: config.get('NODE_ENV', { infer: true }),
+          provider: config.get('WEBHOOK_KEYRING_PROVIDER', { infer: true }),
+        }),
+    },
+    {
+      provide: WebhookSecretCipher,
+      inject: [LocalWebhookKeyring],
+      useFactory: (keyring: LocalWebhookKeyring): WebhookSecretCipher =>
+        new WebhookSecretCipher(keyring),
+    },
+    {
+      provide: NodeWebhookUrlPolicy,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): NodeWebhookUrlPolicy =>
+        new NodeWebhookUrlPolicy({
+          developmentAllowedOrigins: config.get('WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS', {
+            infer: true,
+          }),
+          mode: config.get('WEBHOOK_URL_POLICY_MODE', { infer: true }),
+        }),
+    },
+    {
+      provide: NodeWebhookHttpClient,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): NodeWebhookHttpClient =>
+        new NodeWebhookHttpClient({
+          maxResponseBytes: config.get('WEBHOOK_DELIVERY_RESPONSE_LIMIT_BYTES', { infer: true }),
+          timeoutMs: config.get('WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS', { infer: true }),
+        }),
+    },
     {
       provide: PrismaDatabase,
       inject: [ConfigService],
@@ -74,6 +119,41 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
         }),
     },
     PrismaWebhookProjectionRepository,
+    {
+      provide: PrismaWebhookDeliveryRepository,
+      inject: [PrismaDatabase, ConfigService],
+      useFactory: (
+        database: PrismaDatabase,
+        config: ConfigService<WorkerEnvironment, true>,
+      ): PrismaWebhookDeliveryRepository =>
+        new PrismaWebhookDeliveryRepository(database, {
+          leaseDurationMs: config.get('WEBHOOK_DELIVERY_LEASE_MS', { infer: true }),
+          retryAttempts: config.get('WEBHOOK_DELIVERY_TRANSACTION_RETRIES', { infer: true }),
+          transactionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+        }),
+    },
+    {
+      provide: WebhookDeliveryService,
+      inject: [
+        PrismaWebhookDeliveryRepository,
+        LocalWebhookKeyring,
+        WebhookSecretCipher,
+        NodeWebhookUrlPolicy,
+        NodeWebhookHttpClient,
+        WebhookDeliverySignalService,
+      ],
+      useFactory: (
+        repository: PrismaWebhookDeliveryRepository,
+        keyring: LocalWebhookKeyring,
+        cipher: WebhookSecretCipher,
+        urlPolicy: NodeWebhookUrlPolicy,
+        httpClient: NodeWebhookHttpClient,
+        signals: WebhookDeliverySignalService,
+      ): WebhookDeliveryService =>
+        new WebhookDeliveryService(repository, keyring, cipher, urlPolicy, httpClient, {
+          signal: (value) => signals.record(value),
+        }),
+    },
     {
       provide: PaymentCreatedWebhookProjectionService,
       inject: [InboxService, PrismaWebhookProjectionRepository, MonotonicUlidGenerator],

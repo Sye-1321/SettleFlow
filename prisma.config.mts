@@ -8,7 +8,16 @@ if (existsSync(localEnvironmentPath)) {
   process.loadEnvFile(localEnvironmentPath);
 }
 
-const databaseUrl = process.env['DATABASE_URL'];
+const databaseUrl = process.env['MIGRATION_DATABASE_URL'];
+
+if (
+  databaseUrl === undefined &&
+  process.argv.some((argument) => argument === 'migrate' || argument === 'studio')
+) {
+  throw new Error(
+    'MIGRATION_DATABASE_URL is required for Prisma migration and inspection commands',
+  );
+}
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

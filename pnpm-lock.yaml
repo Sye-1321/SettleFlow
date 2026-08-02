@@ -99,9 +99,15 @@ importers:
       '@settleflow/merchant-access':
         specifier: workspace:*
         version: link:../../packages/modules/merchant-access
+      '@settleflow/operations':
+        specifier: workspace:*
+        version: link:../../packages/modules/operations
       '@settleflow/payments':
         specifier: workspace:*
         version: link:../../packages/modules/payments
+      '@settleflow/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/modules/webhooks
       lossless-json:
         specifier: 4.3.0
         version: 4.3.0
@@ -185,6 +191,12 @@ importers:
         specifier: workspace:*
         version: link:../../infrastructure
 
+  packages/modules/operations:
+    dependencies:
+      '@settleflow/infrastructure':
+        specifier: workspace:*
+        version: link:../../infrastructure
+
   packages/modules/payments:
     dependencies:
       '@settleflow/eventing':
@@ -196,6 +208,15 @@ importers:
       '@settleflow/infrastructure':
         specifier: workspace:*
         version: link:../../infrastructure
+
+  packages/modules/webhooks:
+    dependencies:
+      '@settleflow/infrastructure':
+        specifier: workspace:*
+        version: link:../../infrastructure
+      '@settleflow/operations':
+        specifier: workspace:*
+        version: link:../operations
 
 packages:
 

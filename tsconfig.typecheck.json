@@ -8,7 +8,9 @@
       "@settleflow/merchant-access": ["./packages/modules/merchant-access/src/index.ts"],
       "@settleflow/idempotency": ["./packages/modules/idempotency/src/index.ts"],
       "@settleflow/eventing": ["./packages/modules/eventing/src/index.ts"],
-      "@settleflow/payments": ["./packages/modules/payments/src/index.ts"]
+      "@settleflow/payments": ["./packages/modules/payments/src/index.ts"],
+      "@settleflow/operations": ["./packages/modules/operations/src/index.ts"],
+      "@settleflow/webhooks": ["./packages/modules/webhooks/src/index.ts"]
     },
     "types": ["jest", "node"]
   },

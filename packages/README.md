@@ -11,3 +11,7 @@ This directory contains shared infrastructure and bounded-domain packages while 
 `modules/eventing` owns the approved event contract, transactional persistence of `outbox_events`, PostgreSQL lease/claim/finalization behavior, and RabbitMQ confirm publisher/topology. The worker composes its public relay surface. Eventing publishes at least once but owns no consumer, inbox, webhook effect, or financial state.
 
 `modules/payments` owns the M1 Payment Intent command/query service, validation, representation, and Prisma adapter. It can request Idempotency and Eventing application operations but cannot write their tables directly. It exposes only create/read behavior in this milestone; later lifecycle and financial domains remain deferred.
+
+`modules/operations` owns the append-only lifecycle-audit vocabulary and transaction-aware persistence port. Its Prisma adapter may insert bounded audit evidence inside an owning domain's transaction, but application code cannot update or delete audit rows.
+
+`modules/webhooks` owns merchant-scoped endpoint, subscription, encrypted-secret, URL-policy, and lifecycle application behavior. It depends on the Operations audit port for atomic evidence. It does not deliver HTTP webhooks, consume RabbitMQ messages, or own payment state.

@@ -9,6 +9,8 @@ const common = {
     '^@settleflow/idempotency$': '<rootDir>/packages/modules/idempotency/src/index.ts',
     '^@settleflow/eventing$': '<rootDir>/packages/modules/eventing/src/index.ts',
     '^@settleflow/payments$': '<rootDir>/packages/modules/payments/src/index.ts',
+    '^@settleflow/operations$': '<rootDir>/packages/modules/operations/src/index.ts',
+    '^@settleflow/webhooks$': '<rootDir>/packages/modules/webhooks/src/index.ts',
   },
   testEnvironment: 'node',
   transform: {
@@ -56,6 +58,18 @@ module.exports = {
       collectCoverageFrom: ['<rootDir>/packages/modules/payments/src/**/*.ts'],
       displayName: 'payments',
       testMatch: ['<rootDir>/packages/modules/payments/src/**/*.spec.ts'],
+    },
+    {
+      ...common,
+      collectCoverageFrom: ['<rootDir>/packages/modules/operations/src/**/*.ts'],
+      displayName: 'operations',
+      testMatch: ['<rootDir>/packages/modules/operations/src/**/*.spec.ts'],
+    },
+    {
+      ...common,
+      collectCoverageFrom: ['<rootDir>/packages/modules/webhooks/src/**/*.ts'],
+      displayName: 'webhooks',
+      testMatch: ['<rootDir>/packages/modules/webhooks/src/**/*.spec.ts'],
     },
     {
       ...common,

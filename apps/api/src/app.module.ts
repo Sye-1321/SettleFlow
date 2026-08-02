@@ -13,7 +13,15 @@ import {
   MerchantAccessService,
   PrismaMerchantAccessRepository,
 } from '@settleflow/merchant-access';
+import { AuditService, PrismaAuditRepository } from '@settleflow/operations';
 import { PaymentIntentService, PrismaPaymentIntentRepository } from '@settleflow/payments';
+import {
+  LocalWebhookKeyring,
+  NodeWebhookUrlPolicy,
+  PrismaWebhookEndpointRepository,
+  WebhookEndpointService,
+  WebhookSecretCipher,
+} from '@settleflow/webhooks';
 
 import { ApiLifecycleService } from './api-lifecycle.service';
 import { ApiVersionController } from './api-version.controller';
@@ -23,9 +31,15 @@ import { ProblemDetailsFilter } from './http/problem-details.filter';
 import { RequestIdMiddleware } from './http/request-id';
 import { MerchantApiKeyGuard } from './merchant-access/merchant-api-key.guard';
 import { PaymentIntentController } from './payment-intents/payment-intent.controller';
+import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.controller';
 
 @Module({
-  controllers: [ApiVersionController, HealthController, PaymentIntentController],
+  controllers: [
+    ApiVersionController,
+    HealthController,
+    PaymentIntentController,
+    WebhookEndpointController,
+  ],
   imports: [
     ConfigModule.forRoot({
       cache: true,
@@ -37,6 +51,7 @@ import { PaymentIntentController } from './payment-intents/payment-intent.contro
   providers: [
     ApiLifecycleService,
     ApiKeyCredentialService,
+    MonotonicUlidGenerator,
     {
       provide: PrismaDatabase,
       inject: [ConfigService],
@@ -113,6 +128,70 @@ import { PaymentIntentController } from './payment-intents/payment-intent.contro
         eventing: EventingService,
       ): PaymentIntentService =>
         new PaymentIntentService(repository, idempotency, eventing, new MonotonicUlidGenerator()),
+    },
+    PrismaAuditRepository,
+    {
+      provide: AuditService,
+      inject: [PrismaAuditRepository],
+      useFactory: (repository: PrismaAuditRepository): AuditService => new AuditService(repository),
+    },
+    {
+      provide: NodeWebhookUrlPolicy,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<ApiEnvironment, true>): NodeWebhookUrlPolicy =>
+        new NodeWebhookUrlPolicy({
+          developmentAllowedOrigins: config.get('WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS', {
+            infer: true,
+          }),
+          mode: config.get('WEBHOOK_URL_POLICY_MODE', { infer: true }),
+        }),
+    },
+    {
+      provide: LocalWebhookKeyring,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<ApiEnvironment, true>): LocalWebhookKeyring =>
+        new LocalWebhookKeyring({
+          activeKeyId: config.get('WEBHOOK_LOCAL_ACTIVE_KEY_ID', { infer: true }),
+          keysJson: config.get('WEBHOOK_LOCAL_KEYS_JSON', { infer: true }),
+          nodeEnvironment: config.get('NODE_ENV', { infer: true }),
+          provider: config.get('WEBHOOK_KEYRING_PROVIDER', { infer: true }),
+        }),
+    },
+    {
+      provide: WebhookSecretCipher,
+      inject: [LocalWebhookKeyring],
+      useFactory: (keyring: LocalWebhookKeyring): WebhookSecretCipher =>
+        new WebhookSecretCipher(keyring),
+    },
+    {
+      provide: PrismaWebhookEndpointRepository,
+      inject: [PrismaDatabase, ConfigService],
+      useFactory: (
+        database: PrismaDatabase,
+        config: ConfigService<ApiEnvironment, true>,
+      ): PrismaWebhookEndpointRepository =>
+        new PrismaWebhookEndpointRepository(database, {
+          lockTimeoutMs: config.get('WEBHOOK_ENDPOINT_LOCK_TIMEOUT_MS', { infer: true }),
+          statementTimeoutMs: config.get('WEBHOOK_ENDPOINT_STATEMENT_TIMEOUT_MS', { infer: true }),
+        }),
+    },
+    {
+      provide: WebhookEndpointService,
+      inject: [
+        PrismaWebhookEndpointRepository,
+        AuditService,
+        NodeWebhookUrlPolicy,
+        WebhookSecretCipher,
+        MonotonicUlidGenerator,
+      ],
+      useFactory: (
+        repository: PrismaWebhookEndpointRepository,
+        audit: AuditService,
+        urlPolicy: NodeWebhookUrlPolicy,
+        secrets: WebhookSecretCipher,
+        identifiers: MonotonicUlidGenerator,
+      ): WebhookEndpointService =>
+        new WebhookEndpointService(repository, audit, urlPolicy, secrets, identifiers),
     },
     MerchantApiKeyGuard,
     {

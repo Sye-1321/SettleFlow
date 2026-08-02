@@ -51,32 +51,50 @@ enum IdempotencyState {
   @@map("idempotency_state")
 }
 
+enum WebhookEndpointStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+
+  @@map("webhook_endpoint_status")
+}
+
+enum WebhookSecretLifecycle {
+  CURRENT  @map("current")
+  PREVIOUS @map("previous")
+  RETIRED  @map("retired")
+
+  @@map("webhook_secret_lifecycle")
+}
+
 model Merchant {
-  id              String           @id @default(uuid()) @db.Uuid
-  code            String           @unique(map: "merchants_code_key") @db.VarChar(64)
-  status          MerchantStatus   @default(ACTIVE)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  apiKeys         ApiKey[]
-  paymentIntents  PaymentIntent[]
-  idempotencyKeys IdempotencyKey[]
-  outboxEvents    OutboxEvent[]
+  id               String            @id @default(uuid()) @db.Uuid
+  code             String            @unique(map: "merchants_code_key") @db.VarChar(64)
+  status           MerchantStatus    @default(ACTIVE)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  apiKeys          ApiKey[]
+  paymentIntents   PaymentIntent[]
+  idempotencyKeys  IdempotencyKey[]
+  outboxEvents     OutboxEvent[]
+  webhookEndpoints WebhookEndpoint[]
+  auditEvents      AuditEvent[]
 
   @@map("merchants")
 }
 
 model ApiKey {
-  id         String       @id @default(uuid()) @db.Uuid
-  merchantId String       @map("merchant_id") @db.Uuid
-  prefix     String       @unique(map: "api_keys_prefix_key") @db.VarChar(32)
-  secretHash String       @map("secret_hash") @db.Text
-  scopes     String[]     @db.Text
-  status     ApiKeyStatus @default(ACTIVE)
-  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  revokedAt  DateTime?    @map("revoked_at") @db.Timestamptz(6)
-  rotatedAt  DateTime?    @map("rotated_at") @db.Timestamptz(6)
-  merchant   Merchant     @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "api_keys_merchant_id_fkey")
+  id          String       @id @default(uuid()) @db.Uuid
+  merchantId  String       @map("merchant_id") @db.Uuid
+  prefix      String       @unique(map: "api_keys_prefix_key") @db.VarChar(32)
+  secretHash  String       @map("secret_hash") @db.Text
+  scopes      String[]     @db.Text
+  status      ApiKeyStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt   DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  rotatedAt   DateTime?    @map("rotated_at") @db.Timestamptz(6)
+  merchant    Merchant     @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "api_keys_merchant_id_fkey")
+  auditEvents AuditEvent[]
 
   @@index([merchantId, status], map: "api_keys_merchant_id_status_idx")
   @@map("api_keys")
@@ -148,4 +166,72 @@ model OutboxEvent {
   merchant       Merchant  @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "outbox_events_merchant_id_fkey")
 
   @@map("outbox_events")
+}
+
+model WebhookEndpoint {
+  id            String                        @id @default(uuid()) @db.Uuid
+  publicId      String                        @unique(map: "webhook_endpoints_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId    String                        @map("merchant_id") @db.Uuid
+  normalizedUrl String                        @map("normalized_url") @db.Text
+  status        WebhookEndpointStatus         @default(ACTIVE)
+  version       Int                           @default(0)
+  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant      Merchant                      @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_endpoints_merchant_id_fkey")
+  subscriptions WebhookEndpointSubscription[]
+  secrets       WebhookEndpointSecret[]
+
+  @@unique([merchantId, normalizedUrl], map: "webhook_endpoints_merchant_id_normalized_url_key")
+  @@index([merchantId, publicId(sort: Desc)], map: "webhook_endpoints_merchant_id_public_id_idx")
+  @@map("webhook_endpoints")
+}
+
+model WebhookEndpointSubscription {
+  endpointId String          @map("endpoint_id") @db.Uuid
+  eventType  String          @map("event_type") @db.VarChar(128)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_endpoint_subscriptions_endpoint_id_fkey")
+
+  @@id([endpointId, eventType], map: "webhook_endpoint_subscriptions_pkey")
+  @@map("webhook_endpoint_subscriptions")
+}
+
+model WebhookEndpointSecret {
+  id                String                 @id @default(uuid()) @db.Uuid
+  endpointId        String                 @map("endpoint_id") @db.Uuid
+  secretVersion     Int                    @map("secret_version")
+  lifecycle         WebhookSecretLifecycle
+  algorithm         String                 @db.VarChar(32)
+  encryptionKeyId   String                 @map("encryption_key_id") @db.VarChar(64)
+  nonce             Bytes                  @db.ByteA
+  ciphertext        Bytes                  @db.ByteA
+  authenticationTag Bytes                  @map("authentication_tag") @db.ByteA
+  overlapExpiresAt  DateTime?              @map("overlap_expires_at") @db.Timestamptz(6)
+  retiredAt         DateTime?              @map("retired_at") @db.Timestamptz(6)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  endpoint          WebhookEndpoint        @relation(fields: [endpointId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_endpoint_secrets_endpoint_id_fkey")
+
+  @@unique([endpointId, secretVersion], map: "webhook_endpoint_secrets_endpoint_id_secret_version_key")
+  @@map("webhook_endpoint_secrets")
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  merchantId    String   @map("merchant_id") @db.Uuid
+  actorType     String   @map("actor_type") @db.VarChar(32)
+  actorApiKeyId String   @map("actor_api_key_id") @db.Uuid
+  action        String   @db.VarChar(128)
+  targetType    String   @map("target_type") @db.VarChar(64)
+  targetId      String   @map("target_id") @db.VarChar(30)
+  reason        String   @db.VarChar(64)
+  requestId     String   @map("request_id") @db.VarChar(128)
+  details       Json     @db.JsonB
+  occurredAt    DateTime @map("occurred_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "audit_events_merchant_id_fkey")
+  actorApiKey   ApiKey   @relation(fields: [actorApiKeyId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "audit_events_actor_api_key_id_fkey")
+
+  @@index([merchantId, occurredAt(sort: Desc), id(sort: Desc)], map: "audit_events_merchant_id_occurred_at_id_idx")
+  @@index([targetType, targetId, occurredAt(sort: Desc), id(sort: Desc)], map: "audit_events_target_occurred_at_id_idx")
+  @@map("audit_events")
 }

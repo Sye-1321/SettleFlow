@@ -41,7 +41,7 @@ Never commit, log, document, screenshot, or place a usable credential in shell h
 - `reconciliation:write`
 - `reconciliation:read`
 
-There is no wildcard or mutable scope table. The M1 Payment Intent endpoints enforce `payments:write` and `payments:read`; the other strings reserve only the specification-defined vocabulary and authorize no unimplemented behavior.
+There is no wildcard or mutable scope table. The M1 Payment Intent endpoints enforce `payments:write` and `payments:read`. Webhook endpoint reads enforce `webhooks:read`, and endpoint creation, lifecycle changes, and secret rotation enforce `webhooks:manage`. The remaining strings reserve only the specification-defined vocabulary and authorize no unimplemented behavior.
 
 ## Verification commands
 

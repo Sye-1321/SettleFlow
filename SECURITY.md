@@ -15,7 +15,7 @@ If no private channel is published, do not post vulnerability details publicly. 
 - Commit placeholders in safe example environment files; never commit usable credentials, production configuration, API keys, tokens, webhook secrets, encryption keys, certificates, recovery codes, or secret-bearing logs.
 - Load local secrets through ignored environment files. Production-like deployments must use a managed secret store or KMS and audit access.
 - Generate API keys with a non-secret lookup prefix and high-entropy secret. Display the secret only at creation or rotation and store only a slow hash plus lookup metadata.
-- Encrypt webhook signing secrets at rest. Keep master/envelope keys outside the database and repository. Rotation must use a short documented overlap window when that feature is implemented.
+- Webhook signing secrets are encrypted at rest with AES-256-GCM and endpoint-bound authenticated data. Keep keyring material outside the database and repository. Rotation retains the encrypted previous secret for the approved 24-hour overlap; plaintext is disclosed only in the successful create or rotation response.
 - Revoke and rotate exposed material immediately, then inspect history, logs, artifacts, and dependent systems. Removing a secret from the latest commit is not sufficient.
 - Run secret scanning in local/CI workflows and before release. Treat a finding as blocking until proven false or remediated.
 
@@ -25,6 +25,7 @@ If no private channel is published, do not post vulnerability details publicly. 
 - Operator APIs require separate authentication and explicit authorization. Privileged actions must capture actor, action, target, reason, timestamp, and correlation ID in the append-only audit trail.
 - Enforce tenant ownership in each database predicate using the authenticated merchant ID. Do not fetch broadly and filter after retrieval.
 - Apply least privilege to application roles, migrations, worker queue permissions, network access, telemetry access, and operator capabilities. Financial and audit records require restricted update/delete permissions.
+- API and worker database access uses the non-owner `settleflow_app` role. Migration and provisioning use a distinct owner credential; the runtime role cannot update, delete, or truncate lifecycle audit.
 - Protect internal readiness and metrics endpoints from public access by default.
 
 ## Validation and resource controls

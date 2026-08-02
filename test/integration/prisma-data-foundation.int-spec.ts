@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { PrismaDatabase } from '@settleflow/infrastructure';
 
+import { provisionTestRuntimeRole } from './support/postgres-runtime-role';
+
 const POSTGRES_IMAGE =
   'postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296';
 
@@ -24,7 +26,7 @@ function runMigrationDeploy(databaseUrl: string): Promise<CommandResult> {
       [prismaCli, 'migrate', 'deploy', '--config', config],
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: databaseUrl },
+        env: { ...process.env, MIGRATION_DATABASE_URL: databaseUrl },
         timeout: 120_000,
         windowsHide: true,
       },
@@ -49,6 +51,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       .withUsername('settleflow_prisma_test')
       .withPassword('settleflow_prisma_test_only')
       .start();
+    await provisionTestRuntimeRole(postgres);
   }, 120_000);
 
   afterAll(async () => {
@@ -95,13 +98,17 @@ describe('Prisma data foundation with real PostgreSQL', () => {
     expect(tables.stdout.trim().split(/\r?\n/)).toEqual([
       '_prisma_migrations',
       'api_keys',
+      'audit_events',
       'idempotency_keys',
       'merchants',
       'outbox_events',
       'payment_intents',
+      'webhook_endpoint_secrets',
+      'webhook_endpoint_subscriptions',
+      'webhook_endpoints',
     ]);
     expect(appliedMigrations.exitCode).toBe(0);
-    expect(appliedMigrations.stdout.trim()).toBe('3');
+    expect(appliedMigrations.stdout.trim()).toBe('4');
   });
 
   it('supports an atomic M1 persistence set and enforces the approved database invariants', async () => {

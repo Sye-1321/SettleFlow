@@ -8,6 +8,7 @@ import { PrismaDatabase } from '@settleflow/infrastructure';
 import { ApiKeyUnavailableError, MerchantAccessService } from '@settleflow/merchant-access';
 
 import { configureOpenApi } from '../../apps/api/src/openapi';
+import { provisionTestRuntimeRole, testRuntimeDatabaseUrl } from './support/postgres-runtime-role';
 
 const POSTGRES_IMAGE =
   'postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296';
@@ -22,7 +23,7 @@ function deployMigrations(databaseUrl: string): Promise<void> {
       [prismaCli, 'migrate', 'deploy', '--config', config],
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: databaseUrl },
+        env: { ...process.env, MIGRATION_DATABASE_URL: databaseUrl },
         timeout: 120_000,
         windowsHide: true,
       },
@@ -51,11 +52,12 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
       .withUsername('settleflow_merchant_access_test')
       .withPassword('settleflow_merchant_access_test_only')
       .start();
+    await provisionTestRuntimeRole(postgres);
     await deployMigrations(postgres.getConnectionUri());
 
     process.env['API_HOST'] = '127.0.0.1';
     process.env['API_PORT'] = '3000';
-    process.env['DATABASE_URL'] = postgres.getConnectionUri();
+    process.env['DATABASE_URL'] = testRuntimeDatabaseUrl(postgres);
     process.env['DEPENDENCY_READINESS_TIMEOUT_MS'] = '250';
     process.env['IDEMPOTENCY_LEASE_MS'] = '30000';
     process.env['IDEMPOTENCY_LOCK_TIMEOUT_MS'] = '5000';
@@ -63,6 +65,15 @@ describe('Merchant Access with real PostgreSQL and HTTP', () => {
     process.env['IDEMPOTENCY_STATEMENT_TIMEOUT_MS'] = '10000';
     process.env['NODE_ENV'] = 'test';
     process.env['RABBITMQ_URL'] = 'amqp://unavailable:unavailable@127.0.0.1:1/unavailable';
+    process.env['WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS'] = '[]';
+    process.env['WEBHOOK_ENDPOINT_LOCK_TIMEOUT_MS'] = '5000';
+    process.env['WEBHOOK_ENDPOINT_STATEMENT_TIMEOUT_MS'] = '10000';
+    process.env['WEBHOOK_KEYRING_PROVIDER'] = 'local';
+    process.env['WEBHOOK_LOCAL_ACTIVE_KEY_ID'] = 'integration-v1';
+    process.env['WEBHOOK_LOCAL_KEYS_JSON'] = JSON.stringify({
+      'integration-v1': Buffer.alloc(32).toString('base64url'),
+    });
+    process.env['WEBHOOK_URL_POLICY_MODE'] = 'production';
 
     const { AppModule } = await import('../../apps/api/src/app.module.js');
     app = await NestFactory.create(AppModule, {

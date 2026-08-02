@@ -1,6 +1,6 @@
 # Implementation Plan: Webhook Endpoint Foundation
 
-- **Status:** Approved
+- **Status:** Completed
 - **Owner:** SettleFlow Project
 - **Created:** 2026-08-01
 - **Last updated:** 2026-08-01
@@ -554,27 +554,39 @@ There are no unresolved decisions blocking this foundation. The production KMS/p
 - [x] Design and boundaries reviewed.
 - [x] Required ADR/specification decisions approved by the project owner on 2026-08-01.
 - [x] Runtime-role, ETag, pagination, no-op/combined-audit, inactive rotation, SSRF, and local-keyring selections recorded.
-- [ ] Runtime role provisioning and owner/runtime credential split completed.
-- [ ] Prisma schema, migration, constraints, triggers, indexes, and grants completed.
-- [ ] Operations audit and Webhooks endpoint modules completed.
-- [ ] Five API routes and OpenAPI contract completed.
-- [ ] Unit, PostgreSQL integration, concurrency, permission, and failure scenarios pass.
-- [ ] Security, secret/redaction, SSRF, audit, and sensitive-data review pass.
-- [ ] Existing API/worker/Payment Intent/outbox behavior passes under `settleflow_app`.
-- [ ] Documentation and runbooks updated.
-- [ ] Commands/results and deviations recorded below.
+- [x] Runtime role provisioning and owner/runtime credential split completed.
+- [x] Prisma schema, migration, constraints, triggers, indexes, and grants completed.
+- [x] Operations audit and Webhooks endpoint modules completed.
+- [x] Five API routes and OpenAPI contract completed.
+- [x] Unit, PostgreSQL integration, concurrency, permission, and failure scenarios pass.
+- [x] Security, secret/redaction, SSRF, audit, and sensitive-data review pass.
+- [x] Existing API/worker/Payment Intent/outbox behavior passes under `settleflow_app`.
+- [x] Documentation and runbooks updated.
+- [x] Commands/results and deviations recorded below.
 
 ## Verification record
 
-| Command or review                                          | Result  | Date/evidence                                                                                                                           |
-| ---------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Baseline `git status --short --branch`                     | Pass    | 2026-08-01: `## main...origin/main`; clean before this plan was created.                                                                |
-| Accepted ADR/design and existing implementation inspection | Pass    | 2026-08-01: governance, ADR-0014 through ADR-0017, schema, modules, scripts, environment, Compose, and existing plan evidence reviewed. |
-| Plan-specific Prettier check                               | Pass    | 2026-08-01: direct Prettier check passed.                                                                                               |
-| Local Markdown-link validation                             | Pass    | 2026-08-01: all 19 local links in this plan resolve.                                                                                    |
-| `git diff --check` and untracked-file whitespace check     | Pass    | 2026-08-01: no whitespace errors; the untracked plan was also checked as a no-index diff from an empty file.                            |
-| Final `git status --short --branch`                        | Pass    | 2026-08-01: `## main...origin/main` with only `?? docs/plans/2026-08-01-webhook-endpoint-foundation.md`; no commit or push.             |
-| Implementation/migration/runtime verification              | Not run | Deliberately deferred; this milestone creates documentation only.                                                                       |
+| Command or review                                          | Result | Date/evidence                                                                                                                           |
+| ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline `git status --short --branch`                     | Pass   | 2026-08-01: `## main...origin/main`; clean at commit `0b8c857` before implementation began.                                             |
+| Accepted ADR/design and existing implementation inspection | Pass   | 2026-08-01: governance, ADR-0014 through ADR-0017, schema, modules, scripts, environment, Compose, and existing plan evidence reviewed. |
+| Plan-specific Prettier check                               | Pass   | 2026-08-01: direct Prettier check passed.                                                                                               |
+| Local Markdown-link validation                             | Pass   | 2026-08-01: all 19 local links in this plan resolve.                                                                                    |
+| `git diff --check` and untracked-file whitespace check     | Pass   | 2026-08-01: tracked diff and all 31 intended untracked implementation files have no whitespace errors.                                  |
+| Final `git status --short --branch`                        | Pass   | 2026-08-01: `## main...origin/main`; only intended unstaged implementation changes, no staged files, commit, or push.                   |
+| Exact lockfile install                                     | Pass   | 2026-08-01: `corepack pnpm@11.18.0 install --frozen-lockfile`; all 10 workspace projects already up to date.                            |
+| Compose and runtime-role provisioning                      | Pass   | 2026-08-01: PostgreSQL 18.4 and RabbitMQ 4.3.4 healthy; idempotent `settleflow_app` provisioning completed with owner credentials.      |
+| Prisma validation, generation, deploy, and status          | Pass   | 2026-08-01: schema valid, Prisma Client generated, four reviewed migrations applied, and local schema reported current.                 |
+| Prettier, ESLint, and TypeScript                           | Pass   | 2026-08-01: format check, zero-warning lint, and strict type-check completed.                                                           |
+| Docker-independent tests                                   | Pass   | 2026-08-01: 24 suites and 88 tests passed after the final SSRF corpus update.                                                           |
+| PostgreSQL/RabbitMQ integration tests                      | Pass   | 2026-08-01: all six suites and 40 tests passed; focused Webhooks suite passed seven endpoint/constraint/permission cases.               |
+| Production API and worker builds                           | Pass   | 2026-08-01: exact pinned clean, API build, and worker build commands completed; both independent artifacts produced.                    |
+| OpenAPI drift and dependency audit                         | Pass   | 2026-08-01: generated document matched source and pnpm reported no known vulnerabilities at high severity or above.                     |
+| Markdown links, whitespace, and final status               | Pass   | 2026-08-01: local-link scan and `git diff --check` passed; final status records only the intended uncommitted implementation changes.   |
+
+Implementation used the additive `20260801180000_webhook_endpoint_foundation` migration and introduced no third-party runtime dependency. One accepted combined-PATCH audit branch is deliberately dormant: `payment.created.v1` is the only authorized nonempty subscription, so no valid M1 request can change the subscription set. The service and atomic two-audit transaction path remain ready for a later explicitly authorized subscription value; no event type was invented to manufacture coverage.
+
+The first full Testcontainers run had one pre-existing readiness suite exceed its 10-second Docker host-port inspection window while five other suites passed. The readiness suite passed immediately in isolation, the expanded Webhooks suite passed in isolation, and a complete rerun then passed all six suites and 40 tests. This was transient Docker daemon latency, not a product-code change.
 
 ## Definition of done
 
@@ -589,4 +601,4 @@ This plan's implementation is complete only when:
 - migration, static, unit, integration, contract, permission, outage, build, security-audit, documentation/link, whitespace, and complete-status gates pass;
 - documentation and runbooks contain exact safe setup/recovery commands, this plan records final evidence/deviations, and no commit or push occurs unless separately authorized.
 
-The current plan-only milestone is complete when this file is the sole worktree change, its local links and Markdown format pass, `git diff --check` passes, and final status is recorded without any implementation change, commit, or push.
+This implementation milestone is complete with the approved files left uncommitted for owner review. No commit or push was performed.

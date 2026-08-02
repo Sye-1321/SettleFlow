@@ -13,9 +13,11 @@ The repository provides two independent NestJS processes and their local support
 - `packages/modules/idempotency`: merchant-scoped command acquisition, leases, fingerprints, and response snapshots.
 - `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, and RabbitMQ confirm publishing.
 - `packages/modules/payments`: M1 Payment Intent create/read application logic and Prisma adapter.
+- `packages/modules/operations`: append-only lifecycle-audit vocabulary and transaction-aware persistence.
+- `packages/modules/webhooks`: merchant endpoint, subscription, encrypted-secret, URL-policy, and lifecycle behavior.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-The implemented domain surface is Merchant Access plus the M1 simulated Payment Intent create/read slice and its transactional-outbox relay. There is no user/password/JWT authentication, merchant self-service onboarding, seed, RabbitMQ consumer/inbox processing, capture/authorization/refund, ledger, balance, settlement processing, webhook delivery, reconciliation, provider, or movement of real funds.
+The implemented domain surface is Merchant Access, the M1 simulated Payment Intent create/read slice and transactional-outbox relay, plus merchant-scoped webhook endpoint management. Endpoint management stores encrypted signing secrets and lifecycle audit evidence but does not consume the projection queue or deliver HTTP webhooks. There is no user/password/JWT authentication, merchant self-service onboarding, seed, RabbitMQ consumer/inbox processing, capture/authorization/refund, ledger, balance, settlement processing, reconciliation, provider, or movement of real funds.
 
 ### Pinned toolchain
 
@@ -63,6 +65,14 @@ Copy-Item apps/worker/.env.example apps/worker/.env
 
 The copied `.env` files are ignored. The checked-in values are local-development credentials only; never reuse them outside this project or add real secrets to an example.
 
+Before starting the API, generate a synthetic 32-byte local webhook-encryption key and replace the placeholder only in the ignored `apps/api/.env`:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+The local keyring and development URL policy are rejected when `NODE_ENV=production`. A production KMS/keyring adapter is deferred.
+
 If a default port is already occupied, change its value in the root `.env` and update the matching application URL. For example, set `POSTGRES_PORT=55432` and use port `55432` in both application `DATABASE_URL` values.
 
 ### Start and inspect local infrastructure
@@ -71,7 +81,10 @@ Start PostgreSQL and RabbitMQ and wait for both health checks:
 
 ```shell
 pnpm infra:up
+pnpm db:provision-runtime-role
 ```
+
+Role provisioning is idempotent. It creates or updates the non-owner `settleflow_app` login using the ignored root environment and never puts the password in a command argument. API and worker use this role; migrations and inspection use the separate owner URL.
 
 Inspect container health, recent logs, and service-native diagnostics:
 
@@ -103,11 +116,12 @@ Resetting is destructive to local PostgreSQL and RabbitMQ state. It removes both
 ```shell
 pnpm infra:reset
 pnpm infra:up
+pnpm db:provision-runtime-role
 ```
 
 ### Prisma and local database workflow
 
-The root `.env` supplies `DATABASE_URL` to Prisma commands. The schema contains Merchant Access (`Merchant`, `ApiKey`) and the accepted M1 persistence foundation (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`). It deliberately contains no settlement-status column, ledger/balance/settlement/provider/webhook table, inbox, or audit table. There is no seed command because a committed deterministic API-key secret would violate the one-time-secret requirement, and merchant onboarding is not authorized as a public workflow.
+The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access (`Merchant`, `ApiKey`), M1 persistence (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`), and the Webhook Endpoint Foundation (`WebhookEndpoint`, `WebhookEndpointSubscription`, `WebhookEndpointSecret`, `AuditEvent`). It deliberately contains no settlement-status column, financial tables, inbox, delivery, or delivery-attempt table. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
 
 Validate the schema and generate the ignored Prisma Client output:
 
@@ -123,7 +137,7 @@ pnpm db:migrate:apply
 pnpm db:migrate:status
 ```
 
-The baseline migration is intentionally empty. The next migration creates Merchant Access. The reviewed M1 migration then creates Payment Intent, idempotency, and transactional-outbox persistence with named checks, ownership foreign keys, and race-guard indexes. It does not create a settlement-status column or authorize a later payment transition.
+The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment Intent, idempotency, and transactional-outbox persistence; and the Webhook Endpoint Foundation. The webhook migration requires `settleflow_app` to have been provisioned first, creates named constraints and append-only audit triggers, and grants only the approved runtime privileges. It creates no delivery, inbox, financial, or settlement state.
 
 When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
 
@@ -159,6 +173,11 @@ The default listener is `http://127.0.0.1:3000` and exposes:
 - `GET /v1` - API version entrypoint protected by a merchant bearer API key.
 - `POST /v1/payment-intents` - idempotent manual Payment Intent creation; requires `payments:write`.
 - `GET /v1/payment-intents/{id}` - merchant-owned retrieval; requires `payments:read`.
+- `POST /v1/webhook-endpoints` - endpoint creation with one-time secret disclosure; requires `webhooks:manage`.
+- `GET /v1/webhook-endpoints` - keyset-paginated merchant endpoint list; requires `webhooks:read`.
+- `GET /v1/webhook-endpoints/{id}` - merchant-owned endpoint metadata; requires `webhooks:read`.
+- `PATCH /v1/webhook-endpoints/{id}` - ETag-guarded status/subscription change; requires `webhooks:manage`.
+- `POST /v1/webhook-endpoints/{id}/secret-rotations` - ETag-guarded secret rotation; requires `webhooks:manage`.
 - `GET /docs` - public Swagger UI.
 - `GET /docs/openapi.json` - public runtime OpenAPI document.
 
@@ -188,7 +207,7 @@ Retrieve the returned `pi_...` ID using a key with `payments:read`:
 Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/payment-intents/$env:SETTLEFLOW_PAYMENT_ID" -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
 ```
 
-No HTTP/CLI key-provisioning command is exposed: the specification does not authorize public merchant onboarding or a lifecycle endpoint, and operator authentication/auditing is deferred. Integration tests provision synthetic merchants and one-time keys directly through the bounded-domain application service. See [Merchant Access API and security](docs/api/merchant-access.md) and [M1 Payment Intent API](docs/api/payment-intents.md).
+No HTTP/CLI API-key provisioning command is exposed: the specification does not authorize public merchant onboarding or a key lifecycle endpoint, and operator authentication is deferred. Integration tests provision synthetic merchants and one-time keys directly through the bounded-domain application service. See [Merchant Access API and security](docs/api/merchant-access.md), [M1 Payment Intent API](docs/api/payment-intents.md), and [Webhook Endpoint API](docs/api/webhook-endpoints.md).
 
 Generate or verify the committed OpenAPI artifact:
 
@@ -239,15 +258,19 @@ pnpm test
 pnpm test:merchant-access
 pnpm test:payments
 pnpm test:event-contract
+pnpm test:operations
+pnpm test:webhooks
 pnpm test:integration
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, and Payments unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` serializer and relay contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including the relay race/failure scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` serializer and relay contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including endpoint permission/audit/concurrency tests and relay race/failure scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
 The API readiness behavior is unchanged. Worker readiness is relay-specific and requires its confirm channel and declared topology. The worker performs no consume, inbox, webhook, provider, ledger, settlement, or real-funds operation.
+
+For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoint Foundation runbook](docs/runbooks/webhook-endpoint-foundation.md). Never run an application as the migration owner or manually edit endpoint, encrypted-secret, or audit rows.
 
 ## Governance
 

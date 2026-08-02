@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { Buffer } from 'node:buffer';
 
 import { NestFactory } from '@nestjs/core';
 
@@ -16,6 +17,15 @@ const generationEnvironment: Readonly<Record<string, string>> = {
   IDEMPOTENCY_STATEMENT_TIMEOUT_MS: '10000',
   NODE_ENV: 'test',
   RABBITMQ_URL: 'amqp://openapi:openapi@127.0.0.1:1/settleflow_openapi',
+  WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS: '[]',
+  WEBHOOK_ENDPOINT_LOCK_TIMEOUT_MS: '5000',
+  WEBHOOK_ENDPOINT_STATEMENT_TIMEOUT_MS: '10000',
+  WEBHOOK_KEYRING_PROVIDER: 'local',
+  WEBHOOK_LOCAL_ACTIVE_KEY_ID: 'openapi-v1',
+  WEBHOOK_LOCAL_KEYS_JSON: JSON.stringify({
+    'openapi-v1': Buffer.alloc(32).toString('base64url'),
+  }),
+  WEBHOOK_URL_POLICY_MODE: 'production',
 };
 
 async function generate(): Promise<void> {

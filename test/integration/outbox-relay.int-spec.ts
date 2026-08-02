@@ -15,6 +15,7 @@ import {
 import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
 
 import { WorkerHealthService } from '../../apps/worker/src/health/worker-health.service';
+import { provisionTestRuntimeRole, testRuntimeDatabaseUrl } from './support/postgres-runtime-role';
 
 const POSTGRES_IMAGE =
   'postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296';
@@ -35,7 +36,7 @@ function deployMigrations(databaseUrl: string): Promise<void> {
       [prismaCli, 'migrate', 'deploy', '--config', config],
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: databaseUrl },
+        env: { ...process.env, MIGRATION_DATABASE_URL: databaseUrl },
         timeout: 120_000,
         windowsHide: true,
       },
@@ -94,6 +95,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
         .withStartupTimeout(120_000)
         .start(),
     ]);
+    await provisionTestRuntimeRole(postgres);
     await deployMigrations(postgres.getConnectionUri());
     database = new PrismaDatabase({
       connectionTimeoutMs: 5_000,
@@ -329,7 +331,8 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
   });
 
   it('starts ready on the real publisher topology and closes worker resources gracefully', async () => {
-    process.env['DATABASE_URL'] = postgres?.getConnectionUri();
+    process.env['DATABASE_URL'] =
+      postgres === undefined ? undefined : testRuntimeDatabaseUrl(postgres);
     process.env['DEPENDENCY_READINESS_TIMEOUT_MS'] = '5000';
     process.env['NODE_ENV'] = 'test';
     process.env['OUTBOX_RELAY_BATCH_SIZE'] = '50';

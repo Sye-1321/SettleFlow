@@ -2,11 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { ChannelModel, ConfirmChannel, Options, Replies } from 'amqplib';
 
 import type { ClaimedOutboxEvent } from './outbox-relay.types';
-import {
-  OUTBOX_RABBITMQ_TOPOLOGY,
-  RabbitMqOutboxPublisher,
-  type RabbitMqConnector,
-} from './rabbitmq-outbox.publisher';
+import { RabbitMqOutboxPublisher, type RabbitMqConnector } from './rabbitmq-outbox.publisher';
+import { OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
 
 const EVENT: ClaimedOutboxEvent = {
   aggregateId: 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV',

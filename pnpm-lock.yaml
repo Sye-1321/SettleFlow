@@ -138,6 +138,9 @@ importers:
       '@settleflow/infrastructure':
         specifier: workspace:*
         version: link:../../packages/infrastructure
+      '@settleflow/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/modules/webhooks
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -211,6 +214,9 @@ importers:
 
   packages/modules/webhooks:
     dependencies:
+      '@settleflow/eventing':
+        specifier: workspace:*
+        version: link:../eventing
       '@settleflow/infrastructure':
         specifier: workspace:*
         version: link:../../infrastructure

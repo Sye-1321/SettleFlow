@@ -34,6 +34,32 @@ const workerEnvironmentSchema = z
       .max(60_000)
       .default(10_000),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    WEBHOOK_PROJECTION_BODY_LIMIT_BYTES: z.coerce
+      .number()
+      .int()
+      .min(16_384)
+      .max(16_384)
+      .default(16_384),
+    WEBHOOK_PROJECTION_PREFETCH: z.coerce.number().int().min(2).max(2).default(2),
+    WEBHOOK_PROJECTION_RECONNECT_BASE_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(1_000)
+      .default(1_000),
+    WEBHOOK_PROJECTION_RECONNECT_MAX_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .max(60_000)
+      .default(60_000),
+    WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(10_000)
+      .default(10_000),
+    WEBHOOK_PROJECTION_TRANSACTION_RETRIES: z.coerce.number().int().min(3).max(3).default(3),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
   })
   .superRefine((environment, context) => {

@@ -66,17 +66,24 @@ enum WebhookSecretLifecycle {
   @@map("webhook_secret_lifecycle")
 }
 
+enum WebhookDeliveryStatus {
+  PENDING @map("pending")
+
+  @@map("webhook_delivery_status")
+}
+
 model Merchant {
-  id               String            @id @default(uuid()) @db.Uuid
-  code             String            @unique(map: "merchants_code_key") @db.VarChar(64)
-  status           MerchantStatus    @default(ACTIVE)
-  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String                   @id @default(uuid()) @db.Uuid
+  code             String                   @unique(map: "merchants_code_key") @db.VarChar(64)
+  status           MerchantStatus           @default(ACTIVE)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   apiKeys          ApiKey[]
   paymentIntents   PaymentIntent[]
   idempotencyKeys  IdempotencyKey[]
   outboxEvents     OutboxEvent[]
   webhookEndpoints WebhookEndpoint[]
+  webhookEvents    WebhookEventProjection[]
   auditEvents      AuditEvent[]
 
   @@map("merchants")
@@ -168,6 +175,21 @@ model OutboxEvent {
   @@map("outbox_events")
 }
 
+model InboxMessage {
+  consumerName  String   @map("consumer_name") @db.VarChar(128)
+  messageId     String   @map("message_id") @db.VarChar(30)
+  eventType     String   @map("event_type") @db.VarChar(128)
+  schemaVersion Int      @map("schema_version")
+  payloadSha256 Bytes    @map("payload_sha256") @db.ByteA
+  correlationId String   @map("correlation_id") @db.VarChar(128)
+  receivedAt    DateTime @map("received_at") @db.Timestamptz(6)
+  completedAt   DateTime @map("completed_at") @db.Timestamptz(6)
+
+  @@id([consumerName, messageId], map: "inbox_messages_pkey")
+  @@index([completedAt], map: "inbox_messages_completed_at_idx")
+  @@map("inbox_messages")
+}
+
 model WebhookEndpoint {
   id            String                        @id @default(uuid()) @db.Uuid
   publicId      String                        @unique(map: "webhook_endpoints_public_id_key") @map("public_id") @db.VarChar(30)
@@ -180,9 +202,12 @@ model WebhookEndpoint {
   merchant      Merchant                      @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_endpoints_merchant_id_fkey")
   subscriptions WebhookEndpointSubscription[]
   secrets       WebhookEndpointSecret[]
+  deliveries    WebhookDelivery[]
 
   @@unique([merchantId, normalizedUrl], map: "webhook_endpoints_merchant_id_normalized_url_key")
+  @@unique([id, merchantId], map: "webhook_endpoints_id_merchant_id_key")
   @@index([merchantId, publicId(sort: Desc)], map: "webhook_endpoints_merchant_id_public_id_idx")
+  @@index([merchantId, status, id], map: "webhook_endpoints_merchant_id_status_id_idx")
   @@map("webhook_endpoints")
 }
 
@@ -213,6 +238,46 @@ model WebhookEndpointSecret {
 
   @@unique([endpointId, secretVersion], map: "webhook_endpoint_secrets_endpoint_id_secret_version_key")
   @@map("webhook_endpoint_secrets")
+}
+
+model WebhookEventProjection {
+  eventId       String            @id(map: "webhook_event_projections_pkey") @map("event_id") @db.VarChar(30)
+  eventType     String            @map("event_type") @db.VarChar(128)
+  schemaVersion Int               @map("schema_version")
+  merchantId    String            @map("merchant_id") @db.Uuid
+  paymentId     String            @map("payment_id") @db.VarChar(29)
+  occurredAt    DateTime          @map("occurred_at") @db.Timestamptz(6)
+  requestId     String            @map("request_id") @db.VarChar(128)
+  amountMinor   BigInt            @map("amount_minor") @db.BigInt
+  currency      String            @db.Char(3)
+  paymentStatus String            @map("payment_status") @db.VarChar(32)
+  payloadBytes  Bytes             @map("payload_bytes") @db.ByteA
+  payloadSha256 Bytes             @map("payload_sha256") @db.ByteA
+  projectedAt   DateTime          @map("projected_at") @db.Timestamptz(6)
+  merchant      Merchant          @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "webhook_event_projections_merchant_id_fkey")
+  deliveries    WebhookDelivery[]
+
+  @@unique([eventId, merchantId], map: "webhook_event_projections_event_id_merchant_id_key")
+  @@index([merchantId, projectedAt], map: "webhook_event_projections_merchant_id_projected_at_idx")
+  @@map("webhook_event_projections")
+}
+
+model WebhookDelivery {
+  id            String                 @id @default(uuid()) @db.Uuid
+  publicId      String                 @unique(map: "webhook_deliveries_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId    String                 @map("merchant_id") @db.Uuid
+  endpointId    String                 @map("endpoint_id") @db.Uuid
+  eventId       String                 @map("event_id") @db.VarChar(30)
+  status        WebhookDeliveryStatus  @default(PENDING)
+  attemptCount  Int                    @default(0) @map("attempt_count")
+  nextAttemptAt DateTime               @map("next_attempt_at") @db.Timestamptz(6)
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  endpoint      WebhookEndpoint        @relation(fields: [endpointId, merchantId], references: [id, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_endpoint_id_merchant_id_fkey")
+  event         WebhookEventProjection @relation(fields: [eventId, merchantId], references: [eventId, merchantId], onDelete: Restrict, onUpdate: Cascade, map: "webhook_deliveries_event_id_merchant_id_fkey")
+
+  @@unique([endpointId, eventId], map: "webhook_deliveries_endpoint_id_event_id_key")
+  @@map("webhook_deliveries")
 }
 
 model AuditEvent {

@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import { OutboxRelayService, RabbitMqOutboxPublisher } from '@settleflow/eventing';
+import {
+  OutboxRelayService,
+  RabbitMqOutboxPublisher,
+  RabbitMqPaymentCreatedConsumer,
+} from '@settleflow/eventing';
 import { PrismaDatabase } from '@settleflow/infrastructure';
 
 import { WorkerEnvironment } from '../config/environment';
@@ -22,7 +26,7 @@ export class WorkerRuntimeService
   private readonly workerId = `outbox_${randomUUID()}`;
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private postgresqlUnavailableReported = false;
-  private rabbitmqUnavailableReported = false;
+  private rabbitmqPublisherUnavailableReported = false;
   private relayInFlight: Promise<number> | undefined;
   private relayTimer: NodeJS.Timeout | undefined;
   private readinessRefresh: Promise<void> | undefined;
@@ -32,6 +36,7 @@ export class WorkerRuntimeService
     private readonly config: ConfigService<WorkerEnvironment, true>,
     private readonly prisma: PrismaDatabase,
     private readonly publisher: RabbitMqOutboxPublisher,
+    private readonly consumer: RabbitMqPaymentCreatedConsumer,
     private readonly relay: OutboxRelayService,
     private readonly health: WorkerHealthService,
     private readonly signals: OutboxRelaySignalService,
@@ -54,6 +59,7 @@ export class WorkerRuntimeService
 
   public beforeApplicationShutdown(signal?: string): void {
     this.stopping = true;
+    this.consumer.beginShutdown();
     this.clearTimers();
     this.health.markStopping();
     this.signals.record({
@@ -70,13 +76,15 @@ export class WorkerRuntimeService
     const drainTimeoutMs = this.config.get('OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS', {
       infer: true,
     });
-    let drained = true;
-    if (activeRelay !== undefined) {
-      drained = await this.waitForRelay(activeRelay, drainTimeoutMs);
-    }
+    const [relayDrained, consumerDrained] = await Promise.all([
+      activeRelay === undefined
+        ? Promise.resolve(true)
+        : this.waitForRelay(activeRelay, drainTimeoutMs),
+      this.consumer.close(),
+    ]);
 
     await this.publisher.close();
-    if (!drained && activeRelay !== undefined) {
+    if (!relayDrained && activeRelay !== undefined) {
       await this.waitForRelay(
         activeRelay,
         this.config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
@@ -85,9 +93,12 @@ export class WorkerRuntimeService
     await this.prisma.close();
 
     this.signals.record({
-      code: drained ? 'drained' : 'drain_timeout',
+      code: relayDrained ? 'drained' : 'drain_timeout',
       event: 'outbox.relay.stopped',
     });
+    if (!consumerDrained) {
+      this.logger.warn(JSON.stringify({ event: 'webhook.projection.consumer.drain_timeout' }));
+    }
   }
 
   private async recordHeartbeat(): Promise<void> {
@@ -105,9 +116,10 @@ export class WorkerRuntimeService
     this.readinessRefresh ??= Promise.all([
       this.prisma.checkConnectivity(),
       this.publisher.ensureReady(),
+      this.consumer.ensureReady(),
     ])
-      .then(([postgresql, rabbitmq]) => {
-        this.updateDependencyReadiness(postgresql, rabbitmq);
+      .then(([postgresql, rabbitmqPublisher, rabbitmqConsumer]) => {
+        this.updateDependencyReadiness(postgresql, rabbitmqPublisher, rabbitmqConsumer);
       })
       .finally(() => {
         this.readinessRefresh = undefined;
@@ -147,7 +159,7 @@ export class WorkerRuntimeService
     try {
       const result = await this.relay.runOnce(this.workerId);
       if (result.publisherReady) {
-        this.updateDependencyReadiness(true, true);
+        this.updateDependencyReadiness(true, true, this.consumer.isReady());
       } else {
         await this.refreshReadiness();
       }
@@ -186,24 +198,29 @@ export class WorkerRuntimeService
     }
   }
 
-  private updateDependencyReadiness(postgresql: boolean, rabbitmq: boolean): void {
+  private updateDependencyReadiness(
+    postgresql: boolean,
+    rabbitmqPublisher: boolean,
+    rabbitmqConsumer: boolean,
+  ): void {
     if (!postgresql && !this.postgresqlUnavailableReported) {
       this.signals.record({
         code: 'postgresql_unavailable',
         event: 'outbox.relay.dependency_unavailable',
       });
     }
-    if (!rabbitmq && !this.rabbitmqUnavailableReported) {
+    if (!rabbitmqPublisher && !this.rabbitmqPublisherUnavailableReported) {
       this.signals.record({
-        code: 'rabbitmq_unavailable',
+        code: 'rabbitmq_publisher_unavailable',
         event: 'outbox.relay.dependency_unavailable',
       });
     }
     this.postgresqlUnavailableReported = !postgresql;
-    this.rabbitmqUnavailableReported = !rabbitmq;
+    this.rabbitmqPublisherUnavailableReported = !rabbitmqPublisher;
     this.health.updateDependencies({
       postgresql: { status: postgresql ? 'up' : 'down' },
-      rabbitmq: { status: rabbitmq ? 'up' : 'down' },
+      rabbitmqConsumer: { status: rabbitmqConsumer ? 'up' : 'down' },
+      rabbitmqPublisher: { status: rabbitmqPublisher ? 'up' : 'down' },
     });
   }
 

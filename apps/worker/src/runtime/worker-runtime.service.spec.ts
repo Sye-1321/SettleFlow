@@ -1,5 +1,9 @@
 import type { ConfigService } from '@nestjs/config';
-import type { OutboxRelayService, RabbitMqOutboxPublisher } from '@settleflow/eventing';
+import type {
+  OutboxRelayService,
+  RabbitMqOutboxPublisher,
+  RabbitMqPaymentCreatedConsumer,
+} from '@settleflow/eventing';
 import type { PrismaDatabase } from '@settleflow/infrastructure';
 
 import type { WorkerEnvironment } from '../config/environment';
@@ -20,6 +24,12 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
     OUTBOX_RELAY_RETRY_MAX_MS: 60_000,
     OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS: 10_000,
     RABBITMQ_URL: 'amqp://settleflow:local@127.0.0.1:5672/settleflow',
+    WEBHOOK_PROJECTION_BODY_LIMIT_BYTES: 16_384,
+    WEBHOOK_PROJECTION_PREFETCH: 2,
+    WEBHOOK_PROJECTION_RECONNECT_BASE_MS: 1_000,
+    WEBHOOK_PROJECTION_RECONNECT_MAX_MS: 60_000,
+    WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS: 10_000,
+    WEBHOOK_PROJECTION_TRANSACTION_RETRIES: 3,
     WORKER_HEARTBEAT_INTERVAL_MS: 30_000,
   };
   return {
@@ -37,6 +47,12 @@ describe('WorkerRuntimeService', () => {
     const publisher = {
       ensureReady,
     } as unknown as RabbitMqOutboxPublisher;
+    const ensureConsumerReady = jest.fn().mockResolvedValue(true);
+    const consumer = {
+      beginShutdown: jest.fn(),
+      ensureReady: ensureConsumerReady,
+      isReady: jest.fn().mockReturnValue(true),
+    } as unknown as RabbitMqPaymentCreatedConsumer;
     const relay = {
       runOnce: jest.fn().mockResolvedValue({
         claimed: 0,
@@ -53,6 +69,7 @@ describe('WorkerRuntimeService', () => {
       createConfig(),
       prisma,
       publisher,
+      consumer,
       relay,
       health,
       signals,
@@ -62,6 +79,7 @@ describe('WorkerRuntimeService', () => {
 
     expect(health.getReadiness().status).toBe('ready');
     expect(ensureReady).toHaveBeenCalledTimes(1);
+    expect(ensureConsumerReady).toHaveBeenCalledTimes(1);
     expect(record).toHaveBeenCalledWith({ event: 'outbox.relay.started' });
     runtime.beforeApplicationShutdown('SIGTERM');
     jest.useRealTimers();
@@ -95,12 +113,18 @@ describe('WorkerRuntimeService', () => {
       close: jest.fn().mockResolvedValue(undefined),
       ensureReady: jest.fn().mockResolvedValue(true),
     } as unknown as RabbitMqOutboxPublisher;
+    const consumer = {
+      beginShutdown: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+    } as unknown as RabbitMqPaymentCreatedConsumer;
     const runOnce = jest.fn().mockReturnValue(activeCycle);
     const relay = { runOnce } as unknown as OutboxRelayService;
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
       publisher,
+      consumer,
       relay,
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
@@ -146,11 +170,19 @@ describe('WorkerRuntimeService', () => {
         return Promise.resolve();
       }),
     } as unknown as RabbitMqOutboxPublisher;
+    const consumer = {
+      beginShutdown: jest.fn(),
+      close: jest.fn(() => {
+        closeOrder.push('consumer');
+        return Promise.resolve(true);
+      }),
+    } as unknown as RabbitMqPaymentCreatedConsumer;
     const relay = {} as OutboxRelayService;
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
       publisher,
+      consumer,
       relay,
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
@@ -159,6 +191,6 @@ describe('WorkerRuntimeService', () => {
     runtime.beforeApplicationShutdown('SIGTERM');
     await runtime.onApplicationShutdown();
 
-    expect(closeOrder).toEqual(['publisher', 'prisma']);
+    expect(closeOrder).toEqual(['consumer', 'publisher', 'prisma']);
   });
 });

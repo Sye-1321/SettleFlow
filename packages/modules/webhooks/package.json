@@ -16,6 +16,7 @@
     "build": "tsc --project tsconfig.build.json"
   },
   "dependencies": {
+    "@settleflow/eventing": "workspace:*",
     "@settleflow/infrastructure": "workspace:*",
     "@settleflow/operations": "workspace:*"
   }

@@ -20,8 +20,10 @@ The versioned body contract is [payment.created.v1.schema.json](payment.created.
 }
 ```
 
-The worker publishes through durable topic exchange `settleflow.domain-events` with routing key `payment.created.v1`. The approved future-consumer quorum queue is `settleflow.webhook-projection.payment-created.v1`; it intentionally accumulates until that consumer is implemented. Rejected messages dead-letter through `settleflow.dead-letter` to quorum queue `settleflow.webhook-projection.payment-created.v1.dlq` using the consumer queue name as the dead-letter routing key.
+The worker publishes through durable topic exchange `settleflow.domain-events` with routing key `payment.created.v1` and consumes durable quorum queue `settleflow.webhook-projection.payment-created.v1` through a separate channel/connection with prefetch 2. Invalid or unsupported messages dead-letter through `settleflow.dead-letter` to quorum queue `settleflow.webhook-projection.payment-created.v1.dlq` using the consumer queue name as the dead-letter routing key.
 
 AMQP `messageId` is the stable body `eventId`, `type` is `payment.created.v1`, and `correlationId` is `requestId`. Persistent delivery, the original timestamp, application ID `settleflow-worker`, schema version, aggregate type/ID, merchant ID, and publish attempt are carried in the approved properties and headers. Delivery tags and attempt counts are diagnostics, not logical identities.
+
+The consumer accepts no body larger than 16 KiB and validates exact UTF-8 JSON bytes, the nine-field payload, and every application-controlled property/header before persistence. Its durable identity is `(webhook-projection.payment-created.v1, messageId)`. One serializable transaction inserts completed inbox evidence, retains the exact validated bytes and SHA-256 fingerprint in the Webhooks marker, evaluates active/subscribed endpoints for that merchant, and inserts pending projections. A matching duplicate is acknowledged without another effect; an identity/fingerprint conflict is poison. RabbitMQ acknowledgement occurs only after the transaction commits.
 
 Run `pnpm test:event-contract` after changing the schema, serializer, example, or metadata mapping. A new field, event type, or incompatible semantic change requires a new version and a reviewed producer/relay/consumer rollout; never silently change this `v1` contract.

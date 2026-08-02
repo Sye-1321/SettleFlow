@@ -43,6 +43,8 @@ If no private channel is published, do not post vulnerability details publicly. 
 - Do not follow redirects. Use HTTPS in production-like environments, allow only approved ports, and apply outbound egress restrictions.
 - Validate and normalize the URL at registration and re-resolve DNS immediately before delivery. Block loopback, private, link-local, multicast/reserved ranges, cloud metadata targets, and any resolved address that violates policy. Defend against DNS rebinding and IPv4/IPv6 representation tricks.
 - Keep full webhook payloads and response bodies out of logs by default. Store bounded, redacted attempt evidence.
+- Treat RabbitMQ payloads and metadata as untrusted. The Webhook projection consumer enforces the exact `payment.created.v1` contract and a 16 KiB body limit before persistence, logs only stable identifiers/error codes, and sends invalid or unsupported messages to the approved DLQ.
+- Preserve `inbox_messages`, retained Webhook event markers, and pending deliveries as security/audit evidence. Runtime access is append/read only; do not update, delete, truncate, purge, or manually replay this evidence.
 
 ## Sensitive data and logging
 

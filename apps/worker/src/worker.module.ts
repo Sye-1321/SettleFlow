@@ -2,15 +2,23 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ConfigService } from '@nestjs/config';
 import {
+  InboxService,
   OutboxRelayService,
+  PrismaInboxRepository,
   PrismaOutboxRelayRepository,
   RabbitMqOutboxPublisher,
+  RabbitMqPaymentCreatedConsumer,
 } from '@settleflow/eventing';
-import { PrismaDatabase } from '@settleflow/infrastructure';
+import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
+import {
+  PaymentCreatedWebhookProjectionService,
+  PrismaWebhookProjectionRepository,
+} from '@settleflow/webhooks';
 
 import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
 import { OutboxRelaySignalService } from './runtime/outbox-relay-signal.service';
+import { WebhookProjectionSignalService } from './runtime/webhook-projection-signal.service';
 import { WorkerRuntimeService } from './runtime/worker-runtime.service';
 
 @Module({
@@ -25,7 +33,9 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
   providers: [
     WorkerHealthService,
     OutboxRelaySignalService,
+    WebhookProjectionSignalService,
     WorkerRuntimeService,
+    MonotonicUlidGenerator,
     {
       provide: PrismaDatabase,
       inject: [ConfigService],
@@ -33,6 +43,70 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
         new PrismaDatabase({
           connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
           databaseUrl: config.get('DATABASE_URL', { infer: true }),
+        }),
+    },
+    {
+      provide: PrismaInboxRepository,
+      inject: [PrismaDatabase, ConfigService],
+      useFactory: (
+        database: PrismaDatabase,
+        config: ConfigService<WorkerEnvironment, true>,
+      ): PrismaInboxRepository => {
+        const shutdownTimeoutMs = config.get('WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS', {
+          infer: true,
+        });
+        return new PrismaInboxRepository(database, {
+          lockTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+          statementTimeoutMs: shutdownTimeoutMs - 2_000,
+          transactionTimeoutMs: shutdownTimeoutMs - 1_000,
+        });
+      },
+    },
+    {
+      provide: InboxService,
+      inject: [PrismaInboxRepository, ConfigService],
+      useFactory: (
+        repository: PrismaInboxRepository,
+        config: ConfigService<WorkerEnvironment, true>,
+      ): InboxService =>
+        new InboxService(repository, {
+          retryAttempts: config.get('WEBHOOK_PROJECTION_TRANSACTION_RETRIES', { infer: true }),
+        }),
+    },
+    PrismaWebhookProjectionRepository,
+    {
+      provide: PaymentCreatedWebhookProjectionService,
+      inject: [InboxService, PrismaWebhookProjectionRepository, MonotonicUlidGenerator],
+      useFactory: (
+        inbox: InboxService,
+        repository: PrismaWebhookProjectionRepository,
+        identifiers: MonotonicUlidGenerator,
+      ): PaymentCreatedWebhookProjectionService =>
+        new PaymentCreatedWebhookProjectionService(inbox, repository, identifiers),
+    },
+    {
+      provide: RabbitMqPaymentCreatedConsumer,
+      inject: [
+        PaymentCreatedWebhookProjectionService,
+        ConfigService,
+        WebhookProjectionSignalService,
+      ],
+      useFactory: (
+        handler: PaymentCreatedWebhookProjectionService,
+        config: ConfigService<WorkerEnvironment, true>,
+        signals: WebhookProjectionSignalService,
+      ): RabbitMqPaymentCreatedConsumer =>
+        new RabbitMqPaymentCreatedConsumer(handler, {
+          bodyLimitBytes: config.get('WEBHOOK_PROJECTION_BODY_LIMIT_BYTES', { infer: true }),
+          connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+          prefetch: config.get('WEBHOOK_PROJECTION_PREFETCH', { infer: true }),
+          rabbitmqUrl: config.get('RABBITMQ_URL', { infer: true }),
+          reconnectBaseMs: config.get('WEBHOOK_PROJECTION_RECONNECT_BASE_MS', { infer: true }),
+          reconnectMaxMs: config.get('WEBHOOK_PROJECTION_RECONNECT_MAX_MS', { infer: true }),
+          shutdownTimeoutMs: config.get('WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS', {
+            infer: true,
+          }),
+          signal: (value) => signals.record(value),
         }),
     },
     {

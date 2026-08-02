@@ -1,3 +1,5 @@
+import { PermanentMessageProcessingError } from '@settleflow/eventing';
+
 export class InvalidWebhookEndpointRequestError extends Error {
   public constructor(public readonly field?: string) {
     super('The webhook endpoint request is invalid');
@@ -79,5 +81,26 @@ export class WebhookKeyringUnavailableError extends Error {
   public constructor() {
     super('The webhook keyring is unavailable');
     this.name = 'WebhookKeyringUnavailableError';
+  }
+}
+
+export class WebhookDeliveryIdentifierCollisionError extends Error {
+  public constructor() {
+    super('The webhook delivery identifier collided');
+    this.name = 'WebhookDeliveryIdentifierCollisionError';
+  }
+}
+
+export class WebhookDeliveryIdentifierGenerationExhaustedError extends PermanentMessageProcessingError {
+  public constructor() {
+    super('webhook_delivery_identifier_generation_exhausted');
+    this.name = 'WebhookDeliveryIdentifierGenerationExhaustedError';
+  }
+}
+
+export class WebhookEventProjectionConflictError extends PermanentMessageProcessingError {
+  public constructor() {
+    super('webhook_event_projection_identity_conflict');
+    this.name = 'WebhookEventProjectionConflictError';
   }
 }

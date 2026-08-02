@@ -52,15 +52,15 @@ Interpretation:
 - active lease under 30 seconds: allow the bounded publish/finalize cycle to finish;
 - expired lease: recoverable by any healthy relay instance, without an operator row edit;
 - increasing attempts with topology failures or returned messages: compare the declared exchange, binding, queue type, and DLX arguments with [the event contract](../events/README.md);
-- growing consumer queue with published rows: expected until the future Webhook projection consumer milestone, but disk capacity still requires monitoring;
-- DLQ messages: production consumer dead-lettering is not implemented; investigate any unexpected depth without purging it.
+- growing consumer queue with published rows: the projection consumer is unavailable or falling behind; use the [Webhook projection consumer runbook](webhook-projection-consumer.md) without purging or moving messages;
+- DLQ messages: the consumer rejected poison or exhausted its bounded safe processing retries; classify through the Webhook projection runbook without purging it.
 
 ## Contain and recover
 
 1. If PostgreSQL or RabbitMQ is unhealthy, restore that service through its approved platform procedure. Do not keep restarting the worker against a known topology conflict.
 2. If topology declaration conflicts, leave the queue and messages intact. Capture read-only definitions, stop the affected relay deployment, compare them with the approved contract, and prepare a separately reviewed additive/forward topology change.
 3. If credentials or permissions are invalid, rotate or correct them through the environment secret manager. Never place credentials in repository files, commands, logs, or the incident record.
-4. Once both dependencies and topology are healthy, start one worker instance. Readiness must require PostgreSQL plus a healthy publisher confirm channel and complete topology.
+4. Once both dependencies and topology are healthy, start one worker instance. Readiness must require PostgreSQL, a healthy publisher confirm channel, complete topology, and an active projection consumer registration.
 5. Allow expired leases and due retry times to be reclaimed automatically. Unlimited transient retries use full jitter capped at 60 seconds; do not bypass the delay by editing rows.
 6. Scale relay workers only through the approved deployment process. `FOR UPDATE SKIP LOCKED` provides disjoint active claims, but duplicates remain possible after confirmation-before-mark failure.
 
@@ -74,7 +74,7 @@ Repeat the read-only backlog queries until due and expired-lease counts return t
 - `outbox.publish.confirmed` and `outbox.finalize.completed` resume;
 - no event was falsely marked published during the outage;
 - any duplicate retained its original `messageId`/event ID;
-- queue depth changes consistently with the intentionally absent consumer;
+- consumer queue depth falls as completed inbox/marker/delivery counts rise consistently;
 - Payment Intent API behavior and financial invariants remain unchanged.
 
 Escalate immediately if an unpublished row cannot be reclaimed after dependency recovery, topology remains incompatible, the pending index is not used, publish lag stays above the approved target, data was edited/purged, or a financial/audit invariant may be affected. Record root cause, customer/merchant impact, duplicate-delivery impact, commands and timestamps, the authorized recovery action, and follow-up work.

@@ -124,3 +124,59 @@ export interface WebhookEndpointRepository {
 export interface WebhookUrlPolicy {
   normalizeAndValidate(rawUrl: string): Promise<string>;
 }
+
+export interface WebhookEventProjectionRecord {
+  readonly amountMinor: bigint;
+  readonly currency: string;
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly merchantId: string;
+  readonly occurredAt: Date;
+  readonly payloadBytes: Uint8Array;
+  readonly payloadSha256: Uint8Array;
+  readonly paymentId: string;
+  readonly paymentStatus: string;
+  readonly requestId: string;
+  readonly schemaVersion: number;
+}
+
+export interface CreateWebhookEventProjectionInput {
+  readonly amountMinor: bigint;
+  readonly currency: 'ETB' | 'USD';
+  readonly eventId: string;
+  readonly eventType: 'payment.created.v1';
+  readonly merchantId: string;
+  readonly occurredAt: Date;
+  readonly payloadBytes: Uint8Array;
+  readonly payloadSha256: Uint8Array;
+  readonly paymentId: string;
+  readonly paymentStatus: 'CREATED';
+  readonly projectedAt: Date;
+  readonly requestId: string;
+  readonly schemaVersion: 1;
+}
+
+export interface CreateWebhookDeliveryProjectionInput {
+  readonly endpointId: string;
+  readonly eventId: string;
+  readonly id: string;
+  readonly merchantId: string;
+  readonly projectedAt: Date;
+  readonly publicId: string;
+}
+
+export interface WebhookProjectionRepository {
+  create(
+    transaction: PrismaTransactionClient,
+    event: CreateWebhookEventProjectionInput,
+    deliveries: readonly CreateWebhookDeliveryProjectionInput[],
+  ): Promise<void>;
+  findEligibleEndpointIds(
+    transaction: PrismaTransactionClient,
+    merchantId: string,
+  ): Promise<readonly string[]>;
+  findEvent(
+    transaction: PrismaTransactionClient,
+    eventId: string,
+  ): Promise<WebhookEventProjectionRecord | undefined>;
+}

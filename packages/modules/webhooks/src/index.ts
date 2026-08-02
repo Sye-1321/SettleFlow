@@ -11,6 +11,9 @@ export {
   WebhookEndpointUrlResolutionUnavailableError,
   WebhookEndpointUrlUnresolvableError,
   WebhookKeyringUnavailableError,
+  WebhookDeliveryIdentifierCollisionError,
+  WebhookDeliveryIdentifierGenerationExhaustedError,
+  WebhookEventProjectionConflictError,
 } from './webhook.errors';
 export {
   LocalWebhookKeyring,
@@ -25,6 +28,18 @@ export type {
 } from './webhook-secret-crypto';
 export { NodeWebhookUrlPolicy, nodeWebhookUrlPolicyInternals } from './node-webhook-url-policy';
 export type { NodeWebhookUrlPolicyOptions, WebhookDnsResolver } from './node-webhook-url-policy';
+export {
+  PaymentCreatedWebhookProjectionService,
+  paymentCreatedWebhookProjectionServiceInternals,
+} from './payment-created-webhook-projection.service';
+export type {
+  WebhookProjectionProcessingResult,
+  WebhookProjectionResult,
+} from './payment-created-webhook-projection.service';
+export {
+  PrismaWebhookProjectionRepository,
+  prismaWebhookProjectionRepositoryInternals,
+} from './prisma-webhook-projection.repository';
 export {
   PrismaWebhookEndpointRepository,
   prismaWebhookEndpointRepositoryInternals,
@@ -41,6 +56,8 @@ export type {
 } from './webhook-endpoint.service';
 export type {
   CreatedWebhookEndpointRepresentation,
+  CreateWebhookDeliveryProjectionInput,
+  CreateWebhookEventProjectionInput,
   EncryptedWebhookSecret,
   MerchantWebhookActor,
   RotatedWebhookSecretRepresentation,
@@ -49,6 +66,8 @@ export type {
   WebhookEndpointRepresentation,
   WebhookEndpointRepository,
   WebhookEndpointStatus,
+  WebhookEventProjectionRecord,
+  WebhookProjectionRepository,
   WebhookRotationContext,
   WebhookSubscription,
   WebhookUrlPolicy,

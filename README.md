@@ -7,17 +7,17 @@ SettleFlow is a finance-grade payment-platform simulation and engineering case s
 The repository provides two independent NestJS processes and their local supporting services:
 
 - `apps/api`: HTTP API with process liveness and dependency readiness.
-- `apps/worker`: standalone transactional-outbox relay with internal lifecycle health.
+- `apps/worker`: standalone transactional-outbox relay and Webhook projection consumer with internal lifecycle health.
 - `packages/infrastructure`: shared PostgreSQL/RabbitMQ connection lifecycle and lazy Prisma adapter.
 - `packages/modules/merchant-access`: bounded-domain API-key generation, lifecycle, authentication, and Prisma persistence.
 - `packages/modules/idempotency`: merchant-scoped command acquisition, leases, fingerprints, and response snapshots.
-- `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, and RabbitMQ confirm publishing.
+- `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, RabbitMQ confirm publishing/consumption, and durable inbox deduplication.
 - `packages/modules/payments`: M1 Payment Intent create/read application logic and Prisma adapter.
 - `packages/modules/operations`: append-only lifecycle-audit vocabulary and transaction-aware persistence.
-- `packages/modules/webhooks`: merchant endpoint, subscription, encrypted-secret, URL-policy, and lifecycle behavior.
+- `packages/modules/webhooks`: merchant endpoint, subscription, encrypted-secret, URL-policy, lifecycle behavior, processed-event markers, and pending delivery projection.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-The implemented domain surface is Merchant Access, the M1 simulated Payment Intent create/read slice and transactional-outbox relay, plus merchant-scoped webhook endpoint management. Endpoint management stores encrypted signing secrets and lifecycle audit evidence but does not consume the projection queue or deliver HTTP webhooks. There is no user/password/JWT authentication, merchant self-service onboarding, seed, RabbitMQ consumer/inbox processing, capture/authorization/refund, ledger, balance, settlement processing, reconciliation, provider, or movement of real funds.
+The implemented domain surface is Merchant Access, the M1 simulated Payment Intent create/read slice and transactional-outbox relay, merchant-scoped webhook endpoint management, and the `payment.created.v1` Webhook projection consumer. The consumer persists inbox evidence, a retained event marker, and pending endpoint deliveries but never sends an HTTP request. There is no user/password/JWT authentication, merchant self-service onboarding, seed, HTTP webhook delivery/signing/retry, capture/authorization/refund, ledger, balance, settlement processing, reconciliation, provider, or movement of real funds.
 
 ### Pinned toolchain
 
@@ -121,7 +121,7 @@ pnpm db:provision-runtime-role
 
 ### Prisma and local database workflow
 
-The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access (`Merchant`, `ApiKey`), M1 persistence (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`), and the Webhook Endpoint Foundation (`WebhookEndpoint`, `WebhookEndpointSubscription`, `WebhookEndpointSecret`, `AuditEvent`). It deliberately contains no settlement-status column, financial tables, inbox, delivery, or delivery-attempt table. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
+The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access (`Merchant`, `ApiKey`), M1 persistence (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`), the Webhook Endpoint Foundation (`WebhookEndpoint`, `WebhookEndpointSubscription`, `WebhookEndpointSecret`, `AuditEvent`), and projection persistence (`InboxMessage`, `WebhookEventProjection`, `WebhookDelivery`). It deliberately contains no settlement-status column, financial tables, webhook attempt, or HTTP-delivery state. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
 
 Validate the schema and generate the ignored Prisma Client output:
 
@@ -137,7 +137,7 @@ pnpm db:migrate:apply
 pnpm db:migrate:status
 ```
 
-The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment Intent, idempotency, and transactional-outbox persistence; and the Webhook Endpoint Foundation. The webhook migration requires `settleflow_app` to have been provisioned first, creates named constraints and append-only audit triggers, and grants only the approved runtime privileges. It creates no delivery, inbox, financial, or settlement state.
+The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment Intent, idempotency, and transactional-outbox persistence; the Webhook Endpoint Foundation; and additive inbox/event-marker/pending-delivery projection state. Webhook migrations require `settleflow_app` to have been provisioned first, create named constraints and indexes, and grant append-only projection access while denying update, delete, and truncate. They create no delivery-attempt, financial, or settlement state.
 
 When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
 
@@ -222,23 +222,29 @@ pnpm openapi:check
 pnpm dev:worker
 ```
 
-The worker is a standalone Nest application context, not an HTTP server. It relays committed `payment.created.v1` rows with at-least-once delivery. Readiness requires PostgreSQL and a healthy RabbitMQ publisher-confirm channel after the complete topology is declared. It remains running but not ready during a dependency outage, stops new claims on shutdown, drains current work for at most 10 seconds, then closes the publisher and Prisma resources.
+The worker is a standalone Nest application context, not an HTTP server. It relays committed `payment.created.v1` rows with at-least-once delivery and consumes the Webhook projection queue through a separate RabbitMQ connection/channel. Readiness requires PostgreSQL, a healthy publisher-confirm channel, the complete declared topology, and an actively registered projection consumer. It remains running but not ready during a dependency outage. Shutdown stops new relay claims, cancels the consumer, drains both paths for at most 10 seconds, then closes consumer, publisher, and Prisma resources.
 
-The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID; future consumers must deduplicate it.
+The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID. The projection consumer deduplicates it under consumer name `webhook-projection.payment-created.v1`, using one serializable transaction for inbox completion, retained event evidence, endpoint eligibility, and pending deliveries. It acknowledges only after commit; invalid or unsupported messages are rejected to the existing DLQ, while transient dependency failures remain unacknowledged for reconnect/redelivery.
 
 Validated worker settings and approved defaults are:
 
-| Environment variable               | Default |
-| ---------------------------------- | ------: |
-| `OUTBOX_RELAY_BATCH_SIZE`          |      50 |
-| `OUTBOX_RELAY_POLL_INTERVAL_MS`    |     500 |
-| `OUTBOX_RELAY_LEASE_MS`            |   30000 |
-| `OUTBOX_RELAY_CONFIRM_TIMEOUT_MS`  |    5000 |
-| `OUTBOX_RELAY_RETRY_BASE_MS`       |    1000 |
-| `OUTBOX_RELAY_RETRY_MAX_MS`        |   60000 |
-| `OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS` |   10000 |
-| `DEPENDENCY_READINESS_TIMEOUT_MS`  |    2000 |
-| `WORKER_HEARTBEAT_INTERVAL_MS`     |   30000 |
+| Environment variable                     | Default |
+| ---------------------------------------- | ------: |
+| `OUTBOX_RELAY_BATCH_SIZE`                |      50 |
+| `OUTBOX_RELAY_POLL_INTERVAL_MS`          |     500 |
+| `OUTBOX_RELAY_LEASE_MS`                  |   30000 |
+| `OUTBOX_RELAY_CONFIRM_TIMEOUT_MS`        |    5000 |
+| `OUTBOX_RELAY_RETRY_BASE_MS`             |    1000 |
+| `OUTBOX_RELAY_RETRY_MAX_MS`              |   60000 |
+| `OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS`       |   10000 |
+| `WEBHOOK_PROJECTION_BODY_LIMIT_BYTES`    |   16384 |
+| `WEBHOOK_PROJECTION_PREFETCH`            |       2 |
+| `WEBHOOK_PROJECTION_RECONNECT_BASE_MS`   |    1000 |
+| `WEBHOOK_PROJECTION_RECONNECT_MAX_MS`    |   60000 |
+| `WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS` |   10000 |
+| `WEBHOOK_PROJECTION_TRANSACTION_RETRIES` |       3 |
+| `DEPENDENCY_READINESS_TIMEOUT_MS`        |    2000 |
+| `WORKER_HEARTBEAT_INTERVAL_MS`           |   30000 |
 
 RabbitMQ topology is:
 
@@ -246,7 +252,7 @@ RabbitMQ topology is:
 - durable quorum queue `settleflow.webhook-projection.payment-created.v1`;
 - durable topic DLX `settleflow.dead-letter` and quorum DLQ `settleflow.webhook-projection.payment-created.v1.dlq`.
 
-The future Webhook projection queue intentionally accumulates messages until its consumer milestone. Inspect backlog and recover without data edits using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md); see the [versioned event contract](docs/events/README.md) for payload and AMQP metadata.
+The consumer selects only endpoints owned by the event merchant that are active and subscribed at processing time. It creates `PENDING` `whd_<ULID>` records with attempt count zero and does not perform HTTP delivery. Inspect relay backlog using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md), and diagnose projection or DLQ state using the [Webhook projection runbook](docs/runbooks/webhook-projection-consumer.md). See the [versioned event contract](docs/events/README.md) for payload and AMQP metadata.
 
 ### Quality and production commands
 
@@ -266,9 +272,9 @@ pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` serializer and relay contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including endpoint permission/audit/concurrency tests and relay race/failure scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` producer and consumer contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and requires a working Docker runtime, including endpoint permission/audit/concurrency, relay race/failure, inbox/deduplication, commit-before-ack, tenant-safe projection, and poison-DLQ scenarios. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-The API readiness behavior is unchanged. Worker readiness is relay-specific and requires its confirm channel and declared topology. The worker performs no consume, inbox, webhook, provider, ledger, settlement, or real-funds operation.
+The API readiness behavior is unchanged. Worker readiness independently reports its publisher and projection-consumer paths; the worker performs no HTTP webhook request, signing, delivery retry, provider, ledger, settlement, or real-funds operation.
 
 For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoint Foundation runbook](docs/runbooks/webhook-endpoint-foundation.md). Never run an application as the migration owner or manually edit endpoint, encrypted-secret, or audit rows.
 

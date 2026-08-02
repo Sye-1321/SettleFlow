@@ -51,6 +51,21 @@ enum IdempotencyState {
   @@map("idempotency_state")
 }
 
+enum LedgerEntrySide {
+  DEBIT  @map("debit")
+  CREDIT @map("credit")
+
+  @@map("ledger_entry_side")
+}
+
+enum LedgerBusinessType {
+  CAPTURE  @map("capture")
+  REFUND   @map("refund")
+  REVERSAL @map("reversal")
+
+  @@map("ledger_business_type")
+}
+
 enum WebhookEndpointStatus {
   ACTIVE   @map("active")
   INACTIVE @map("inactive")
@@ -85,18 +100,20 @@ enum WebhookDeliveryAttemptOutcome {
 }
 
 model Merchant {
-  id               String                   @id @default(uuid()) @db.Uuid
-  code             String                   @unique(map: "merchants_code_key") @db.VarChar(64)
-  status           MerchantStatus           @default(ACTIVE)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  apiKeys          ApiKey[]
-  paymentIntents   PaymentIntent[]
-  idempotencyKeys  IdempotencyKey[]
-  outboxEvents     OutboxEvent[]
-  webhookEndpoints WebhookEndpoint[]
-  webhookEvents    WebhookEventProjection[]
-  auditEvents      AuditEvent[]
+  id                 String                   @id @default(uuid()) @db.Uuid
+  code               String                   @unique(map: "merchants_code_key") @db.VarChar(64)
+  status             MerchantStatus           @default(ACTIVE)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  apiKeys            ApiKey[]
+  paymentIntents     PaymentIntent[]
+  ledgerAccounts     LedgerAccount[]
+  ledgerTransactions LedgerTransaction[]
+  idempotencyKeys    IdempotencyKey[]
+  outboxEvents       OutboxEvent[]
+  webhookEndpoints   WebhookEndpoint[]
+  webhookEvents      WebhookEventProjection[]
+  auditEvents        AuditEvent[]
 
   @@map("merchants")
 }
@@ -137,6 +154,60 @@ model PaymentIntent {
 
   @@unique([merchantId, externalRef], map: "payment_intents_merchant_id_external_ref_key")
   @@map("payment_intents")
+}
+
+model LedgerAccount {
+  id         String          @id @default(uuid()) @db.Uuid
+  merchantId String          @map("merchant_id") @db.Uuid
+  code       String          @db.VarChar(64)
+  currency   String          @db.Char(3)
+  normalSide LedgerEntrySide @map("normal_side")
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  merchant   Merchant        @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ledger_accounts_merchant_id_fkey")
+  entries    LedgerEntry[]
+
+  @@unique([merchantId, code, currency], map: "ledger_accounts_merchant_id_code_currency_key")
+  @@unique([id, merchantId, currency], map: "ledger_accounts_id_merchant_id_currency_key")
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id                String              @id @default(uuid()) @db.Uuid
+  publicId          String              @unique(map: "ledger_transactions_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId        String              @map("merchant_id") @db.Uuid
+  currency          String              @db.Char(3)
+  businessType      LedgerBusinessType  @map("business_type")
+  businessReference String              @map("business_reference") @db.VarChar(255)
+  reversalOfId      String?             @unique(map: "ledger_transactions_reversal_of_id_key") @map("reversal_of_id") @db.Uuid
+  requestId         String              @map("request_id") @db.VarChar(128)
+  occurredAt        DateTime            @map("occurred_at") @db.Timestamptz(6)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt          DateTime?           @map("posted_at") @db.Timestamptz(6)
+  merchant          Merchant            @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ledger_transactions_merchant_id_fkey")
+  reversalOf        LedgerTransaction?  @relation("LedgerTransactionReversal", fields: [reversalOfId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "ledger_transactions_reversal_of_id_merchant_id_currency_fkey")
+  reversals         LedgerTransaction[] @relation("LedgerTransactionReversal")
+  entries           LedgerEntry[]
+
+  @@unique([merchantId, businessType, businessReference], map: "ledger_transactions_merchant_id_business_type_reference_key")
+  @@unique([id, merchantId, currency], map: "ledger_transactions_id_merchant_id_currency_key")
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id                  String            @id @default(uuid()) @db.Uuid
+  ledgerTransactionId String            @map("ledger_transaction_id") @db.Uuid
+  accountId           String            @map("account_id") @db.Uuid
+  merchantId          String            @map("merchant_id") @db.Uuid
+  entrySeq            Int               @map("entry_seq") @db.SmallInt
+  side                LedgerEntrySide
+  amountMinor         BigInt            @map("amount_minor") @db.BigInt
+  currency            String            @db.Char(3)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  transaction         LedgerTransaction @relation(fields: [ledgerTransactionId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "ledger_entries_transaction_id_merchant_id_currency_fkey")
+  account             LedgerAccount     @relation(fields: [accountId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "ledger_entries_account_id_merchant_id_currency_fkey")
+
+  @@unique([ledgerTransactionId, entrySeq], map: "ledger_entries_transaction_id_entry_seq_key")
+  @@map("ledger_entries")
 }
 
 model IdempotencyKey {

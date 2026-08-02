@@ -13,11 +13,12 @@ The repository provides two independent NestJS processes and their local support
 - `packages/modules/idempotency`: merchant-scoped command acquisition, leases, fingerprints, and response snapshots.
 - `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, RabbitMQ confirm publishing/consumption, and durable inbox deduplication.
 - `packages/modules/payments`: M1 Payment Intent create/read application logic and Prisma adapter.
+- `packages/modules/ledger`: internal immutable double-entry account, posting, provisioning, and exact-reversal foundation.
 - `packages/modules/operations`: append-only lifecycle-audit vocabulary and transaction-aware persistence.
 - `packages/modules/webhooks`: merchant endpoint, subscription, encrypted-secret, URL-policy, lifecycle behavior, processed-event markers, and pending delivery projection.
 - `compose.yaml`: local PostgreSQL and RabbitMQ services only.
 
-The implemented domain surface is Merchant Access, the M1 simulated Payment Intent create/read slice and transactional-outbox relay, merchant-scoped webhook endpoint management, and the `payment.created.v1` Webhook projection consumer. The consumer persists inbox evidence, a retained event marker, and pending endpoint deliveries but never sends an HTTP request. There is no user/password/JWT authentication, merchant self-service onboarding, seed, HTTP webhook delivery/signing/retry, capture/authorization/refund, ledger, balance, settlement processing, reconciliation, provider, or movement of real funds.
+The implemented domain surface is Merchant Access, the M1 simulated Payment Intent create/read slice and transactional-outbox relay, merchant-scoped webhook processing, and an internal immutable double-entry Ledger Foundation. The Ledger Foundation is not composed into an API or worker command. There is no user/password/JWT authentication, merchant self-service onboarding, seed, capture/authorization/refund processing, mutable account balance, settlement processing, reconciliation, real provider, or movement of real funds.
 
 ### Pinned toolchain
 
@@ -121,7 +122,7 @@ pnpm db:provision-runtime-role
 
 ### Prisma and local database workflow
 
-The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access (`Merchant`, `ApiKey`), M1 persistence (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`), the Webhook Endpoint Foundation (`WebhookEndpoint`, `WebhookEndpointSubscription`, `WebhookEndpointSecret`, `AuditEvent`), and projection persistence (`InboxMessage`, `WebhookEventProjection`, `WebhookDelivery`). It deliberately contains no settlement-status column, financial tables, webhook attempt, or HTTP-delivery state. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
+The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access (`Merchant`, `ApiKey`), M1 persistence (`PaymentIntent`, `IdempotencyKey`, `OutboxEvent`), Webhook endpoint/projection/delivery evidence, Operations audit evidence, and Ledger-owned `LedgerAccount`, `LedgerTransaction`, and `LedgerEntry` models. It deliberately contains no settlement-status or stored-balance column. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
 
 Validate the schema and generate the ignored Prisma Client output:
 
@@ -137,7 +138,7 @@ pnpm db:migrate:apply
 pnpm db:migrate:status
 ```
 
-The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment Intent, idempotency, and transactional-outbox persistence; the Webhook Endpoint Foundation; and additive inbox/event-marker/pending-delivery projection state. Webhook migrations require `settleflow_app` to have been provisioned first, create named constraints and indexes, and grant append-only projection access while denying update, delete, and truncate. They create no delivery-attempt, financial, or settlement state.
+The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment Intent, idempotency, transactional-outbox, Webhook endpoint/projection/delivery evidence; and the additive immutable Ledger Foundation. The Ledger migration requires `settleflow_app` to have been provisioned first, backfills the closed four-account ETB/USD merchant chart, installs named deferred financial constraints and immutability triggers, and limits the runtime role to approved insert/read/finalization operations. It creates no stored balance, settlement, reconciliation, provider, or synthetic posting data.
 
 When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
 
@@ -159,6 +160,21 @@ pnpm db:reset
 ```
 
 Use `pnpm infra:reset` instead when both local service volumes must be removed. Every migration must be reviewed before application; `prisma db push` is not part of the governed workflow.
+
+### Immutable Ledger Foundation
+
+The internal `@settleflow/ledger` package owns the closed merchant chart and immutable accounting records authorized by ADR-0020. Each merchant has `provider_clearing`/debit and `merchant_payable`/credit accounts for ETB and USD. Existing merchants are backfilled by the migration; future approved onboarding may use the idempotent internal provisioning port in a separate transaction. Missing accounts fail closed and are never lazily created by a money command.
+
+The posting port accepts a caller-supplied Prisma transaction. It stages one `ltx_<ULID>` transaction, inserts fixed positive minor-unit entries, and finalizes `posted_at` to the PostgreSQL transaction timestamp. Deferred triggers reject commit unless there are at least two entries, one merchant/currency, and equal debit/credit totals. Accounts, posted transactions, and entries are immutable; an exact uniquely linked reversal is the only correction representation. No balance is stored.
+
+No Ledger HTTP endpoint or capture/refund application path exists in this milestone. The optional `ledger.post` observation reports only bounded staged/rejected outcomes; `staged` is not a committed-success signal. Inspect architecture and recovery guidance in [Immutable Ledger Foundation](docs/architecture/ledger-foundation.md) and the [Ledger invariant-failure runbook](docs/runbooks/ledger-invariant-failure.md).
+
+Run its Docker-independent unit suite or the complete real-PostgreSQL integration suite:
+
+```shell
+pnpm test:ledger
+pnpm test:integration
+```
 
 ### Run the API
 
@@ -273,6 +289,7 @@ pnpm typecheck
 pnpm test
 pnpm test:merchant-access
 pnpm test:payments
+pnpm test:ledger
 pnpm test:event-contract
 pnpm test:operations
 pnpm test:webhooks
@@ -282,9 +299,9 @@ pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Operations, and Webhooks unit tests. `pnpm test:event-contract` checks the exact `payment.created.v1` producer and consumer contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires a working Docker runtime. It covers endpoint permission/audit/concurrency, relay race/failure, inbox/deduplication, commit-before-ack, tenant-safe projection, poison-DLQ scenarios, outbound claim exclusion, exact-byte signing, retries, lease recovery, and immutable delivery evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
+`pnpm test` runs Docker-independent API, worker, Merchant Access, Idempotency, Eventing, Payments, Ledger, Operations, and Webhooks unit tests. `pnpm test:ledger` checks fixed capture/refund accounting vectors, exact reversal construction, validation, and transaction-aware orchestration without enabling payment commands. `pnpm test:event-contract` checks the exact `payment.created.v1` producer and consumer contract. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires a working Docker runtime. It covers Ledger upgrade/backfill, deferred invariants, permissions, atomic rollback and races alongside endpoint permission/audit/concurrency, relay, projection, signing, retries, lease recovery, and immutable Webhook evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`. Run the two `start` commands in separate terminals after a successful build and with their required environment variables loaded.
 
-The API readiness behavior is unchanged. Worker readiness independently reports publisher, projection-consumer, and Webhook-dispatcher paths. Webhook endpoint failures affect only their deliveries; a dispatcher schema, grant, keyring, database, or lifecycle failure makes the worker non-ready. The worker still performs no provider, ledger, settlement, or real-funds operation.
+The API and worker readiness behavior is unchanged because the Ledger Foundation is not composed into either process. Worker readiness independently reports publisher, projection-consumer, and Webhook-dispatcher paths. The worker still performs no provider, Ledger posting, settlement, or real-funds operation.
 
 For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoint Foundation runbook](docs/runbooks/webhook-endpoint-foundation.md). Never run an application as the migration owner or manually edit endpoint, encrypted-secret, or audit rows.
 

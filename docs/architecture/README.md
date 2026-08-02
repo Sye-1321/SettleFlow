@@ -28,6 +28,7 @@ Detailed rules:
 
 - [Module boundaries](module-boundaries.md)
 - [Financial invariants](financial-invariants.md)
+- [Immutable Ledger Foundation](ledger-foundation.md)
 - [ADR process](../adr/README.md)
 - [Implementation planning](../../PLANS.md)
 - [Security policy](../../SECURITY.md)

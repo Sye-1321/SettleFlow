@@ -188,6 +188,12 @@ importers:
         specifier: workspace:*
         version: link:../../infrastructure
 
+  packages/modules/ledger:
+    dependencies:
+      '@settleflow/infrastructure':
+        specifier: workspace:*
+        version: link:../../infrastructure
+
   packages/modules/merchant-access:
     dependencies:
       '@settleflow/infrastructure':

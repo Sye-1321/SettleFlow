@@ -1,11 +1,11 @@
 # Implementation Plan: Immutable Double-Entry Ledger Foundation
 
-- **Status:** Draft
-- **Owner:** To be decided
+- **Status:** Completed
+- **Owner:** SettleFlow Project
 - **Created:** 2026-08-02
 - **Last updated:** 2026-08-02
 - **Related issue/PR:** To be decided
-- **Related ADRs:** [ADR-0003](../adr/0003-postgresql-prisma-and-financial-data-access.md), [ADR-0007](../adr/0007-idempotency-key-concurrency-and-response-snapshots.md), [ADR-0010](../adr/0010-payment-currencies-and-amount-range.md), [ADR-0013](../adr/0013-problem-details-audit-and-retention-boundaries.md), and Proposed [ADR-0020](../adr/0020-immutable-double-entry-ledger-foundation.md)
+- **Related ADRs:** [ADR-0003](../adr/0003-postgresql-prisma-and-financial-data-access.md), [ADR-0007](../adr/0007-idempotency-key-concurrency-and-response-snapshots.md), [ADR-0010](../adr/0010-payment-currencies-and-amount-range.md), [ADR-0013](../adr/0013-problem-details-audit-and-retention-boundaries.md), and [ADR-0020](../adr/0020-immutable-double-entry-ledger-foundation.md)
 
 ## Goal
 
@@ -20,7 +20,7 @@ Success is measurable only when a real PostgreSQL database proves:
 - runtime-role permissions are sufficient for approved posting/provisioning and insufficient for mutation;
 - all work participates in a caller-owned transaction so a later Payment/Refund state write, Ledger posting, outbox event, and Idempotency snapshot can roll back together.
 
-This plan is **not implementation-ready until ADR-0020 and every item under [Decisions requiring approval](#decisions-requiring-approval) are approved**. The ADR is Proposed. The plan creates no authority to enable capture/refund or bypass their other unresolved gates.
+ADR-0020 and all twelve bounded decisions were accepted before implementation at commit `71a869a`. Completion of this foundation creates no authority to enable capture/refund or bypass their separate unresolved gates.
 
 ### Non-goals
 
@@ -41,7 +41,7 @@ This plan is **not implementation-ready until ADR-0020 and every item under [Dec
 - **Authorization evidence:** the specification assigns `ledger_accounts`, `ledger_transactions`, and `ledger_entries` to Ledger; defines capture/refund/correction postings; names the core entity constraints; mandates deferred balance/count/currency triggers, restricted roles, append-only evidence, and reversal-only correction; and includes Ledger in P0/M1 rather than as an optional feature.
 - **Acceptance/release gates:** real PostgreSQL constraint, immutability, permission, migration, transaction, race, and failure evidence is mandatory. No in-memory substitute, skipped financial integration suite, trigger waiver, or application-only assertion can satisfy the gate.
 
-No specification version change is required for the mandatory double-entry model. Proposed ADR-0020 refines currently unspecified identifiers, chart closure/provisioning, staging/finalization, business-reference shape, reversal depth, safe amount ceiling, and least-privilege implementation. Those refinements require explicit approval.
+No specification version change is required for the mandatory double-entry model. Accepted ADR-0020 refines previously unspecified identifiers, chart closure/provisioning, staging/finalization, business-reference shape, reversal depth, safe amount ceiling, and least-privilege implementation.
 
 ## Evidence inspected
 
@@ -56,7 +56,7 @@ The read-only design inspection covered:
 - the current Payments, Idempotency, Eventing, Infrastructure, Operations, and Webhooks types/services/adapters;
 - focused unit/integration/concurrency-relevant tests and root scripts.
 
-The baseline inspection began at clean commit `8cd49e4` on `main`, tracking `origin/main`.
+The design inspection began at clean commit `8cd49e4`. Implementation began from clean commit `71a869a` on `main`, tracking `origin/main`, after ADR-0020 and this plan were accepted and committed.
 
 ## Existing behavior
 
@@ -69,9 +69,9 @@ The baseline inspection began at clean commit `8cd49e4` on `main`, tracking `ori
 - The root workspace has no Ledger package, Jest project, build/typecheck/lint script entry, or Ledger runbook. The pinned infrastructure dependency already contains `ulid@3.0.2`; no new ID dependency is necessary.
 - Existing database tests apply real migrations and exercise runtime-role permissions. No current test proves Ledger balance, entry-count, currency, reversal, late-append, or atomic financial rollback.
 
-## Decisions requiring approval
+## Accepted implementation decisions
 
-Implementation must not begin until the Project owner accepts Proposed ADR-0020 and confirms these bounded choices:
+The Project owner explicitly accepted ADR-0020 and these bounded choices before implementation:
 
 1. **Posted-only transaction representation:** approve an uncommitted `posted_at = NULL` staging row, entry inserts, and one trigger-guarded `posted_at` finalization inside the same PostgreSQL transaction. A deferred trigger prevents any unfinalized row from committing; there is no durable `DRAFT` state.
 2. **Transaction identity:** approve internal UUID plus public `ltx_<ULID>`, strict 30-character pattern, the existing process-scoped monotonic ULID generator, and at most three whole-transaction collision attempts.
@@ -88,7 +88,7 @@ Implementation must not begin until the Project owner accepts Proposed ADR-0020 
 
 Rejecting any item pauses implementation so the ADR/plan can be revised. No default is silently inferred from code.
 
-## Proposed design after approval
+## Implemented design
 
 ### Module ownership and dependency direction
 
@@ -120,7 +120,7 @@ interface LedgerPostingPort {
 
 `LedgerMoneyPostingCommand` carries `merchantId`, exact `currency`, positive `amountMinor: bigint`, opaque `businessReference`, bounded `requestId`, and authoritative `occurredAt`. It cannot carry arbitrary account IDs, arbitrary entry sides, client-supplied ledger IDs, metadata JSON, or payment state. Ledger owns the accounting mapping.
 
-An internal reversal port, if included in the Foundation implementation after approval, accepts the original Ledger transaction identity and correlation context; it constructs entries from the immutable original. It does not accept client-provided opposite entries. It is not composed into API/worker and cannot be reached without a later privileged/audited orchestration milestone.
+The internal reversal port accepts the original Ledger transaction identity and correlation context and constructs entries from the immutable original. It does not accept client-provided opposite entries. It is not composed into API/worker and cannot be reached without a later privileged/audited orchestration milestone.
 
 ### Identifiers
 
@@ -164,7 +164,7 @@ Validation rejects zero, negative, over-range, malformed currency, unsupported c
 
 Ledger stores no debit/credit total. Tests and future read models derive totals with PostgreSQL `SUM(bigint) -> numeric` or exact TypeScript `bigint` after bounded conversion. No cross-currency sum is exposed.
 
-### Proposed Prisma models and PostgreSQL columns
+### Prisma models and PostgreSQL columns
 
 #### `LedgerAccount`
 
@@ -296,11 +296,11 @@ No operator transport or automatic reversal is included. Before a reversal comma
 
 ## Affected modules and files
 
-Only after approval, the implementation is expected to change these areas:
+The implementation changes these areas:
 
 | Module/file area                                                                       | Ownership or change                                                        | Boundary impact                                      |
 | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `docs/adr/0020-immutable-double-entry-ledger-foundation.md` and `docs/adr/README.md`   | Record approval/status and index                                           | Must be Accepted before implementation starts        |
+| `docs/adr/0020-immutable-double-entry-ledger-foundation.md` and `docs/adr/README.md`   | Record approval/status and index                                           | Accepted at implementation baseline                  |
 | This plan                                                                              | Record implementation evidence/deviations                                  | Remains the execution record                         |
 | `packages/modules/ledger/package.json`, `tsconfig.build.json`                          | Add workspace-owned Ledger package                                         | Depends only on Infrastructure/domain-safe libraries |
 | `packages/modules/ledger/src/ledger.types.ts`                                          | Stable posting/provisioning/reversal port and records                      | No Payment/HTTP/Prisma row leakage                   |
@@ -479,9 +479,9 @@ Migration-from-prior and empty-database proof must use disposable Testcontainers
 
 ## Documentation impact
 
-After approval/implementation:
+Implementation documentation:
 
-- mark ADR-0020 Accepted only from explicit owner approval and keep the ADR index accurate;
+- retain ADR-0020's owner-approved Accepted status and accurate ADR index;
 - update this plan's checklist/evidence/deviations;
 - update README with the implemented internal Foundation, exact verification commands, lack of public route, and continued capture/refund exclusion;
 - add/index the Ledger invariant-failure runbook and account-provisioning completeness query;
@@ -509,13 +509,12 @@ No automatic downgrade can preserve unknown future posted rows, so the post-data
 
 | Risk or assumption                                                   | Impact                                                   | Mitigation/validation                                                                                       | Owner/deadline                             |
 | -------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| ADR-0020 remains Proposed                                            | No schema/code authority                                 | Obtain explicit approval or revise decisions                                                                | Project owner / before implementation      |
 | Shared runtime role cannot enforce TypeScript module ownership alone | Another adapter could attempt Ledger writes              | Explicit grants/triggers, boundary checks, reviews, Ledger-only repository imports                          | Architecture/DB / implementation review    |
 | Finalization update is too permissive                                | Posted transaction mutation                              | Trigger compares every other field and permits one null-to-set transition only                              | DB reviewer / migration review             |
 | Entry-only trigger misses zero-entry transaction                     | Invalid transaction could commit                         | Deferred trigger on transaction insert/finalization as well as entries                                      | DB reviewer / constraint tests             |
 | Deferred aggregate trigger repeats work per row                      | Command latency/lock duration                            | Small posting shape, inspect trigger plans/timing, optimize without weakening commit check                  | Ledger/DB / before route enablement        |
-| Full signed-BIGINT versus JSON-safe ceiling is disputed              | Internal range/contract mismatch                         | Owner approval for ADR-0010-aligned ceiling; superseding ADR if full range/string contract needed           | Project owner / ADR acceptance             |
-| Merchant-scoped provider clearing is an accounting-policy refinement | Future platform-level reports may expect global clearing | Explicit approval; later reporting can aggregate without cross-tenant postings                              | Financial reviewer / ADR acceptance        |
+| Future work needs values above the accepted JSON-safe ceiling        | Internal range/contract mismatch                         | Retain ADR-0010-aligned ceiling; require superseding ADR and string contract for any expansion              | Project owner / future milestone           |
+| Merchant-scoped provider clearing may not fit future reporting       | Future platform-level reports may expect global clearing | Retain the accepted tenant model; later reporting may aggregate through authorized read models              | Financial reviewer / future milestone      |
 | Existing/future merchant misses accounts                             | Money command fails                                      | Exact backfill, completeness query, fail closed, later audited onboarding orchestration                     | Merchant/Ledger owners / before capture    |
 | Account chart expansion is needed for Settlement/fees                | Closed checks block later posting                        | Additive ADR/migration; do not precreate unauthorized accounts                                              | Settlement/Ledger owners / later milestone |
 | Opaque business reference lacks a cross-module FK                    | Source deletion/link defect might not be DB-enforced     | Source financial rows use RESTRICT/immutability; unique bounded reference and integration correlation tests | Architecture/DB / ADR acceptance           |
@@ -543,29 +542,34 @@ No automatic downgrade can preserve unknown future posted rows, so the post-data
 
 - [x] Authoritative specification, invariants, boundaries, current schema/patterns/tests, and capture/refund prerequisite inspected.
 - [x] Proposed ADR and detailed Foundation design drafted.
-- [ ] ADR-0020 and all material decisions approved.
-- [ ] Plan marked Approved with owner/reviewers.
-- [ ] Ledger module, schema, migration, and runtime permissions implemented.
-- [ ] INV-01 through INV-06 unit/database/integration/permission/race gates pass.
-- [ ] Migration-from-empty/prior and account-backfill evidence passes.
-- [ ] Security, raw-SQL, module-boundary, and financial-controls reviews pass.
-- [ ] Runbook/schema/README documentation updated.
-- [ ] Complete commands/results/deviations recorded.
+- [x] ADR-0020 and all material decisions approved.
+- [x] Plan accepted with owner decisions recorded.
+- [x] Ledger module, schema, migration, and runtime permissions implemented.
+- [x] INV-01 through INV-06 unit/database/integration/permission/race gates pass.
+- [x] Migration-from-empty/prior and account-backfill evidence passes.
+- [x] Security, raw-SQL, module-boundary, and financial-controls reviewed against the accepted baseline.
+- [x] Runbook/schema/README documentation updated.
+- [x] Complete commands/results/deviations recorded.
 
 ## Verification record
 
-| Command or review                                            | Result  | Date/evidence                                                                                                                    |
-| ------------------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Baseline `git status --short --branch` and commit inspection | Pass    | 2026-08-02: clean `main` at `8cd49e4`, tracking `origin/main`, before documentation changes                                      |
-| Authoritative specification and repository evidence review   | Pass    | 2026-08-02: requirements/invariants, current schema, ports, migrations, permissions, tests, and capture/refund gate traced above |
-| ADR/plan Markdown formatting                                 | Pass    | 2026-08-02: plan-specific Prettier check passed for all three changed Markdown files                                             |
-| Local Markdown-link validation                               | Pass    | 2026-08-02: all 41 local Markdown links in the changed files resolve                                                             |
-| `git diff --check` and complete documentation diff           | Pass    | 2026-08-02: tracked check and both untracked-file checks report no whitespace errors; intended scope reviewed                    |
-| Final Git status                                             | Pass    | 2026-08-02: only ADR-0020, this plan, and ADR index are modified/untracked; nothing staged                                       |
-| Implementation verification                                  | Not run | Design-only milestone; prohibited until approval                                                                                 |
+| Command or review                                       | Result | Date/evidence                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Implementation baseline/status                          | Pass   | 2026-08-02: clean `main` at accepted commit `71a869a`, tracking `origin/main`; no commit or push during implementation                                                                                                                                                               |
+| Authoritative specification/repository review           | Pass   | 2026-08-02: full structural specification read plus ADR/invariant/boundary/schema/permission/pattern review; no `.docx` change                                                                                                                                                       |
+| Frozen install and dependency scope                     | Pass   | 2026-08-02: all 11 workspace projects already up to date; lockfile adds only the local Ledger importer and no third-party dependency                                                                                                                                                 |
+| Compose/PostgreSQL/RabbitMQ health                      | Pass   | 2026-08-02: pinned PostgreSQL 18.4 and RabbitMQ 4.3.4 containers healthy; `pg_isready` and broker ping passed                                                                                                                                                                        |
+| Prisma validate/generate/migration status               | Pass   | 2026-08-02: Prisma 7.9.1 validation/generation passed; additive migration applied locally; all seven migrations reported up to date                                                                                                                                                  |
+| Focused Ledger unit tests                               | Pass   | 2026-08-02: 2 suites, 17 tests; exact posting vectors, bounded inputs, reversal, provisioning, transaction-port, and observer isolation                                                                                                                                              |
+| Focused real-PostgreSQL Ledger integration              | Pass   | 2026-08-02: 1 suite, 6 tests; populated-prior upgrade/backfill, exact postings, incomplete chart, rollback/races, deferred checks, immutability, reversal, tenant scope, and grants                                                                                                  |
+| Full unit regression                                    | Pass   | 2026-08-02: 34 suites and 158 tests passed across all nine Jest projects                                                                                                                                                                                                             |
+| Full integration regression                             | Pass   | 2026-08-02: final clean rerun passed 9 suites/55 tests. An initial run exposed three timing-sensitive pre-existing Payment/Webhook failures; both suites passed immediately in isolation, then the unchanged full rerun passed                                                       |
+| Formatting, lint, type-check, production build, OpenAPI | Pass   | 2026-08-02: Prettier, zero-warning ESLint, strict TypeScript, API/worker/package builds, and committed OpenAPI drift check passed                                                                                                                                                    |
+| Query-plan review                                       | Pass   | 2026-08-02: merchant account lookup uses `ledger_accounts_merchant_id_code_currency_key`; transaction entry aggregation uses `ledger_entries_transaction_id_entry_seq_key`                                                                                                           |
+| Changed-document formatting and local links             | Pass   | 2026-08-02: targeted Prettier passed and all 47 local links across the six changed Markdown files resolve                                                                                                                                                                            |
+| Final diff/whitespace/scope/status                      | Pass   | 2026-08-02: `git diff --check` and all 14 untracked-file whitespace checks passed; no app file or Ledger reverse-domain import changed; HEAD remains `71a869a`; changes are unstaged and uncommitted                                                                                 |
+| Implementation discoveries                              | Closed | Removed an unsupported `posted_at = created_at` draft check after real PostgreSQL proved Prisma timestamps differ; retained guarded `transaction_timestamp()` finalization. Added four-account completeness enforcement and aligned account code to planned `VARCHAR(64)` plus check |
 
 ## Definition of done
 
-Planning is complete when only ADR-0020, this plan, and the ADR index differ from clean commit `8cd49e4`; the ADR remains Proposed; every specification rule and proposed refinement is traceable; all approval decisions, schema/trigger/permission details, affected files, tests, risks, recovery, and commands are reviewable; Markdown/link/whitespace checks pass; and no implementation, schema, migration, dependency, Compose, API, test, commit, or push occurs.
-
-Implementation is complete only after ADR-0020 is explicitly Accepted and this plan Approved; the closed account chart and Ledger package/schema/migration exist; real PostgreSQL proves INV-01 through INV-06, tenant isolation, exact reversal, duplicate defense, immutability, runtime least privilege, migration compatibility, races, and rollback; all repository quality gates pass; documentation/runbooks match behavior; no public Ledger/capture/refund/event/settlement/reconciliation/unrelated work enters scope; and no correctness or security blocker remains.
+Implementation is complete because ADR-0020 was explicitly Accepted; the closed account chart and Ledger package/schema/migration exist; real PostgreSQL proves INV-01 through INV-06, tenant isolation, exact reversal, duplicate defense, immutability, runtime least privilege, migration compatibility, races, and rollback; repository quality gates pass; documentation/runbooks match behavior; no public Ledger/capture/refund/event/settlement/reconciliation/unrelated work entered scope; and no known correctness or security blocker remains.

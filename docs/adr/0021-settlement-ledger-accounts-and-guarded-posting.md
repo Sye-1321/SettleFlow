@@ -1,6 +1,6 @@
 # ADR-0021: Settlement ledger accounts and guarded posting
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Decision owners:** SettleFlow Project
 - **Reviewers:** Financial, Ledger, database, and architecture owners

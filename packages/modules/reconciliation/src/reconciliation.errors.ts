@@ -1,0 +1,10 @@
+export class InvalidReconciliationRequestError extends Error {}
+export class ReconciliationFileTooLargeError extends Error {}
+export class ReconciliationRowLimitExceededError extends Error {}
+export class ReconciliationCsvInvalidError extends Error {}
+export class ReconciliationChecksumConflictError extends Error {}
+export class ReconciliationImportNotFoundError extends Error {}
+export class ReconciliationReportNotReadyError extends Error {}
+export class ReconciliationImportFailedError extends Error {}
+export class ReconciliationAggregateOverflowError extends Error {}
+export class ReconciliationIdentifierExhaustedError extends Error {}

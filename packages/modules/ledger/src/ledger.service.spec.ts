@@ -143,7 +143,7 @@ describe('LedgerService', () => {
   it('provisions the exact closed ETB/USD account chart idempotently', async () => {
     const subject = harness();
     const result = await subject.service.provisionAccounts(transaction, merchantId);
-    expect(result.accounts).toHaveLength(4);
+    expect(result.accounts).toHaveLength(8);
     expect(subject.repository.provisionAccounts.mock.calls[0]?.[1]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

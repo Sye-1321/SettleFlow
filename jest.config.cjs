@@ -12,6 +12,8 @@ const common = {
     '^@settleflow/ledger$': '<rootDir>/packages/modules/ledger/src/index.ts',
     '^@settleflow/operations$': '<rootDir>/packages/modules/operations/src/index.ts',
     '^@settleflow/webhooks$': '<rootDir>/packages/modules/webhooks/src/index.ts',
+    '^@settleflow/settlements$': '<rootDir>/packages/modules/settlements/src/index.ts',
+    '^@settleflow/reconciliation$': '<rootDir>/packages/modules/reconciliation/src/index.ts',
   },
   testEnvironment: 'node',
   transform: {
@@ -77,6 +79,18 @@ module.exports = {
       collectCoverageFrom: ['<rootDir>/packages/modules/webhooks/src/**/*.ts'],
       displayName: 'webhooks',
       testMatch: ['<rootDir>/packages/modules/webhooks/src/**/*.spec.ts'],
+    },
+    {
+      ...common,
+      collectCoverageFrom: ['<rootDir>/packages/modules/settlements/src/**/*.ts'],
+      displayName: 'settlements',
+      testMatch: ['<rootDir>/packages/modules/settlements/src/**/*.spec.ts'],
+    },
+    {
+      ...common,
+      collectCoverageFrom: ['<rootDir>/packages/modules/reconciliation/src/**/*.ts'],
+      displayName: 'reconciliation',
+      testMatch: ['<rootDir>/packages/modules/reconciliation/src/**/*.spec.ts'],
     },
     {
       ...common,

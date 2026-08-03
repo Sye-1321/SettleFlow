@@ -10,6 +10,8 @@ import type {
 } from './webhook.types';
 
 const projectionSelection = {
+  aggregateId: true,
+  aggregateType: true,
   amountMinor: true,
   availableOn: true,
   cumulativeRefundedAmountMinor: true,
@@ -41,10 +43,13 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
       ? undefined
       : {
           ...record,
+          amountMinor: record.amountMinor ?? undefined,
           availableOn: record.availableOn ?? undefined,
           cumulativeRefundedAmountMinor: record.cumulativeRefundedAmountMinor ?? undefined,
+          currency: record.currency ?? undefined,
           ledgerTransactionId: record.ledgerTransactionId ?? undefined,
           paymentStatus: record.paymentStatus ?? undefined,
+          paymentId: record.paymentId ?? undefined,
           refundId: record.refundId ?? undefined,
         };
   }
@@ -74,10 +79,12 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
     try {
       await transaction.webhookEventProjection.create({
         data: {
-          amountMinor: event.amountMinor,
+          aggregateId: event.aggregateId,
+          aggregateType: event.aggregateType,
+          amountMinor: event.amountMinor ?? null,
           availableOn: event.availableOn ?? null,
           cumulativeRefundedAmountMinor: event.cumulativeRefundedAmountMinor ?? null,
-          currency: event.currency,
+          currency: event.currency ?? null,
           eventId: event.eventId,
           eventType: event.eventType,
           ledgerTransactionId: event.ledgerTransactionId ?? null,
@@ -85,7 +92,7 @@ export class PrismaWebhookProjectionRepository implements WebhookProjectionRepos
           occurredAt: event.occurredAt,
           payloadBytes: Uint8Array.from(event.payloadBytes),
           payloadSha256: Uint8Array.from(event.payloadSha256),
-          paymentId: event.paymentId,
+          paymentId: event.paymentId ?? null,
           paymentStatus: event.paymentStatus ?? null,
           projectedAt: event.projectedAt,
           refundId: event.refundId ?? null,

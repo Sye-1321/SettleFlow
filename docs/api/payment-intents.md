@@ -34,7 +34,7 @@ The JSON body contains exactly these fields:
 - `captureMethod` is exactly lowercase `manual`.
 - Unknown, duplicate, missing, merchant-owned, lifecycle, projection, identifier, provider, or timestamp fields are rejected.
 
-A success returns a `pi_<ULID>` identifier, the accepted creation fields, lowercase `paymentStatus: "created"`, derived `settlementStatus: "NOT_ELIGIBLE"`, zero captured/refunded projections, version zero, and UTC timestamps. Settlement status is not stored on `payment_intents`.
+A success returns a `pi_<ULID>` identifier, the accepted creation fields, lowercase `paymentStatus: "created"`, derived `settlementStatus: "NOT_ELIGIBLE"`, zero captured/refunded projections, version zero, and UTC timestamps. Later reads compose the Settlement-owned lifecycle as `NOT_ELIGIBLE`, `ELIGIBLE`, `BATCHED`, `SETTLED`, or `ADJUSTMENT_PENDING`; settlement status is never stored on `payment_intents`.
 
 ## Direct full capture
 

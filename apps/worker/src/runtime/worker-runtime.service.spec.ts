@@ -3,8 +3,10 @@ import type {
   OutboxRelayService,
   RabbitMqOutboxPublisher,
   RabbitMqPaymentCreatedConsumer,
+  RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
 import type { PrismaDatabase } from '@settleflow/infrastructure';
+import type { ReconciliationProcessor } from '@settleflow/reconciliation';
 import type { WebhookDeliveryService } from '@settleflow/webhooks';
 
 import type { WorkerEnvironment } from '../config/environment';
@@ -26,6 +28,12 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
     OUTBOX_RELAY_RETRY_MAX_MS: 60_000,
     OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS: 10_000,
     RABBITMQ_URL: 'amqp://settleflow:local@127.0.0.1:5672/settleflow',
+    RECONCILIATION_POLL_INTERVAL_MS: 500,
+    SETTLEMENT_CONSUMER_BODY_LIMIT_BYTES: 16_384,
+    SETTLEMENT_CONSUMER_PREFETCH: 2,
+    SETTLEMENT_CONSUMER_RECONNECT_BASE_MS: 1_000,
+    SETTLEMENT_CONSUMER_RECONNECT_MAX_MS: 60_000,
+    SETTLEMENT_CONSUMER_SHUTDOWN_TIMEOUT_MS: 10_000,
     WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS: 8_000,
     WEBHOOK_DELIVERY_BATCH_SIZE: 4,
     WEBHOOK_DELIVERY_CONCURRENCY: 4,
@@ -55,6 +63,20 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
 }
 
 describe('WorkerRuntimeService', () => {
+  function createSettlementConsumer(): RabbitMqSettlementLifecycleConsumer {
+    return {
+      beginShutdown: jest.fn(),
+      close: jest.fn().mockResolvedValue(true),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+    } as unknown as RabbitMqSettlementLifecycleConsumer;
+  }
+
+  function createReconciliationProcessor(): ReconciliationProcessor {
+    return {
+      processNext: jest.fn().mockResolvedValue(false),
+    } as unknown as ReconciliationProcessor;
+  }
   function createDelivery(overrides: Partial<WebhookDeliveryService> = {}): WebhookDeliveryService {
     return {
       abortActive: jest.fn(),
@@ -107,6 +129,8 @@ describe('WorkerRuntimeService', () => {
       prisma,
       publisher,
       consumer,
+      createSettlementConsumer(),
+      createReconciliationProcessor(),
       relay,
       delivery,
       health,
@@ -165,6 +189,8 @@ describe('WorkerRuntimeService', () => {
       prisma,
       publisher,
       consumer,
+      createSettlementConsumer(),
+      createReconciliationProcessor(),
       relay,
       delivery,
       new WorkerHealthService(),
@@ -250,6 +276,8 @@ describe('WorkerRuntimeService', () => {
       prisma,
       publisher,
       consumer,
+      createSettlementConsumer(),
+      createReconciliationProcessor(),
       relay,
       delivery,
       new WorkerHealthService(),
@@ -309,6 +337,8 @@ describe('WorkerRuntimeService', () => {
       prisma,
       publisher,
       consumer,
+      createSettlementConsumer(),
+      createReconciliationProcessor(),
       relay,
       delivery,
       new WorkerHealthService(),

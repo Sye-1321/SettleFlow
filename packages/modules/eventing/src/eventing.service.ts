@@ -9,6 +9,8 @@ import type {
   PaymentDomainEvent,
   PaymentRefundedEvent,
   PaymentRefundedEventInput,
+  ReconciliationCompletedEvent,
+  SettlementFinalizedEvent,
 } from './eventing.types';
 
 export class EventingService {
@@ -83,6 +85,37 @@ export class EventingService {
     event: PaymentDomainEvent,
   ): Promise<void> {
     return this.repository.insertPaymentEvent(transaction, event);
+  }
+
+  public createSettlementFinalizedEvent(
+    input: Omit<SettlementFinalizedEvent, 'eventId' | 'eventType' | 'occurredAt'>,
+    occurredAt: Date,
+  ): SettlementFinalizedEvent {
+    return {
+      ...input,
+      eventId: this.eventId(occurredAt),
+      eventType: 'settlement.finalized.v1',
+      occurredAt,
+    };
+  }
+
+  public createReconciliationCompletedEvent(
+    input: Omit<ReconciliationCompletedEvent, 'eventId' | 'eventType' | 'occurredAt'>,
+    occurredAt: Date,
+  ): ReconciliationCompletedEvent {
+    return {
+      ...input,
+      eventId: this.eventId(occurredAt),
+      eventType: 'reconciliation.completed.v1',
+      occurredAt,
+    };
+  }
+
+  public persistDomainEvent(
+    transaction: PrismaTransactionClient,
+    event: ReconciliationCompletedEvent | SettlementFinalizedEvent,
+  ): Promise<void> {
+    return this.repository.insertDomainEvent(transaction, event);
   }
 
   private eventId(occurredAt: Date): string {

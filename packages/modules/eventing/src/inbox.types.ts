@@ -1,6 +1,10 @@
 import type { PrismaTransactionClient } from '@settleflow/infrastructure';
 
 import type { ValidatedPaymentEventMessage } from './payment-created-event.contract';
+import type { ValidatedOperationalEventMessage } from './settlement-reconciliation-event.contract';
+
+export type ValidatedDomainEventMessage =
+  ValidatedOperationalEventMessage | ValidatedPaymentEventMessage;
 
 export interface InboxMessageRecord {
   readonly consumerName: string;
@@ -42,7 +46,7 @@ export interface InboxRepository {
 
 export type InboxEffect<T> = (
   context: InboxTransactionContext,
-  message: ValidatedPaymentEventMessage,
+  message: ValidatedDomainEventMessage,
 ) => Promise<T>;
 
 export type InboxProcessingResult<T> =

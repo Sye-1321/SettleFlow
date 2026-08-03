@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.settleflow.invalid/events/reconciliation.completed.v1.schema.json",
+  "title": "reconciliation.completed.v1",
+  "description": "A bounded mock-provider reconciliation import completed with deterministic summaries.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "pattern": "^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "eventType": { "const": "reconciliation.completed.v1" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "merchantId": { "type": "string", "format": "uuid" },
+    "importId": { "type": "string", "pattern": "^rec_[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "matchedExactCount": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "mismatchCount": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "unexplainedDifferenceMinorByCurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ETB": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+        "USD": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 }
+      },
+      "required": ["ETB", "USD"]
+    }
+  },
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "requestId",
+    "merchantId",
+    "importId",
+    "matchedExactCount",
+    "mismatchCount",
+    "unexplainedDifferenceMinorByCurrency"
+  ]
+}

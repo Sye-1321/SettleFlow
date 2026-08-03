@@ -14,6 +14,7 @@ export interface WorkerReadiness {
     readonly postgresql: DependencyStatus;
     readonly rabbitmqConsumer: DependencyStatus;
     readonly rabbitmqPublisher: DependencyStatus;
+    readonly reconciliationProcessor: DependencyStatus;
     readonly webhookDelivery: DependencyStatus;
   };
   readonly service: 'worker';
@@ -26,11 +27,13 @@ export class WorkerHealthService {
     postgresql: { status: DependencyStatus };
     rabbitmqConsumer: { status: DependencyStatus };
     rabbitmqPublisher: { status: DependencyStatus };
+    reconciliationProcessor: { status: DependencyStatus };
     webhookDelivery: { status: DependencyStatus };
   } = {
     postgresql: { status: 'down' },
     rabbitmqConsumer: { status: 'down' },
     rabbitmqPublisher: { status: 'down' },
+    reconciliationProcessor: { status: 'down' },
     webhookDelivery: { status: 'down' },
   };
   private state: WorkerState = 'starting';
@@ -49,6 +52,7 @@ export class WorkerHealthService {
         postgresql: this.dependencies.postgresql.status,
         rabbitmqConsumer: this.dependencies.rabbitmqConsumer.status,
         rabbitmqPublisher: this.dependencies.rabbitmqPublisher.status,
+        reconciliationProcessor: this.dependencies.reconciliationProcessor.status,
         webhookDelivery: this.dependencies.webhookDelivery.status,
       },
       service: 'worker',
@@ -57,6 +61,7 @@ export class WorkerHealthService {
         this.dependencies.postgresql.status === 'up' &&
         this.dependencies.rabbitmqConsumer.status === 'up' &&
         this.dependencies.rabbitmqPublisher.status === 'up' &&
+        this.dependencies.reconciliationProcessor.status === 'up' &&
         this.dependencies.webhookDelivery.status === 'up'
           ? 'ready'
           : 'not_ready',
@@ -75,6 +80,7 @@ export class WorkerHealthService {
     readonly postgresql: { readonly status: DependencyStatus };
     readonly rabbitmqConsumer: { readonly status: DependencyStatus };
     readonly rabbitmqPublisher: { readonly status: DependencyStatus };
+    readonly reconciliationProcessor: { readonly status: DependencyStatus };
     readonly webhookDelivery: { readonly status: DependencyStatus };
   }): void {
     this.dependencies = dependencies;

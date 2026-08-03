@@ -10,18 +10,22 @@ Future authorized capture/refund orchestration may call the Ledger port with its
 
 ## Closed chart and records
 
-Each merchant has exactly these migration/internal-provisioned accounts:
+ADR-0021 extends the migration/internal-provisioned closed chart. Each merchant has exactly these accounts:
 
-| Currency | Account code      | Normal side |
-| -------- | ----------------- | ----------- |
-| ETB      | provider_clearing | debit       |
-| ETB      | merchant_payable  | credit      |
-| USD      | provider_clearing | debit       |
-| USD      | merchant_payable  | credit      |
+| Currency | Account code        | Normal side |
+| -------- | ------------------- | ----------- |
+| ETB      | provider_clearing   | debit       |
+| ETB      | merchant_payable    | credit      |
+| ETB      | fee_revenue         | credit      |
+| ETB      | settlement_clearing | credit      |
+| USD      | provider_clearing   | debit       |
+| USD      | merchant_payable    | credit      |
+| USD      | fee_revenue         | credit      |
+| USD      | settlement_clearing | credit      |
 
-Accounts and entries use internal UUIDs. Ledger transactions use internal UUIDs plus public `ltx_<ULID>` identifiers. Business types are closed to `capture`, `refund`, and `reversal`; ordinary callers cannot supply arbitrary entry arrays or account IDs. Amounts are positive `BIGINT` minor units capped at `9007199254740991`, and each transaction uses exactly one ETB or USD currency.
+Accounts and entries use internal UUIDs. Ledger transactions use internal UUIDs plus public `ltx_<ULID>` identifiers. Business types are closed to `capture`, `refund`, `settlement`, and `reversal`; ordinary callers cannot supply arbitrary entry arrays or account IDs. Amounts are positive `BIGINT` minor units capped at `9007199254740991`, and each transaction uses exactly one ETB or USD currency.
 
-There is no stored balance, account-management API, Ledger read API, settlement state, fee account, suspense account, or durable draft state. Balances are derived from immutable entries when a separately authorized read model is implemented.
+Settlement posting is exposed only through the fixed ADR-0021 port: debit `merchant_payable` by gross, credit `fee_revenue` by fee when non-zero, and credit `settlement_clearing` by net, with gross equal to fee plus net. There is no stored balance, account-management API, Ledger read API, suspense account, or durable draft state. Balances are derived from immutable entries when a separately authorized read model is implemented.
 
 ## Commit-time controls
 

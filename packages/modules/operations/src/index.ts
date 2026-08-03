@@ -1,5 +1,6 @@
 export { AuditService, InvalidAuditRecordError, auditServiceInternals } from './audit.service';
 export type {
+  AppendOperationalAuditInput,
   AppendWebhookLifecycleAuditInput,
   AuditRepository,
   WebhookLifecycleAuditAction,

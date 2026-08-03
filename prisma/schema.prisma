@@ -59,11 +59,70 @@ enum LedgerEntrySide {
 }
 
 enum LedgerBusinessType {
-  CAPTURE  @map("capture")
-  REFUND   @map("refund")
-  REVERSAL @map("reversal")
+  CAPTURE    @map("capture")
+  REFUND     @map("refund")
+  SETTLEMENT @map("settlement")
+  REVERSAL   @map("reversal")
 
   @@map("ledger_business_type")
+}
+
+enum SettlementRunStatus {
+  COMPLETED         @map("completed")
+  NO_ELIGIBLE_ITEMS @map("no_eligible_items")
+
+  @@map("settlement_run_status")
+}
+
+enum SettlementBatchStatus {
+  BATCHED @map("batched")
+  SETTLED @map("settled")
+
+  @@map("settlement_batch_status")
+}
+
+enum SettlementAdjustmentStatus {
+  PENDING @map("pending")
+  BATCHED @map("batched")
+  SETTLED @map("settled")
+
+  @@map("settlement_adjustment_status")
+}
+
+enum ReconciliationImportStatus {
+  STAGED    @map("staged")
+  COMPLETED @map("completed")
+  FAILED    @map("failed")
+
+  @@map("reconciliation_import_status")
+}
+
+enum ReconciliationEventType {
+  CAPTURE    @map("capture")
+  REFUND     @map("refund")
+  SETTLEMENT @map("settlement")
+  ADJUSTMENT @map("adjustment")
+
+  @@map("reconciliation_event_type")
+}
+
+enum ReconciliationProviderStatus {
+  SUCCEEDED @map("succeeded")
+  FAILED    @map("failed")
+
+  @@map("reconciliation_provider_status")
+}
+
+enum ReconciliationResultBucket {
+  MATCHED_EXACT          @map("matched_exact")
+  PROVIDER_ONLY          @map("provider_only")
+  PLATFORM_ONLY          @map("platform_only")
+  CURRENCY_MISMATCH      @map("currency_mismatch")
+  AMOUNT_MISMATCH        @map("amount_mismatch")
+  STATUS_MISMATCH        @map("status_mismatch")
+  DUPLICATE_PROVIDER_ROW @map("duplicate_provider_row")
+
+  @@map("reconciliation_result_bucket")
 }
 
 enum WebhookEndpointStatus {
@@ -100,61 +159,72 @@ enum WebhookDeliveryAttemptOutcome {
 }
 
 model Merchant {
-  id                 String                   @id @default(uuid()) @db.Uuid
-  code               String                   @unique(map: "merchants_code_key") @db.VarChar(64)
-  status             MerchantStatus           @default(ACTIVE)
-  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  apiKeys            ApiKey[]
-  paymentIntents     PaymentIntent[]
-  refunds            Refund[]
-  ledgerAccounts     LedgerAccount[]
-  ledgerTransactions LedgerTransaction[]
-  idempotencyKeys    IdempotencyKey[]
-  outboxEvents       OutboxEvent[]
-  webhookEndpoints   WebhookEndpoint[]
-  webhookEvents      WebhookEventProjection[]
-  auditEvents        AuditEvent[]
+  id                    String                   @id @default(uuid()) @db.Uuid
+  code                  String                   @unique(map: "merchants_code_key") @db.VarChar(64)
+  status                MerchantStatus           @default(ACTIVE)
+  createdAt             DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  apiKeys               ApiKey[]
+  paymentIntents        PaymentIntent[]
+  refunds               Refund[]
+  ledgerAccounts        LedgerAccount[]
+  ledgerTransactions    LedgerTransaction[]
+  idempotencyKeys       IdempotencyKey[]
+  outboxEvents          OutboxEvent[]
+  webhookEndpoints      WebhookEndpoint[]
+  webhookEvents         WebhookEventProjection[]
+  auditEvents           AuditEvent[]
+  settlementStreams     SettlementStream[]
+  settlementPositions   SettlementPosition[]
+  settlementRuns        SettlementRun[]
+  settlementBatches     SettlementBatch[]
+  settlementAdjustments SettlementAdjustment[]
+  reconciliationImports ReconciliationImport[]
 
   @@map("merchants")
 }
 
 model ApiKey {
-  id          String       @id @default(uuid()) @db.Uuid
-  merchantId  String       @map("merchant_id") @db.Uuid
-  prefix      String       @unique(map: "api_keys_prefix_key") @db.VarChar(32)
-  secretHash  String       @map("secret_hash") @db.Text
-  scopes      String[]     @db.Text
-  status      ApiKeyStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  revokedAt   DateTime?    @map("revoked_at") @db.Timestamptz(6)
-  rotatedAt   DateTime?    @map("rotated_at") @db.Timestamptz(6)
-  merchant    Merchant     @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "api_keys_merchant_id_fkey")
-  auditEvents AuditEvent[]
+  id                    String                 @id @default(uuid()) @db.Uuid
+  merchantId            String                 @map("merchant_id") @db.Uuid
+  prefix                String                 @unique(map: "api_keys_prefix_key") @db.VarChar(32)
+  secretHash            String                 @map("secret_hash") @db.Text
+  scopes                String[]               @db.Text
+  status                ApiKeyStatus           @default(ACTIVE)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt             DateTime?              @map("revoked_at") @db.Timestamptz(6)
+  rotatedAt             DateTime?              @map("rotated_at") @db.Timestamptz(6)
+  merchant              Merchant               @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "api_keys_merchant_id_fkey")
+  auditEvents           AuditEvent[]
+  settlementRuns        SettlementRun[]
+  reconciliationImports ReconciliationImport[]
 
   @@index([merchantId, status], map: "api_keys_merchant_id_status_idx")
   @@map("api_keys")
 }
 
 model PaymentIntent {
-  id                  String               @id @default(uuid()) @db.Uuid
-  publicId            String               @unique(map: "payment_intents_public_id_key") @map("public_id") @db.VarChar(29)
-  merchantId          String               @map("merchant_id") @db.Uuid
-  externalRef         String               @map("external_ref") @db.VarChar(255)
-  amountMinor         BigInt               @map("amount_minor") @db.BigInt
-  currency            String               @db.Char(3)
-  captureMethod       PaymentCaptureMethod @map("capture_method")
-  paymentStatus       PaymentStatus        @default(CREATED) @map("payment_status")
-  capturedAmountMinor BigInt               @default(0) @map("captured_amount_minor") @db.BigInt
-  refundedAmountMinor BigInt               @default(0) @map("refunded_amount_minor") @db.BigInt
-  capturedAt          DateTime?            @map("captured_at") @db.Timestamptz(6)
-  availableAt         DateTime?            @map("available_at") @db.Timestamptz(6)
-  version             Int                  @default(0)
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  merchant            Merchant             @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "payment_intents_merchant_id_fkey")
-  refunds             Refund[]
+  id                    String                 @id @default(uuid()) @db.Uuid
+  publicId              String                 @unique(map: "payment_intents_public_id_key") @map("public_id") @db.VarChar(29)
+  merchantId            String                 @map("merchant_id") @db.Uuid
+  externalRef           String                 @map("external_ref") @db.VarChar(255)
+  amountMinor           BigInt                 @map("amount_minor") @db.BigInt
+  currency              String                 @db.Char(3)
+  captureMethod         PaymentCaptureMethod   @map("capture_method")
+  paymentStatus         PaymentStatus          @default(CREATED) @map("payment_status")
+  capturedAmountMinor   BigInt                 @default(0) @map("captured_amount_minor") @db.BigInt
+  refundedAmountMinor   BigInt                 @default(0) @map("refunded_amount_minor") @db.BigInt
+  capturedAt            DateTime?              @map("captured_at") @db.Timestamptz(6)
+  availableAt           DateTime?              @map("available_at") @db.Timestamptz(6)
+  version               Int                    @default(0)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant              Merchant               @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "payment_intents_merchant_id_fkey")
+  refunds               Refund[]
+  settlementPosition    SettlementPosition?
+  settlementBatchItem   SettlementBatchItem?
+  settlementAdjustments SettlementAdjustment[]
 
   @@unique([merchantId, externalRef], map: "payment_intents_merchant_id_external_ref_key")
   @@unique([id, merchantId, currency], map: "payment_intents_id_merchant_id_currency_key")
@@ -162,16 +232,17 @@ model PaymentIntent {
 }
 
 model Refund {
-  id              String        @id @default(uuid()) @db.Uuid
-  publicId        String        @unique(map: "refunds_public_id_key") @map("public_id") @db.VarChar(29)
-  merchantId      String        @map("merchant_id") @db.Uuid
-  paymentIntentId String        @map("payment_intent_id") @db.Uuid
-  externalRef     String        @map("external_ref") @db.VarChar(255)
-  amountMinor     BigInt        @map("amount_minor") @db.BigInt
-  currency        String        @db.Char(3)
-  createdAt       DateTime      @map("created_at") @db.Timestamptz(6)
-  merchant        Merchant      @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "refunds_merchant_id_fkey")
-  paymentIntent   PaymentIntent @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "refunds_payment_intent_id_merchant_id_currency_fkey")
+  id                   String                @id @default(uuid()) @db.Uuid
+  publicId             String                @unique(map: "refunds_public_id_key") @map("public_id") @db.VarChar(29)
+  merchantId           String                @map("merchant_id") @db.Uuid
+  paymentIntentId      String                @map("payment_intent_id") @db.Uuid
+  externalRef          String                @map("external_ref") @db.VarChar(255)
+  amountMinor          BigInt                @map("amount_minor") @db.BigInt
+  currency             String                @db.Char(3)
+  createdAt            DateTime              @map("created_at") @db.Timestamptz(6)
+  merchant             Merchant              @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "refunds_merchant_id_fkey")
+  paymentIntent        PaymentIntent         @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "refunds_payment_intent_id_merchant_id_currency_fkey")
+  settlementAdjustment SettlementAdjustment?
 
   @@unique([merchantId, externalRef], map: "refunds_merchant_id_external_ref_key")
   @@index([merchantId, paymentIntentId, createdAt, id], map: "refunds_merchant_id_payment_intent_id_created_at_idx")
@@ -209,10 +280,277 @@ model LedgerTransaction {
   reversalOf        LedgerTransaction?  @relation("LedgerTransactionReversal", fields: [reversalOfId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "ledger_transactions_reversal_of_id_merchant_id_currency_fkey")
   reversals         LedgerTransaction[] @relation("LedgerTransactionReversal")
   entries           LedgerEntry[]
+  settlementBatch   SettlementBatch?
 
   @@unique([merchantId, businessType, businessReference], map: "ledger_transactions_merchant_id_business_type_reference_key")
   @@unique([id, merchantId, currency], map: "ledger_transactions_id_merchant_id_currency_key")
   @@map("ledger_transactions")
+}
+
+model SettlementStream {
+  id         String   @id @default(uuid()) @db.Uuid
+  merchantId String   @map("merchant_id") @db.Uuid
+  currency   String   @db.Char(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_streams_merchant_id_fkey")
+
+  @@unique([merchantId, currency], map: "settlement_streams_merchant_id_currency_key")
+  @@map("settlement_streams")
+}
+
+model SettlementFeePolicy {
+  version      String   @db.VarChar(64)
+  currency     String   @db.Char(3)
+  flatFeeMinor BigInt   @map("flat_fee_minor") @db.BigInt
+  basisPoints  Int      @map("basis_points")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([version, currency], map: "settlement_fee_policies_pkey")
+  @@map("settlement_fee_policies")
+}
+
+model SettlementPosition {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  paymentIntentId     String                 @unique(map: "settlement_positions_payment_intent_id_key") @map("payment_intent_id") @db.Uuid
+  paymentPublicId     String                 @map("payment_public_id") @db.VarChar(29)
+  merchantId          String                 @map("merchant_id") @db.Uuid
+  currency            String                 @db.Char(3)
+  capturedAmountMinor BigInt                 @map("captured_amount_minor") @db.BigInt
+  refundedAmountMinor BigInt                 @map("refunded_amount_minor") @db.BigInt
+  availableAt         DateTime               @map("available_at") @db.Timestamptz(6)
+  capturedAt          DateTime               @map("captured_at") @db.Timestamptz(6)
+  lastEventId         String                 @map("last_event_id") @db.VarChar(30)
+  lastEventOccurredAt DateTime               @map("last_event_occurred_at") @db.Timestamptz(6)
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  merchant            Merchant               @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_positions_merchant_id_fkey")
+  paymentIntent       PaymentIntent          @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_positions_payment_owner_fkey")
+  batchItem           SettlementBatchItem?
+  adjustments         SettlementAdjustment[]
+
+  @@unique([id, merchantId, currency], map: "settlement_positions_id_merchant_id_currency_key")
+  @@unique([paymentIntentId, merchantId, currency], map: "settlement_positions_payment_owner_key")
+  @@index([merchantId, currency, availableAt, paymentIntentId], map: "settlement_positions_eligibility_idx")
+  @@map("settlement_positions")
+}
+
+model SettlementRun {
+  id                  String              @id @default(uuid()) @db.Uuid
+  publicId            String              @unique(map: "settlement_runs_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId          String              @map("merchant_id") @db.Uuid
+  currency            String              @db.Char(3)
+  cutoffDate          DateTime            @map("cutoff_date") @db.Date
+  cutoffTimezone      String              @map("cutoff_timezone") @db.VarChar(64)
+  cutoffAt            DateTime            @map("cutoff_at") @db.Timestamptz(6)
+  status              SettlementRunStatus
+  batchId             String?             @unique(map: "settlement_runs_batch_id_key") @map("batch_id") @db.Uuid
+  moreEligible        Boolean             @default(false) @map("more_eligible")
+  requestId           String              @map("request_id") @db.VarChar(128)
+  requestedByApiKeyId String              @map("requested_by_api_key_id") @db.Uuid
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt         DateTime            @map("completed_at") @db.Timestamptz(6)
+  merchant            Merchant            @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_runs_merchant_id_fkey")
+  requestedByApiKey   ApiKey              @relation(fields: [requestedByApiKeyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_runs_requested_by_api_key_id_fkey")
+  batch               SettlementBatch?    @relation(fields: [batchId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_runs_batch_id_merchant_id_currency_fkey")
+
+  @@unique([id, merchantId, currency], map: "settlement_runs_id_merchant_id_currency_key")
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)], map: "settlement_runs_merchant_id_created_at_id_idx")
+  @@map("settlement_runs")
+}
+
+model SettlementBatch {
+  id                        String                 @id @default(uuid()) @db.Uuid
+  publicId                  String                 @unique(map: "settlement_batches_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId                String                 @map("merchant_id") @db.Uuid
+  currency                  String                 @db.Char(3)
+  cutoffDate                DateTime               @map("cutoff_date") @db.Date
+  cutoffTimezone            String                 @map("cutoff_timezone") @db.VarChar(64)
+  cutoffAt                  DateTime               @map("cutoff_at") @db.Timestamptz(6)
+  status                    SettlementBatchStatus  @default(BATCHED)
+  paymentGrossMinor         BigInt                 @map("payment_gross_minor") @db.BigInt
+  adjustmentMinor           BigInt                 @map("adjustment_minor") @db.BigInt
+  grossMinor                BigInt                 @map("gross_minor") @db.BigInt
+  feeMinor                  BigInt                 @map("fee_minor") @db.BigInt
+  netMinor                  BigInt                 @map("net_minor") @db.BigInt
+  itemCount                 Int                    @map("item_count")
+  adjustmentCount           Int                    @map("adjustment_count")
+  ledgerTransactionId       String                 @unique(map: "settlement_batches_ledger_transaction_id_key") @map("ledger_transaction_id") @db.Uuid
+  ledgerTransactionPublicId String                 @unique(map: "settlement_batches_ledger_transaction_public_id_key") @map("ledger_transaction_public_id") @db.VarChar(30)
+  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  settledAt                 DateTime?              @map("settled_at") @db.Timestamptz(6)
+  merchant                  Merchant               @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_batches_merchant_id_fkey")
+  ledgerTransaction         LedgerTransaction      @relation(fields: [ledgerTransactionId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_batches_ledger_owner_fkey")
+  runs                      SettlementRun[]
+  items                     SettlementBatchItem[]
+  adjustments               SettlementAdjustment[]
+
+  @@unique([id, merchantId, currency], map: "settlement_batches_id_merchant_id_currency_key")
+  @@unique([ledgerTransactionId, merchantId, currency], map: "settlement_batches_ledger_owner_key")
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)], map: "settlement_batches_merchant_id_created_at_id_idx")
+  @@map("settlement_batches")
+}
+
+model SettlementBatchItem {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  batchId              String                 @map("batch_id") @db.Uuid
+  settlementPositionId String                 @unique(map: "settlement_batch_items_position_id_key") @map("settlement_position_id") @db.Uuid
+  paymentIntentId      String                 @unique(map: "settlement_batch_items_payment_intent_id_key") @map("payment_intent_id") @db.Uuid
+  merchantId           String                 @map("merchant_id") @db.Uuid
+  currency             String                 @db.Char(3)
+  capturedAmountMinor  BigInt                 @map("captured_amount_minor") @db.BigInt
+  refundedAmountMinor  BigInt                 @map("refunded_amount_minor") @db.BigInt
+  grossMinor           BigInt                 @map("gross_minor") @db.BigInt
+  feePolicyVersion     String                 @map("fee_policy_version") @db.VarChar(64)
+  flatFeeMinor         BigInt                 @map("flat_fee_minor") @db.BigInt
+  basisPoints          Int                    @map("basis_points")
+  feeMinor             BigInt                 @map("fee_minor") @db.BigInt
+  netMinor             BigInt                 @map("net_minor") @db.BigInt
+  availableAt          DateTime               @map("available_at") @db.Timestamptz(6)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  batch                SettlementBatch        @relation(fields: [batchId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_batch_items_batch_id_merchant_id_currency_fkey")
+  position             SettlementPosition     @relation(fields: [settlementPositionId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_batch_items_position_id_merchant_id_currency_fkey")
+  paymentIntent        PaymentIntent          @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_batch_items_payment_owner_fkey")
+  adjustments          SettlementAdjustment[]
+
+  @@unique([id, merchantId, currency], map: "settlement_batch_items_id_merchant_id_currency_key")
+  @@unique([settlementPositionId, merchantId, currency], map: "settlement_batch_items_position_owner_key")
+  @@unique([paymentIntentId, merchantId, currency], map: "settlement_batch_items_payment_owner_key")
+  @@index([batchId, availableAt, paymentIntentId], map: "settlement_batch_items_batch_order_idx")
+  @@map("settlement_batch_items")
+}
+
+model SettlementAdjustment {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  publicId             String                     @unique(map: "settlement_adjustments_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId           String                     @map("merchant_id") @db.Uuid
+  currency             String                     @db.Char(3)
+  paymentIntentId      String                     @map("payment_intent_id") @db.Uuid
+  settlementPositionId String                     @map("settlement_position_id") @db.Uuid
+  originalBatchItemId  String                     @map("original_batch_item_id") @db.Uuid
+  refundId             String                     @unique(map: "settlement_adjustments_refund_id_key") @map("refund_id") @db.Uuid
+  refundPublicId       String                     @map("refund_public_id") @db.VarChar(29)
+  amountMinor          BigInt                     @map("amount_minor") @db.BigInt
+  status               SettlementAdjustmentStatus @default(PENDING)
+  batchId              String?                    @map("batch_id") @db.Uuid
+  sourceEventId        String                     @unique(map: "settlement_adjustments_source_event_id_key") @map("source_event_id") @db.VarChar(30)
+  occurredAt           DateTime                   @map("occurred_at") @db.Timestamptz(6)
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  settledAt            DateTime?                  @map("settled_at") @db.Timestamptz(6)
+  merchant             Merchant                   @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_merchant_id_fkey")
+  paymentIntent        PaymentIntent              @relation(fields: [paymentIntentId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_payment_owner_fkey")
+  position             SettlementPosition         @relation(fields: [settlementPositionId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_position_id_merchant_id_currency_fkey")
+  originalBatchItem    SettlementBatchItem        @relation(fields: [originalBatchItemId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_original_item_owner_fkey")
+  refund               Refund                     @relation(fields: [refundId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_refund_id_fkey")
+  batch                SettlementBatch?           @relation(fields: [batchId, merchantId, currency], references: [id, merchantId, currency], onDelete: Restrict, onUpdate: Restrict, map: "settlement_adjustments_batch_id_merchant_id_currency_fkey")
+
+  @@index([merchantId, currency, status, occurredAt, id], map: "settlement_adjustments_pending_idx")
+  @@map("settlement_adjustments")
+}
+
+model ReconciliationImport {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  publicId            String                      @unique(map: "reconciliation_imports_public_id_key") @map("public_id") @db.VarChar(30)
+  merchantId          String                      @map("merchant_id") @db.Uuid
+  contentSha256       Bytes                       @map("content_sha256") @db.ByteA
+  byteCount           Int                         @map("byte_count")
+  rowCount            Int                         @map("row_count")
+  periodStart         DateTime                    @map("period_start") @db.Timestamptz(6)
+  periodEnd           DateTime                    @map("period_end") @db.Timestamptz(6)
+  status              ReconciliationImportStatus  @default(STAGED)
+  requestId           String                      @map("request_id") @db.VarChar(128)
+  requestedByApiKeyId String                      @map("requested_by_api_key_id") @db.Uuid
+  failureCode         String?                     @map("failure_code") @db.VarChar(64)
+  failureRowNumber    Int?                        @map("failure_row_number")
+  rawRowsExpireAt     DateTime                    @map("raw_rows_expire_at") @db.Timestamptz(6)
+  lockedBy            String?                     @map("locked_by") @db.VarChar(128)
+  lockedAt            DateTime?                   @map("locked_at") @db.Timestamptz(6)
+  leaseExpiresAt      DateTime?                   @map("lease_expires_at") @db.Timestamptz(6)
+  createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt         DateTime?                   @map("completed_at") @db.Timestamptz(6)
+  failedAt            DateTime?                   @map("failed_at") @db.Timestamptz(6)
+  merchant            Merchant                    @relation(fields: [merchantId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_imports_merchant_id_fkey")
+  requestedByApiKey   ApiKey                      @relation(fields: [requestedByApiKeyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_imports_requested_by_api_key_id_fkey")
+  providerRows        ReconciliationProviderRow[]
+  results             ReconciliationResult[]
+  summaries           ReconciliationSummary[]
+
+  @@unique([merchantId, contentSha256], map: "reconciliation_imports_merchant_id_checksum_key")
+  @@index([merchantId, status, createdAt, id], map: "reconciliation_imports_merchant_id_status_created_at_idx")
+  @@map("reconciliation_imports")
+}
+
+model ReconciliationProviderRow {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  importId              String                       @map("import_id") @db.Uuid
+  rowNumber             Int                          @map("row_number")
+  providerTransactionId String                       @map("provider_transaction_id") @db.VarChar(255)
+  merchantCode          String                       @map("merchant_code") @db.VarChar(64)
+  providerRef           String                       @map("provider_ref") @db.VarChar(255)
+  externalRef           String?                      @map("external_ref") @db.VarChar(255)
+  eventType             ReconciliationEventType      @map("event_type")
+  currency              String                       @db.Char(3)
+  grossMinor            BigInt                       @map("gross_minor") @db.BigInt
+  feeMinor              BigInt                       @map("fee_minor") @db.BigInt
+  netMinor              BigInt                       @map("net_minor") @db.BigInt
+  status                ReconciliationProviderStatus
+  occurredAt            DateTime                     @map("occurred_at") @db.Timestamptz(6)
+  createdAt             DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  reconciliationImport  ReconciliationImport         @relation(fields: [importId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_provider_rows_import_id_fkey")
+  result                ReconciliationResult?
+
+  @@unique([importId, rowNumber], map: "reconciliation_provider_rows_import_id_row_number_key")
+  @@index([importId, providerRef, rowNumber], map: "reconciliation_provider_rows_provider_ref_idx")
+  @@map("reconciliation_provider_rows")
+}
+
+model ReconciliationResult {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  importId             String                     @map("import_id") @db.Uuid
+  providerRowId        String?                    @unique(map: "reconciliation_results_provider_row_id_key") @map("provider_row_id") @db.Uuid
+  bucket               ReconciliationResultBucket
+  currency             String                     @db.Char(3)
+  platformRecordType   String?                    @map("platform_record_type") @db.VarChar(32)
+  platformPublicRef    String?                    @map("platform_public_ref") @db.VarChar(255)
+  matchedBy            String?                    @map("matched_by") @db.VarChar(32)
+  providerGrossMinor   BigInt?                    @map("provider_gross_minor") @db.BigInt
+  providerFeeMinor     BigInt?                    @map("provider_fee_minor") @db.BigInt
+  providerNetMinor     BigInt?                    @map("provider_net_minor") @db.BigInt
+  platformGrossMinor   BigInt?                    @map("platform_gross_minor") @db.BigInt
+  platformFeeMinor     BigInt?                    @map("platform_fee_minor") @db.BigInt
+  platformNetMinor     BigInt?                    @map("platform_net_minor") @db.BigInt
+  reasonCode           String                     @map("reason_code") @db.VarChar(64)
+  sortOrdinal          Int                        @map("sort_ordinal")
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  reconciliationImport ReconciliationImport       @relation(fields: [importId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_results_import_id_fkey")
+  providerRow          ReconciliationProviderRow? @relation(fields: [providerRowId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_results_provider_row_id_fkey")
+
+  @@unique([importId, platformRecordType, platformPublicRef], map: "reconciliation_results_platform_record_key")
+  @@index([importId, bucket, sortOrdinal], map: "reconciliation_results_import_id_bucket_sort_idx")
+  @@map("reconciliation_results")
+}
+
+model ReconciliationSummary {
+  importId                   String               @map("import_id") @db.Uuid
+  currency                   String               @db.Char(3)
+  matchedExactCount          Int                  @map("matched_exact_count")
+  providerOnlyCount          Int                  @map("provider_only_count")
+  platformOnlyCount          Int                  @map("platform_only_count")
+  currencyMismatchCount      Int                  @map("currency_mismatch_count")
+  amountMismatchCount        Int                  @map("amount_mismatch_count")
+  statusMismatchCount        Int                  @map("status_mismatch_count")
+  duplicateProviderRowCount  Int                  @map("duplicate_provider_row_count")
+  providerGrossMinor         BigInt               @map("provider_gross_minor") @db.BigInt
+  providerFeeMinor           BigInt               @map("provider_fee_minor") @db.BigInt
+  providerNetMinor           BigInt               @map("provider_net_minor") @db.BigInt
+  platformGrossMinor         BigInt               @map("platform_gross_minor") @db.BigInt
+  platformFeeMinor           BigInt               @map("platform_fee_minor") @db.BigInt
+  platformNetMinor           BigInt               @map("platform_net_minor") @db.BigInt
+  unexplainedDifferenceMinor BigInt               @map("unexplained_difference_minor") @db.BigInt
+  completedAt                DateTime             @map("completed_at") @db.Timestamptz(6)
+  reconciliationImport       ReconciliationImport @relation(fields: [importId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "reconciliation_summaries_import_id_fkey")
+
+  @@id([importId, currency], map: "reconciliation_summaries_pkey")
+  @@map("reconciliation_summaries")
 }
 
 model LedgerEntry {
@@ -350,11 +688,13 @@ model WebhookEventProjection {
   eventType                     String            @map("event_type") @db.VarChar(128)
   schemaVersion                 Int               @map("schema_version")
   merchantId                    String            @map("merchant_id") @db.Uuid
-  paymentId                     String            @map("payment_id") @db.VarChar(29)
+  aggregateType                 String            @map("aggregate_type") @db.VarChar(64)
+  aggregateId                   String            @map("aggregate_id") @db.VarChar(255)
+  paymentId                     String?           @map("payment_id") @db.VarChar(29)
   occurredAt                    DateTime          @map("occurred_at") @db.Timestamptz(6)
   requestId                     String            @map("request_id") @db.VarChar(128)
-  amountMinor                   BigInt            @map("amount_minor") @db.BigInt
-  currency                      String            @db.Char(3)
+  amountMinor                   BigInt?           @map("amount_minor") @db.BigInt
+  currency                      String?           @db.Char(3)
   paymentStatus                 String?           @map("payment_status") @db.VarChar(32)
   refundId                      String?           @map("refund_id") @db.VarChar(29)
   ledgerTransactionId           String?           @map("ledger_transaction_id") @db.VarChar(30)

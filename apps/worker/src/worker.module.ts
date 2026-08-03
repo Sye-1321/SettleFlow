@@ -6,10 +6,27 @@ import {
   OutboxRelayService,
   PrismaInboxRepository,
   PrismaOutboxRelayRepository,
+  PrismaOutboxRepository,
+  EventingService,
   RabbitMqOutboxPublisher,
   RabbitMqPaymentCreatedConsumer,
+  RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
 import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
+import { PrismaLedgerReconciliationReader } from '@settleflow/ledger';
+import {
+  PrismaPaymentReconciliationReader,
+  PrismaPaymentSettlementReader,
+} from '@settleflow/payments';
+import {
+  PrismaReconciliationRepository,
+  ReconciliationProcessor,
+} from '@settleflow/reconciliation';
+import {
+  PrismaSettlementReconciliationReader,
+  PrismaSettlementRepository,
+  SettlementProjectionService,
+} from '@settleflow/settlements';
 import {
   LocalWebhookKeyring,
   NodeWebhookHttpClient,
@@ -24,6 +41,8 @@ import {
 import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
 import { OutboxRelaySignalService } from './runtime/outbox-relay-signal.service';
+import { ReconciliationPlatformReadAdapter } from './runtime/reconciliation-platform-read.adapter';
+import { SettlementLifecycleSignalService } from './runtime/settlement-lifecycle-signal.service';
 import { WebhookDeliverySignalService } from './runtime/webhook-delivery-signal.service';
 import { WebhookProjectionSignalService } from './runtime/webhook-projection-signal.service';
 import { WorkerRuntimeService } from './runtime/worker-runtime.service';
@@ -40,10 +59,29 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
   providers: [
     WorkerHealthService,
     OutboxRelaySignalService,
+    SettlementLifecycleSignalService,
     WebhookProjectionSignalService,
     WebhookDeliverySignalService,
     WorkerRuntimeService,
     MonotonicUlidGenerator,
+    PrismaLedgerReconciliationReader,
+    PrismaPaymentReconciliationReader,
+    PrismaPaymentSettlementReader,
+    PrismaSettlementReconciliationReader,
+    {
+      provide: ReconciliationPlatformReadAdapter,
+      inject: [
+        PrismaPaymentReconciliationReader,
+        PrismaSettlementReconciliationReader,
+        PrismaLedgerReconciliationReader,
+      ],
+      useFactory: (
+        payments: PrismaPaymentReconciliationReader,
+        settlements: PrismaSettlementReconciliationReader,
+        ledger: PrismaLedgerReconciliationReader,
+      ): ReconciliationPlatformReadAdapter =>
+        new ReconciliationPlatformReadAdapter(payments, settlements, ledger),
+    },
     {
       provide: LocalWebhookKeyring,
       inject: [ConfigService],
@@ -188,6 +226,72 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
           }),
           signal: (value) => signals.record(value),
         }),
+    },
+    {
+      provide: PrismaSettlementRepository,
+      inject: [PrismaDatabase],
+      useFactory: (database: PrismaDatabase): PrismaSettlementRepository =>
+        new PrismaSettlementRepository(database),
+    },
+    {
+      provide: SettlementProjectionService,
+      inject: [
+        PrismaSettlementRepository,
+        MonotonicUlidGenerator,
+        PrismaPaymentSettlementReader,
+        InboxService,
+      ],
+      useFactory: (
+        repository: PrismaSettlementRepository,
+        identifiers: MonotonicUlidGenerator,
+        payments: PrismaPaymentSettlementReader,
+        inbox: InboxService,
+      ): SettlementProjectionService =>
+        new SettlementProjectionService(repository, identifiers, payments, inbox),
+    },
+    {
+      provide: RabbitMqSettlementLifecycleConsumer,
+      inject: [SettlementProjectionService, ConfigService, SettlementLifecycleSignalService],
+      useFactory: (
+        handler: SettlementProjectionService,
+        config: ConfigService<WorkerEnvironment, true>,
+        signals: SettlementLifecycleSignalService,
+      ): RabbitMqSettlementLifecycleConsumer =>
+        new RabbitMqSettlementLifecycleConsumer(handler, {
+          bodyLimitBytes: config.get('SETTLEMENT_CONSUMER_BODY_LIMIT_BYTES', { infer: true }),
+          connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
+          prefetch: config.get('SETTLEMENT_CONSUMER_PREFETCH', { infer: true }),
+          rabbitmqUrl: config.get('RABBITMQ_URL', { infer: true }),
+          reconnectBaseMs: config.get('SETTLEMENT_CONSUMER_RECONNECT_BASE_MS', { infer: true }),
+          reconnectMaxMs: config.get('SETTLEMENT_CONSUMER_RECONNECT_MAX_MS', { infer: true }),
+          shutdownTimeoutMs: config.get('SETTLEMENT_CONSUMER_SHUTDOWN_TIMEOUT_MS', { infer: true }),
+          signal: (value) => signals.record(value),
+        }),
+    },
+    PrismaOutboxRepository,
+    {
+      provide: EventingService,
+      inject: [PrismaOutboxRepository, MonotonicUlidGenerator],
+      useFactory: (
+        repository: PrismaOutboxRepository,
+        identifiers: MonotonicUlidGenerator,
+      ): EventingService => new EventingService(repository, identifiers),
+    },
+    {
+      provide: PrismaReconciliationRepository,
+      inject: [PrismaDatabase],
+      useFactory: (database: PrismaDatabase): PrismaReconciliationRepository =>
+        new PrismaReconciliationRepository(database),
+    },
+    {
+      provide: ReconciliationProcessor,
+      inject: [PrismaReconciliationRepository, EventingService, ReconciliationPlatformReadAdapter],
+      useFactory: (
+        repository: PrismaReconciliationRepository,
+        eventing: EventingService,
+        platformReader: ReconciliationPlatformReadAdapter,
+      ): ReconciliationProcessor =>
+        new ReconciliationProcessor(repository, eventing, platformReader),
     },
     {
       provide: PrismaOutboxRelayRepository,

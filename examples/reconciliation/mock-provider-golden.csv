@@ -1,0 +1,3 @@
+provider_txn_id,merchant_code,provider_ref,external_ref,event_type,currency,gross_minor,fee_minor,net_minor,status,occurred_at
+mock_txn_001,merchant_demo,ltx_01ARZ3NDEKTSV4RRFFQ69G5FAV,order_demo_001,capture,ETB,120000,0,120000,succeeded,2026-08-01T10:00:00.000Z
+mock_txn_002,merchant_demo,ltx_01ARZ3NDEKTSV4RRFFQ69G5FAW,stb_01ARZ3NDEKTSV4RRFFQ69G5FAV,settlement,ETB,120000,3000,117000,succeeded,2026-08-03T10:00:00.000Z

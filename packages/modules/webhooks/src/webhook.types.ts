@@ -5,6 +5,8 @@ export const WEBHOOK_SUBSCRIPTIONS = [
   'payment.created.v1',
   'payment.captured.v1',
   'payment.refunded.v1',
+  'settlement.finalized.v1',
+  'reconciliation.completed.v1',
 ] as const;
 export type WebhookSubscription = (typeof WEBHOOK_SUBSCRIPTIONS)[number];
 
@@ -131,15 +133,17 @@ export interface WebhookUrlPolicy {
 }
 
 export interface WebhookEventProjectionRecord {
-  readonly amountMinor: bigint;
-  readonly currency: string;
+  readonly aggregateId: string;
+  readonly aggregateType: string;
+  readonly amountMinor: bigint | undefined;
+  readonly currency: string | undefined;
   readonly eventId: string;
   readonly eventType: string;
   readonly merchantId: string;
   readonly occurredAt: Date;
   readonly payloadBytes: Uint8Array;
   readonly payloadSha256: Uint8Array;
-  readonly paymentId: string;
+  readonly paymentId: string | undefined;
   readonly paymentStatus: string | undefined;
   readonly refundId: string | undefined;
   readonly ledgerTransactionId: string | undefined;
@@ -150,15 +154,17 @@ export interface WebhookEventProjectionRecord {
 }
 
 export interface CreateWebhookEventProjectionInput {
-  readonly amountMinor: bigint;
-  readonly currency: 'ETB' | 'USD';
+  readonly aggregateId: string;
+  readonly aggregateType: 'payment_intent' | 'reconciliation_import' | 'settlement_batch';
+  readonly amountMinor?: bigint;
+  readonly currency?: 'ETB' | 'USD';
   readonly eventId: string;
   readonly eventType: WebhookSubscription;
   readonly merchantId: string;
   readonly occurredAt: Date;
   readonly payloadBytes: Uint8Array;
   readonly payloadSha256: Uint8Array;
-  readonly paymentId: string;
+  readonly paymentId?: string;
   readonly paymentStatus?: 'CREATED';
   readonly refundId?: string;
   readonly ledgerTransactionId?: string;

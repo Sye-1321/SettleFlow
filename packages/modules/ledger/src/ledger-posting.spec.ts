@@ -1,7 +1,37 @@
 import { InvalidLedgerCommandError } from './ledger.errors';
-import { buildCaptureEntries, buildRefundEntries, buildReversalEntries } from './ledger-posting';
+import {
+  buildCaptureEntries,
+  buildRefundEntries,
+  buildReversalEntries,
+  buildSettlementEntries,
+} from './ledger-posting';
 
 describe('ledger posting builders', () => {
+  it('splits settlement gross into the approved fee and clearing credits', () => {
+    expect(buildSettlementEntries(120_000n, 3_000n, 117_000n, 'ETB')).toEqual([
+      {
+        accountCode: 'merchant_payable',
+        amountMinor: 120_000n,
+        currency: 'ETB',
+        entrySeq: 1,
+        side: 'debit',
+      },
+      {
+        accountCode: 'fee_revenue',
+        amountMinor: 3_000n,
+        currency: 'ETB',
+        entrySeq: 2,
+        side: 'credit',
+      },
+      {
+        accountCode: 'settlement_clearing',
+        amountMinor: 117_000n,
+        currency: 'ETB',
+        entrySeq: 3,
+        side: 'credit',
+      },
+    ]);
+  });
   it('builds the approved capture and refund goldens', () => {
     expect(buildCaptureEntries(125_000n, 'ETB')).toEqual([
       {

@@ -150,7 +150,7 @@ describe('RabbitMqPaymentCreatedConsumer', () => {
     await expect(consumer.ensureReady()).resolves.toBe(true);
     expect(consumer.isReady()).toBe(true);
     expect(broker.prefetch).toHaveBeenCalledWith(2);
-    expect(broker.consume).toHaveBeenCalledTimes(3);
+    expect(broker.consume).toHaveBeenCalledTimes(Object.keys(PAYMENT_EVENT_ROUTES).length);
     for (const route of Object.values(PAYMENT_EVENT_ROUTES)) {
       expect(broker.consume).toHaveBeenCalledWith(route.queue, expect.any(Function), {
         noAck: false,

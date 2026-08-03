@@ -28,7 +28,11 @@ export const paymentIntentSchema = {
       minimum: 0,
       type: 'integer',
     },
-    settlementStatus: { enum: ['NOT_ELIGIBLE'], example: 'NOT_ELIGIBLE', type: 'string' },
+    settlementStatus: {
+      enum: ['NOT_ELIGIBLE', 'ELIGIBLE', 'BATCHED', 'SETTLED', 'ADJUSTMENT_PENDING'],
+      example: 'NOT_ELIGIBLE',
+      type: 'string',
+    },
     updatedAt: { example: '2026-08-01T10:20:12.345Z', format: 'date-time', type: 'string' },
     version: { example: 0, minimum: 0, type: 'integer' },
   },

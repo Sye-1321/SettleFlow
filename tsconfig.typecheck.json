@@ -11,7 +11,9 @@
       "@settleflow/payments": ["./packages/modules/payments/src/index.ts"],
       "@settleflow/ledger": ["./packages/modules/ledger/src/index.ts"],
       "@settleflow/operations": ["./packages/modules/operations/src/index.ts"],
-      "@settleflow/webhooks": ["./packages/modules/webhooks/src/index.ts"]
+      "@settleflow/webhooks": ["./packages/modules/webhooks/src/index.ts"],
+      "@settleflow/settlements": ["./packages/modules/settlements/src/index.ts"],
+      "@settleflow/reconciliation": ["./packages/modules/reconciliation/src/index.ts"]
     },
     "types": ["jest", "node"]
   },

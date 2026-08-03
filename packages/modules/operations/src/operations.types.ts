@@ -10,7 +10,11 @@ export type WebhookLifecycleAuditDetails =
   | {
       readonly status: 'active';
       readonly subscriptions: readonly (
-        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+        | 'payment.captured.v1'
+        | 'payment.created.v1'
+        | 'payment.refunded.v1'
+        | 'reconciliation.completed.v1'
+        | 'settlement.finalized.v1'
       )[];
       readonly version: 0;
     }
@@ -25,10 +29,18 @@ export type WebhookLifecycleAuditDetails =
     }
   | {
       readonly from: readonly (
-        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+        | 'payment.captured.v1'
+        | 'payment.created.v1'
+        | 'payment.refunded.v1'
+        | 'reconciliation.completed.v1'
+        | 'settlement.finalized.v1'
       )[];
       readonly to: readonly (
-        'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1'
+        | 'payment.captured.v1'
+        | 'payment.created.v1'
+        | 'payment.refunded.v1'
+        | 'reconciliation.completed.v1'
+        | 'settlement.finalized.v1'
       )[];
       readonly version: number;
     };
@@ -44,8 +56,23 @@ export interface AppendWebhookLifecycleAuditInput {
 }
 
 export interface AuditRepository {
+  appendOperational(
+    transaction: PrismaTransactionClient,
+    input: AppendOperationalAuditInput,
+  ): Promise<void>;
   appendWebhookLifecycle(
     transaction: PrismaTransactionClient,
     input: AppendWebhookLifecycleAuditInput,
   ): Promise<void>;
+}
+
+export interface AppendOperationalAuditInput {
+  readonly action: 'reconciliation.import_created' | 'settlement.run_executed';
+  readonly actorApiKeyId: string;
+  readonly details: Readonly<Record<string, boolean | number | string>>;
+  readonly merchantId: string;
+  readonly occurredAt: Date;
+  readonly requestId: string;
+  readonly targetId: string;
+  readonly targetType: 'reconciliation_import' | 'settlement_run';
 }

@@ -15,10 +15,13 @@ import {
 } from '@settleflow/merchant-access';
 import { LedgerService, PrismaLedgerRepository } from '@settleflow/ledger';
 import { AuditService, PrismaAuditRepository } from '@settleflow/operations';
+import { PrismaReconciliationRepository, ReconciliationService } from '@settleflow/reconciliation';
+import { PrismaSettlementRepository, SettlementService } from '@settleflow/settlements';
 import {
   DeterministicMockPaymentExecution,
   PaymentIntentService,
   PrismaPaymentIntentRepository,
+  PrismaPaymentSettlementReader,
 } from '@settleflow/payments';
 import {
   LocalWebhookKeyring,
@@ -37,6 +40,8 @@ import { RequestIdMiddleware } from './http/request-id';
 import { MerchantApiKeyGuard } from './merchant-access/merchant-api-key.guard';
 import { PaymentIntentController } from './payment-intents/payment-intent.controller';
 import { PaymentCommandSignalService } from './payment-intents/payment-command-signal.service';
+import { ReconciliationController } from './reconciliation/reconciliation.controller';
+import { SettlementController } from './settlements/settlement.controller';
 import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.controller';
 
 @Module({
@@ -44,6 +49,8 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
     ApiVersionController,
     HealthController,
     PaymentIntentController,
+    ReconciliationController,
+    SettlementController,
     WebhookEndpointController,
   ],
   imports: [
@@ -125,6 +132,7 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
       useFactory: (database: PrismaDatabase): PrismaPaymentIntentRepository =>
         new PrismaPaymentIntentRepository(database),
     },
+    PrismaPaymentSettlementReader,
     {
       provide: PrismaLedgerRepository,
       inject: [PrismaDatabase],
@@ -174,6 +182,64 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
       provide: AuditService,
       inject: [PrismaAuditRepository],
       useFactory: (repository: PrismaAuditRepository): AuditService => new AuditService(repository),
+    },
+    {
+      provide: PrismaSettlementRepository,
+      inject: [PrismaDatabase],
+      useFactory: (database: PrismaDatabase): PrismaSettlementRepository =>
+        new PrismaSettlementRepository(database),
+    },
+    {
+      provide: SettlementService,
+      inject: [
+        PrismaSettlementRepository,
+        IdempotencyService,
+        LedgerService,
+        EventingService,
+        AuditService,
+        MonotonicUlidGenerator,
+        PrismaPaymentSettlementReader,
+      ],
+      useFactory: (
+        repository: PrismaSettlementRepository,
+        idempotency: IdempotencyService,
+        ledger: LedgerService,
+        eventing: EventingService,
+        audit: AuditService,
+        identifiers: MonotonicUlidGenerator,
+        payments: PrismaPaymentSettlementReader,
+      ): SettlementService =>
+        new SettlementService(
+          repository,
+          idempotency,
+          ledger,
+          eventing,
+          audit,
+          identifiers,
+          payments,
+        ),
+    },
+    {
+      provide: PrismaReconciliationRepository,
+      inject: [PrismaDatabase],
+      useFactory: (database: PrismaDatabase): PrismaReconciliationRepository =>
+        new PrismaReconciliationRepository(database),
+    },
+    {
+      provide: ReconciliationService,
+      inject: [
+        PrismaReconciliationRepository,
+        IdempotencyService,
+        AuditService,
+        MonotonicUlidGenerator,
+      ],
+      useFactory: (
+        repository: PrismaReconciliationRepository,
+        idempotency: IdempotencyService,
+        audit: AuditService,
+        identifiers: MonotonicUlidGenerator,
+      ): ReconciliationService =>
+        new ReconciliationService(repository, idempotency, audit, identifiers),
     },
     {
       provide: NodeWebhookUrlPolicy,

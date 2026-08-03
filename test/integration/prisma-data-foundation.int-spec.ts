@@ -107,7 +107,18 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       'merchants',
       'outbox_events',
       'payment_intents',
+      'reconciliation_imports',
+      'reconciliation_provider_rows',
+      'reconciliation_results',
+      'reconciliation_summaries',
       'refunds',
+      'settlement_adjustments',
+      'settlement_batch_items',
+      'settlement_batches',
+      'settlement_fee_policies',
+      'settlement_positions',
+      'settlement_runs',
+      'settlement_streams',
       'webhook_deliveries',
       'webhook_delivery_attempts',
       'webhook_endpoint_secrets',
@@ -116,7 +127,7 @@ describe('Prisma data foundation with real PostgreSQL', () => {
       'webhook_event_projections',
     ]);
     expect(appliedMigrations.exitCode).toBe(0);
-    expect(appliedMigrations.stdout.trim()).toBe('8');
+    expect(appliedMigrations.stdout.trim()).toBe('11');
   });
 
   it('supports an atomic M1 persistence set and enforces the approved database invariants', async () => {

@@ -11,7 +11,12 @@ import {
   LedgerReversalConflictError,
   LedgerTransactionNotFoundError,
 } from './ledger.errors';
-import { buildCaptureEntries, buildRefundEntries, buildReversalEntries } from './ledger-posting';
+import {
+  buildCaptureEntries,
+  buildRefundEntries,
+  buildReversalEntries,
+  buildSettlementEntries,
+} from './ledger-posting';
 import type {
   CreateLedgerPostingRecord,
   LedgerAccountProvisioningResult,
@@ -22,6 +27,8 @@ import type {
   LedgerPostingPort,
   LedgerPostingResult,
   LedgerRepository,
+  LedgerSettlementPostingCommand,
+  LedgerSettlementPostingResult,
   ProvisionLedgerAccountRecord,
   ReverseLedgerTransactionCommand,
 } from './ledger.types';
@@ -33,6 +40,8 @@ const LEDGER_ID_PATTERN = /^ltx_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const ACCOUNT_DEFINITIONS = [
   { code: 'provider_clearing', normalSide: 'debit' },
   { code: 'merchant_payable', normalSide: 'credit' },
+  { code: 'fee_revenue', normalSide: 'credit' },
+  { code: 'settlement_clearing', normalSide: 'credit' },
 ] as const;
 const CURRENCIES = ['ETB', 'USD'] as const;
 
@@ -116,7 +125,7 @@ export class LedgerService implements LedgerPostingPort {
       }
     }
     const persisted = await this.repository.provisionAccounts(transaction, accounts);
-    if (persisted.length !== 4) {
+    if (persisted.length !== 8) {
       throw new LedgerAccountsNotProvisionedError();
     }
     return { accounts: persisted, merchantId };
@@ -134,6 +143,63 @@ export class LedgerService implements LedgerPostingPort {
     command: LedgerMoneyPostingCommand,
   ): Promise<LedgerPostingResult> {
     return this.post(transaction, command, 'refund');
+  }
+
+  public async postSettlement(
+    transaction: PrismaTransactionClient,
+    command: LedgerSettlementPostingCommand,
+  ): Promise<LedgerSettlementPostingResult> {
+    let publicId: string | undefined;
+    const businessType = 'settlement' as const;
+    try {
+      assertCommonCommand(command);
+      if (
+        (command.currency !== 'ETB' && command.currency !== 'USD') ||
+        command.grossMinor < 1n ||
+        command.grossMinor > BigInt(Number.MAX_SAFE_INTEGER) ||
+        command.feeMinor < 0n ||
+        command.netMinor < 1n ||
+        command.grossMinor !== command.feeMinor + command.netMinor
+      ) {
+        throw new InvalidLedgerCommandError();
+      }
+      publicId = `ltx_${this.identifiers.generate(command.occurredAt.getTime())}`;
+      const internalId = this.uuid();
+      const result = await this.repository.createPosting(transaction, {
+        businessReference: command.businessReference,
+        businessType,
+        currency: command.currency,
+        entries: buildSettlementEntries(
+          command.grossMinor,
+          command.feeMinor,
+          command.netMinor,
+          command.currency,
+        ).map((entry) => ({ ...entry, id: this.uuid() })),
+        id: internalId,
+        merchantId: command.merchantId,
+        occurredAt: command.occurredAt,
+        publicId,
+        requestId: command.requestId,
+      });
+      this.observe({
+        businessType,
+        merchantId: command.merchantId,
+        name: 'ledger.post',
+        outcome: 'staged',
+        publicId,
+      });
+      return { ...result, internalId };
+    } catch (error: unknown) {
+      this.observe({
+        businessType,
+        errorCode: errorCode(error),
+        merchantId: command.merchantId,
+        name: 'ledger.post',
+        outcome: 'rejected',
+        ...(publicId === undefined ? {} : { publicId }),
+      });
+      throw error;
+    }
   }
 
   public async reverse(
@@ -200,7 +266,7 @@ export class LedgerService implements LedgerPostingPort {
   private async post(
     transaction: PrismaTransactionClient,
     command: LedgerMoneyPostingCommand,
-    businessType: Exclude<LedgerBusinessType, 'reversal'>,
+    businessType: 'capture' | 'refund',
   ): Promise<LedgerPostingResult> {
     let publicId: string | undefined;
     try {

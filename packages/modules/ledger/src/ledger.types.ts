@@ -1,7 +1,8 @@
 import type { PrismaTransactionClient } from '@settleflow/infrastructure';
 
-export type LedgerAccountCode = 'merchant_payable' | 'provider_clearing';
-export type LedgerBusinessType = 'capture' | 'refund' | 'reversal';
+export type LedgerAccountCode =
+  'fee_revenue' | 'merchant_payable' | 'provider_clearing' | 'settlement_clearing';
+export type LedgerBusinessType = 'capture' | 'refund' | 'reversal' | 'settlement';
 export type LedgerCurrency = 'ETB' | 'USD';
 export type LedgerEntrySide = 'credit' | 'debit';
 
@@ -22,6 +23,34 @@ export interface ReverseLedgerTransactionCommand {
   readonly requestId: string;
 }
 
+export interface LedgerSettlementPostingCommand {
+  readonly businessReference: string;
+  readonly currency: LedgerCurrency;
+  readonly feeMinor: bigint;
+  readonly grossMinor: bigint;
+  readonly merchantId: string;
+  readonly netMinor: bigint;
+  readonly occurredAt: Date;
+  readonly requestId: string;
+}
+
+export interface LedgerReconciliationReference {
+  readonly businessReference: string;
+  readonly businessType: 'capture' | 'refund' | 'settlement';
+  readonly providerRef: string;
+}
+
+export interface LedgerReconciliationReadPort {
+  resolveReconciliationReferences(
+    transaction: PrismaTransactionClient,
+    merchantId: string,
+    references: readonly {
+      readonly businessReference: string;
+      readonly businessType: 'capture' | 'refund' | 'settlement';
+    }[],
+  ): Promise<readonly LedgerReconciliationReference[]>;
+}
+
 export interface LedgerEntryRecord {
   readonly accountCode: LedgerAccountCode;
   readonly amountMinor: bigint;
@@ -40,6 +69,10 @@ export interface LedgerPostingResult {
   readonly postedAt: Date;
   readonly publicId: string;
   readonly reversalOfPublicId?: string;
+}
+
+export interface LedgerSettlementPostingResult extends LedgerPostingResult {
+  readonly internalId: string;
 }
 
 export interface LedgerAccountRecord {
@@ -122,6 +155,10 @@ export interface LedgerPostingPort {
     transaction: PrismaTransactionClient,
     command: LedgerMoneyPostingCommand,
   ): Promise<LedgerPostingResult>;
+  postSettlement(
+    transaction: PrismaTransactionClient,
+    command: LedgerSettlementPostingCommand,
+  ): Promise<LedgerSettlementPostingResult>;
   reverse(
     transaction: PrismaTransactionClient,
     command: ReverseLedgerTransactionCommand,

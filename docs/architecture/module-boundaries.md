@@ -10,17 +10,17 @@ Entrypoints compose modules but do not contain financial business rules. Infrast
 
 ## Ownership
 
-| Module | Owns | Permitted collaboration |
-| --- | --- | --- |
-| Merchant Access | `merchants`, `api_keys`, scopes | Authenticates merchant requests and supplies merchant identity/scopes to application services. Publishes lifecycle events after commit. |
-| Payments | `payment_intents`, `refunds`, payment transitions | Calls Ledger and Eventing application ports in the same explicit transaction. Exposes stable queries/read ports to authorized consumers. |
-| Ledger | `ledger_accounts`, `ledger_transactions`, `ledger_entries` | Accepts posting/reversal commands through its application port. Must not depend on Payments. |
-| Idempotency | `idempotency_keys`, fingerprints, command ownership, response snapshots | Orchestrates single-winner acquisition and replay for money-mutating POST commands. Does not publish a public business event. |
-| Eventing | `outbox_events`, `inbox_messages`, publish leases | Persists outbox rows inside producer transactions; relays committed events; deduplicates state-changing consumers. |
-| Webhooks | endpoints, deliveries, attempts, signing metadata | Reacts to committed events and owns outbound delivery/replay. Must not participate in capture/refund transactions. |
-| Settlements | batches, batch items, adjustments | Reacts to committed capture/refund events or uses stable read ports; claims eligible payments without writing Payments tables. |
-| Reconciliation | imports, provider rows, results | Owns staging, matching, classification, and reports for untrusted provider CSV input. Reads platform records through stable ports/read models. |
-| Operations | `audit_events`, health, metrics, replay commands | Records append-only privileged actions and exposes bounded operational controls; must not patch financial rows. |
+| Module          | Owns                                                                      | Permitted collaboration                                                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Merchant Access | `merchants`, `api_keys`, scopes                                           | Authenticates merchant requests and supplies merchant identity/scopes to application services. Publishes lifecycle events after commit.                                              |
+| Payments        | `payment_intents`, `refunds`, payment transitions                         | Calls Ledger and Eventing application ports in the same explicit transaction. Exposes stable queries/read ports to authorized consumers.                                             |
+| Ledger          | `ledger_accounts`, `ledger_transactions`, `ledger_entries`                | Accepts posting/reversal commands through its application port. Must not depend on Payments.                                                                                         |
+| Idempotency     | `idempotency_keys`, fingerprints, command ownership, response snapshots   | Orchestrates single-winner acquisition and replay for money-mutating POST commands. Does not publish a public business event.                                                        |
+| Eventing        | `outbox_events`, `inbox_messages`, publish leases                         | Persists outbox rows inside producer transactions; relays committed events; deduplicates state-changing consumers.                                                                   |
+| Webhooks        | endpoints, deliveries, attempts, signing metadata                         | Reacts to committed events and owns outbound delivery/replay. Must not participate in capture/refund transactions.                                                                   |
+| Settlements     | fee policies, streams, positions, runs, batches, batch items, adjustments | Projects committed capture/refund events, revalidates payment facts, and coordinates its fixed Ledger/Eventing/Operations ports without writing Payments tables.                     |
+| Reconciliation  | imports, provider rows, results, summaries                                | Owns bounded staging, deterministic matching/classification, and immutable reports for untrusted mock-provider CSV input. Reads tenant-scoped platform evidence without mutating it. |
+| Operations      | `audit_events`, health, metrics, replay commands                          | Records append-only privileged actions and exposes bounded operational controls; must not patch financial rows.                                                                      |
 
 ## Persistence rules
 
@@ -40,7 +40,8 @@ Entrypoints compose modules but do not contain financial business rules. Infrast
 - Ledger has no dependency on Payments. It receives business references without importing payment internals.
 - Eventing's relay publishes committed outbox events to RabbitMQ. Publication occurs outside the short claim transaction.
 - Webhooks and Settlements consume committed events through inbox-protected handlers or call stable read ports. They never join the originating capture/refund transaction.
-- Reconciliation reads authorized platform records through defined ports/read models and writes only its staging/results data.
+- Settlements coordinates a fixed `postSettlement` Ledger port, its outbox event, its Operations audit record, and idempotency completion in one caller-owned transaction.
+- Reconciliation reads authorized platform records through tenant-scoped read queries, writes only its staging/report data, and emits completion only in the report transaction.
 - Operations invokes explicit replay/run commands, subject to separate operator authentication, authorization, reason capture, and append-only audit.
 
 Any proposed reverse dependency, circular dependency, direct cross-module write, new shared table, or new synchronous network dependency requires design review and normally an ADR.
@@ -48,6 +49,8 @@ Any proposed reverse dependency, circular dependency, direct cross-module write,
 ## Payment and settlement separation
 
 Payments owns the customer-facing payment lifecycle. Settlements owns batching, settlement progress, and post-settlement adjustments. A captured or refunded payment projection must not be overwritten to encode settlement progress. A post-settlement refund changes the payment's refunded projection and creates a future settlement adjustment; it does not invent a combined payment/settlement state.
+
+Settlement positions are event-driven eligibility facts, not accounting truth. Batch selection locks and revalidates the current merchant-owned Payment projection before calculating immutable item, fee, adjustment, and Ledger evidence. Reconciliation may compare those records but never repairs a mismatch or edits its inputs.
 
 ## Eventing and delivery boundaries
 

@@ -8,13 +8,17 @@ import { calculateFullJitterBackoff } from './outbox-retry';
 import {
   PaymentCreatedMessageContractError,
   validatePaymentEventMessage,
-  type ValidatedPaymentEventMessage,
 } from './payment-created-event.contract';
 import { PaymentLifecycleMessageContractError } from './payment-lifecycle-event.contract';
 import { assertOutboxRabbitMqTopology, PAYMENT_EVENT_ROUTES } from './rabbitmq-topology';
+import type { ValidatedDomainEventMessage } from './inbox.types';
+import {
+  OperationalEventContractError,
+  validateOperationalEventMessage,
+} from './settlement-reconciliation-event.contract';
 
 export interface PaymentCreatedMessageHandler {
-  handle(message: ValidatedPaymentEventMessage): Promise<{
+  handle(message: ValidatedDomainEventMessage): Promise<{
     readonly kind: 'duplicate' | 'processed';
     readonly value?: { readonly alreadyProjected: boolean; readonly deliveryCount: number };
   }>;
@@ -274,15 +278,24 @@ export class RabbitMqPaymentCreatedConsumer {
 
   private async processMessage(channel: Channel, raw: ConsumeMessage): Promise<void> {
     const startedAt = performance.now();
-    let message: ValidatedPaymentEventMessage;
+    let message: ValidatedDomainEventMessage;
     try {
-      message = validatePaymentEventMessage(raw, this.options.bodyLimitBytes);
+      message =
+        raw.properties.type === 'settlement.finalized.v1' ||
+        raw.properties.type === 'reconciliation.completed.v1'
+          ? validateOperationalEventMessage(raw, this.options.bodyLimitBytes)
+          : validatePaymentEventMessage(raw, this.options.bodyLimitBytes);
     } catch (error: unknown) {
       if (
         error instanceof PaymentCreatedMessageContractError ||
-        error instanceof PaymentLifecycleMessageContractError
+        error instanceof PaymentLifecycleMessageContractError ||
+        error instanceof OperationalEventContractError
       ) {
-        this.rejectIfOwned(channel, raw, error.code);
+        this.rejectIfOwned(
+          channel,
+          raw,
+          error instanceof OperationalEventContractError ? 'operational_event_invalid' : error.code,
+        );
         return;
       }
       await this.invalidateChannel(channel, 'validation_failed');
@@ -336,7 +349,7 @@ export class RabbitMqPaymentCreatedConsumer {
     channel: Channel,
     raw: ConsumeMessage,
     code: string,
-    message?: ValidatedPaymentEventMessage,
+    message?: ValidatedDomainEventMessage,
   ): void {
     if (this.channel !== channel) {
       return;

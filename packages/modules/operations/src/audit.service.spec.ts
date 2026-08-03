@@ -6,7 +6,10 @@ import type { AuditRepository } from './operations.types';
 describe('AuditService', () => {
   it('appends an allowlisted webhook lifecycle record through the transaction port', async () => {
     const appendWebhookLifecycle = jest.fn().mockResolvedValue(undefined);
-    const service = new AuditService({ appendWebhookLifecycle } satisfies AuditRepository);
+    const service = new AuditService({
+      appendOperational: jest.fn(),
+      appendWebhookLifecycle,
+    } satisfies AuditRepository);
     const transaction = {} as PrismaTransactionClient;
     const input = {
       action: 'webhook_endpoint.created' as const,
@@ -29,7 +32,10 @@ describe('AuditService', () => {
 
   it('rejects unsafe actor, target, request, and time values before persistence', async () => {
     const appendWebhookLifecycle = jest.fn().mockResolvedValue(undefined);
-    const service = new AuditService({ appendWebhookLifecycle } satisfies AuditRepository);
+    const service = new AuditService({
+      appendOperational: jest.fn(),
+      appendWebhookLifecycle,
+    } satisfies AuditRepository);
 
     await expect(
       service.appendWebhookLifecycle({} as PrismaTransactionClient, {

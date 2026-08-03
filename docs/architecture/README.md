@@ -47,11 +47,15 @@ Exactly-once delivery is not claimed. The system provides atomic local transacti
 
 The specification records accepted baselines for the modular monolith, API/worker deployables, PostgreSQL plus RabbitMQ, outbox/inbox with lease claims, separate payment/settlement lifecycles, Prisma plus reviewed raw SQL, no Redis without a measured need, and webhook URLs as an SSRF boundary. These decisions should be captured as repository ADRs during the relevant implementation milestone; this foundation does not fabricate those records.
 
-Specification open questions remain **To be decided** by their milestone deadlines:
+The implemented Settlement/Reconciliation milestone resolves its approved specification choices:
 
-- demo currencies (default: ETB and USD, no conversion);
-- demonstrated fee model (default: flat plus basis points, snapshotted per batch item);
-- settlement cutoff timezone (default: `Africa/Addis_Ababa`, with timestamps stored in UTC);
+- demo currencies are exactly ETB and USD, with no conversion;
+- immutable `settlement_fee_v1` uses currency-specific flat fees plus 200 basis points, floor-rounded and snapshotted per batch item;
+- settlement cutoff timezone is `Africa/Addis_Ababa`, with timestamps stored in UTC; and
+- synchronous settlement finalization means simulated clearing, not bank payout or export success.
+
+Specification open questions still remain **To be decided** by their milestone deadlines:
+
 - open-source license (no public release until selected);
 - whether P1 authorization ships in v1.0 (default: defer and retain direct capture);
 - Compose telemetry backend (default: Prometheus and Grafana, optional trace collector).
@@ -61,7 +65,7 @@ The specification also leaves these implementation details **To be decided** bef
 - exact Node.js, PostgreSQL, framework, package-manager, dependency, image, and workflow versions/digests;
 - the operator authentication mechanism and role model beyond the requirement that it be separate from merchant API-key authentication;
 - the precise transaction/recovery sequence for finalizing an idempotency response snapshot after the financial transaction commits;
-- the exact settlement finalization/export policy, including when `BATCHED` becomes `SETTLED` and the operational contract for exports;
+- the future real settlement export/payout policy and operational contract;
 - endpoint-specific HTTP status codes and complete schemas beyond the examples and conventions in the specification;
 - environment-specific alert thresholds, retention overrides, recovery commands, and security-reporting contacts.
 

@@ -37,6 +37,26 @@ import {
   UnsupportedPaymentCurrencyError,
 } from '@settleflow/payments';
 import {
+  InvalidReconciliationRequestError,
+  ReconciliationChecksumConflictError,
+  ReconciliationCsvInvalidError,
+  ReconciliationFileTooLargeError,
+  ReconciliationImportFailedError,
+  ReconciliationImportNotFoundError,
+  ReconciliationIdentifierExhaustedError,
+  ReconciliationReportNotReadyError,
+  ReconciliationRowLimitExceededError,
+} from '@settleflow/reconciliation';
+import {
+  InvalidSettlementRequestError,
+  SettlementBatchNotFoundError,
+  SettlementCutoffNotClosedError,
+  SettlementFeeExceedsGrossError,
+  SettlementFeePolicyInvalidError,
+  SettlementIdentifierExhaustedError,
+  SettlementInvariantViolationError,
+} from '@settleflow/settlements';
+import {
   InvalidWebhookEndpointRequestError,
   UnsupportedWebhookEventError,
   WebhookEndpointIdentifierCollisionError,
@@ -80,6 +100,117 @@ interface ProblemResponse {
 }
 
 function descriptor(error: unknown): ProblemDescriptor {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'LIMIT_FILE_SIZE'
+  ) {
+    return {
+      code: 'reconciliation_file_too_large',
+      detail: 'The reconciliation file exceeds the accepted limit.',
+      status: 413,
+      title: 'Reconciliation file too large',
+    };
+  }
+  if (error instanceof InvalidSettlementRequestError)
+    return {
+      code: 'invalid_settlement_request',
+      detail: 'The settlement request is invalid.',
+      status: 400,
+      title: 'Invalid settlement request',
+    };
+  if (error instanceof SettlementCutoffNotClosedError)
+    return {
+      code: 'settlement_cutoff_not_closed',
+      detail: 'The requested settlement cutoff is not closed.',
+      status: 409,
+      title: 'Settlement cutoff not closed',
+    };
+  if (error instanceof SettlementFeeExceedsGrossError)
+    return {
+      code: 'settlement_no_positive_net',
+      detail: 'The settlement has no positive net amount.',
+      status: 409,
+      title: 'No positive settlement net',
+    };
+  if (error instanceof SettlementFeePolicyInvalidError)
+    return {
+      code: 'settlement_fee_policy_invalid',
+      detail: 'The configured settlement fee policy is invalid.',
+      status: 503,
+      title: 'Settlement fee policy invalid',
+    };
+  if (error instanceof SettlementBatchNotFoundError)
+    return {
+      code: 'settlement_batch_not_found',
+      detail: 'The settlement batch was not found.',
+      status: 404,
+      title: 'Settlement batch not found',
+    };
+  if (error instanceof SettlementInvariantViolationError)
+    return {
+      code: 'settlement_invariant_violation',
+      detail: 'The settlement invariant was not satisfied.',
+      status: 422,
+      title: 'Settlement invariant violation',
+    };
+  if (error instanceof InvalidReconciliationRequestError)
+    return {
+      code: 'invalid_reconciliation_request',
+      detail: 'The reconciliation request is invalid.',
+      status: 400,
+      title: 'Invalid reconciliation request',
+    };
+  if (error instanceof ReconciliationFileTooLargeError)
+    return {
+      code: 'reconciliation_file_too_large',
+      detail: 'The reconciliation file exceeds the accepted limit.',
+      status: 413,
+      title: 'Reconciliation file too large',
+    };
+  if (error instanceof ReconciliationRowLimitExceededError)
+    return {
+      code: 'reconciliation_row_limit_exceeded',
+      detail: 'The reconciliation row limit was exceeded.',
+      status: 413,
+      title: 'Reconciliation row limit exceeded',
+    };
+  if (error instanceof ReconciliationCsvInvalidError)
+    return {
+      code: 'reconciliation_csv_invalid',
+      detail: 'The reconciliation CSV is invalid.',
+      status: 400,
+      title: 'Invalid reconciliation CSV',
+    };
+  if (error instanceof ReconciliationChecksumConflictError)
+    return {
+      code: 'reconciliation_checksum_conflict',
+      detail: 'The file checksum conflicts with an existing import.',
+      status: 409,
+      title: 'Reconciliation checksum conflict',
+    };
+  if (error instanceof ReconciliationImportNotFoundError)
+    return {
+      code: 'reconciliation_import_not_found',
+      detail: 'The reconciliation import was not found.',
+      status: 404,
+      title: 'Reconciliation import not found',
+    };
+  if (error instanceof ReconciliationReportNotReadyError)
+    return {
+      code: 'reconciliation_report_not_ready',
+      detail: 'The reconciliation report is not ready.',
+      status: 409,
+      title: 'Reconciliation report not ready',
+    };
+  if (error instanceof ReconciliationImportFailedError)
+    return {
+      code: 'reconciliation_import_failed',
+      detail: 'The reconciliation import failed safely.',
+      status: 409,
+      title: 'Reconciliation import failed',
+    };
   if (error instanceof InvalidWebhookEndpointRequestError) {
     return {
       code: 'invalid_request',
@@ -296,6 +427,8 @@ function descriptor(error: unknown): ProblemDescriptor {
   }
   if (
     error instanceof IdentifierGenerationExhaustedError ||
+    error instanceof SettlementIdentifierExhaustedError ||
+    error instanceof ReconciliationIdentifierExhaustedError ||
     error instanceof PaymentProviderUnavailableError ||
     error instanceof WebhookEndpointIdentifierCollisionError ||
     error instanceof WebhookEndpointIdentifierGenerationExhaustedError ||

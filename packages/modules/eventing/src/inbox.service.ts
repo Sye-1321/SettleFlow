@@ -9,14 +9,15 @@ import type {
   InboxProcessingResult,
   InboxRepository,
   InboxServiceOptions,
+  ValidatedDomainEventMessage,
 } from './inbox.types';
 import { calculateFullJitterBackoff } from './outbox-retry';
-import type { ValidatedPaymentEventMessage } from './payment-created-event.contract';
 
 const RETRYABLE_TRANSACTION_CODES = new Set(['40001', '40P01', 'P2034']);
 
-function consumerName(message: ValidatedPaymentEventMessage): string {
-  return `webhook-projection.${message.event.eventType.replace('payment.', 'payment-')}`;
+function consumerName(message: ValidatedDomainEventMessage): string {
+  const [domain, action, version] = message.event.eventType.split('.');
+  return `webhook-projection.${domain}-${action}.${version}`;
 }
 
 function defaultSleep(durationMs: number): Promise<void> {
@@ -43,13 +44,20 @@ export class InboxService {
   }
 
   public async process<T>(
-    message: ValidatedPaymentEventMessage,
+    message: ValidatedDomainEventMessage,
+    effect: InboxEffect<T>,
+  ): Promise<InboxProcessingResult<T>> {
+    return this.processForConsumer(message, consumerName(message), effect);
+  }
+
+  public async processForConsumer<T>(
+    message: ValidatedDomainEventMessage,
+    selectedConsumerName: string,
     effect: InboxEffect<T>,
   ): Promise<InboxProcessingResult<T>> {
     for (let attempt = 1; attempt <= this.options.retryAttempts; attempt += 1) {
       try {
         return await this.repository.withSerializableTransaction(async (context) => {
-          const selectedConsumerName = consumerName(message);
           const reservation = await this.repository.reserve(context.transaction, {
             completedAt: context.processedAt,
             consumerName: selectedConsumerName,

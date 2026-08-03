@@ -17,6 +17,10 @@ import type {
   OutboxRelaySignalSink,
 } from './outbox-relay.types';
 import { assertOutboxRabbitMqTopology } from './rabbitmq-topology';
+import {
+  OperationalEventContractError,
+  serializeOperationalEvent,
+} from './settlement-reconciliation-event.contract';
 
 export interface RabbitMqOutboxPublisherOptions {
   readonly confirmTimeoutMs: number;
@@ -164,7 +168,8 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
             readonly eventType: 'payment.created.v1';
             readonly routingKey: 'payment.created.v1';
           })
-        | ReturnType<typeof serializePaymentLifecycleEvent>;
+        | ReturnType<typeof serializePaymentLifecycleEvent>
+        | ReturnType<typeof serializeOperationalEvent>;
       try {
         serialized =
           event.eventType === 'payment.created.v1'
@@ -173,11 +178,14 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
                 eventType: 'payment.created.v1',
                 routingKey: 'payment.created.v1',
               }
-            : serializePaymentLifecycleEvent(event);
+            : event.eventType === 'payment.captured.v1' || event.eventType === 'payment.refunded.v1'
+              ? serializePaymentLifecycleEvent(event)
+              : serializeOperationalEvent(event);
       } catch (error: unknown) {
         if (
           error instanceof PaymentCreatedEventContractError ||
-          error instanceof PaymentLifecycleEventContractError
+          error instanceof PaymentLifecycleEventContractError ||
+          error instanceof OperationalEventContractError
         ) {
           outcomes.push(
             Promise.resolve({
@@ -197,8 +205,10 @@ export class RabbitMqOutboxPublisher implements OutboxPublisher {
         contentType: 'application/json',
         correlationId: serialized.requestId,
         headers: {
-          'x-settleflow-aggregate-id': serialized.paymentId,
-          'x-settleflow-aggregate-type': 'payment_intent',
+          'x-settleflow-aggregate-id':
+            'paymentId' in serialized ? serialized.paymentId : serialized.aggregateId,
+          'x-settleflow-aggregate-type':
+            'paymentId' in serialized ? 'payment_intent' : serialized.aggregateType,
           'x-settleflow-merchant-id': serialized.merchantId,
           'x-settleflow-publish-attempt': event.attemptCount,
           'x-settleflow-schema-version': 1,

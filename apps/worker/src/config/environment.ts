@@ -52,6 +52,32 @@ const workerEnvironmentSchema = z
       .max(60_000)
       .default(10_000),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    RECONCILIATION_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(500),
+    SETTLEMENT_CONSUMER_BODY_LIMIT_BYTES: z.coerce
+      .number()
+      .int()
+      .min(16_384)
+      .max(16_384)
+      .default(16_384),
+    SETTLEMENT_CONSUMER_PREFETCH: z.coerce.number().int().min(2).max(2).default(2),
+    SETTLEMENT_CONSUMER_RECONNECT_BASE_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(1_000)
+      .default(1_000),
+    SETTLEMENT_CONSUMER_RECONNECT_MAX_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .max(60_000)
+      .default(60_000),
+    SETTLEMENT_CONSUMER_SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(10_000)
+      .default(10_000),
     WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS: z.coerce
       .number()
       .int()

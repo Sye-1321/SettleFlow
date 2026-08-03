@@ -14,6 +14,7 @@ describe('WorkerHealthService', () => {
       postgresql: { status: 'up' },
       rabbitmqConsumer: { status: 'up' },
       rabbitmqPublisher: { status: 'up' },
+      reconciliationProcessor: { status: 'up' },
       webhookDelivery: { status: 'up' },
     });
     health.markRunning();
@@ -23,6 +24,7 @@ describe('WorkerHealthService', () => {
         postgresql: 'up',
         rabbitmqConsumer: 'up',
         rabbitmqPublisher: 'up',
+        reconciliationProcessor: 'up',
         webhookDelivery: 'up',
       },
       service: 'worker',
@@ -33,6 +35,7 @@ describe('WorkerHealthService', () => {
       postgresql: { status: 'up' },
       rabbitmqConsumer: { status: 'down' },
       rabbitmqPublisher: { status: 'up' },
+      reconciliationProcessor: { status: 'up' },
       webhookDelivery: { status: 'up' },
     });
     expect(health.getReadiness().status).toBe('not_ready');

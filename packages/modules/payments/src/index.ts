@@ -48,6 +48,12 @@ export type {
   PaymentIntentRecord,
   PaymentIntentRepository,
   PaymentIntentRepresentation,
+  PaymentReconciliationEvidence,
+  PaymentReconciliationReadPort,
+  PaymentSettlementCandidateFact,
+  PaymentSettlementCandidateInput,
+  PaymentSettlementProjectionIdentity,
+  PaymentSettlementReadPort,
   PaymentStatus,
   RefundPaymentIntentCommand,
   RefundRecord,
@@ -60,3 +66,5 @@ export {
   PrismaPaymentIntentRepository,
   prismaPaymentIntentRepositoryInternals,
 } from './prisma-payment-intent.repository';
+export { PrismaPaymentReconciliationReader } from './prisma-payment-reconciliation.reader';
+export { PrismaPaymentSettlementReader } from './prisma-payment-settlement.reader';

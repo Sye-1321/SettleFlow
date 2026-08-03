@@ -6,7 +6,11 @@ export interface IdempotencyAcquireCommand {
   readonly merchantId: string;
   readonly now: Date;
   readonly normalizedRoute:
-    '/v1/payment-intents' | '/v1/payment-intents/{id}/capture' | '/v1/payment-intents/{id}/refunds';
+    | '/v1/payment-intents'
+    | '/v1/payment-intents/{id}/capture'
+    | '/v1/payment-intents/{id}/refunds'
+    | '/v1/reconciliation-imports'
+    | '/v1/settlement-runs';
   readonly method: 'POST';
 }
 
@@ -41,7 +45,11 @@ export interface HashedIdempotencyAcquireCommand {
   readonly merchantId: string;
   readonly now: Date;
   readonly normalizedRoute:
-    '/v1/payment-intents' | '/v1/payment-intents/{id}/capture' | '/v1/payment-intents/{id}/refunds';
+    | '/v1/payment-intents'
+    | '/v1/payment-intents/{id}/capture'
+    | '/v1/payment-intents/{id}/refunds'
+    | '/v1/reconciliation-imports'
+    | '/v1/settlement-runs';
   readonly method: 'POST';
   readonly ownerToken: string;
   readonly recordId: string;

@@ -57,15 +57,52 @@ The exact contracts are [payment.captured.v1.schema.json](payment.captured.v1.sc
 
 All three bodies exclude credentials, authorization data, idempotency keys, `externalRef`, response snapshots, internal UUIDs, provider data, and settlement state.
 
+## `settlement.finalized.v1` and `reconciliation.completed.v1`
+
+The exact contracts are [settlement.finalized.v1.schema.json](settlement.finalized.v1.schema.json) and [reconciliation.completed.v1.schema.json](reconciliation.completed.v1.schema.json). Settlement finalization represents internal simulated clearing only; it is not a bank payout confirmation. Reconciliation completion summarizes a bounded mock-provider comparison and never carries raw CSV rows, external/provider references, credentials, idempotency material, or internal UUIDs.
+
+```json
+{
+  "eventId": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "eventType": "settlement.finalized.v1",
+  "occurredAt": "2026-08-03T10:20:12.345Z",
+  "requestId": "req_settlement_example",
+  "merchantId": "11111111-1111-4111-8111-111111111111",
+  "batchId": "stb_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "cutoffAt": "2026-08-01T21:00:00.000Z",
+  "grossAmountMinor": 120000,
+  "feeAmountMinor": 3000,
+  "netAmountMinor": 117000,
+  "currency": "ETB",
+  "itemCount": 1
+}
+```
+
+```json
+{
+  "eventId": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+  "eventType": "reconciliation.completed.v1",
+  "occurredAt": "2026-08-03T10:30:12.345Z",
+  "requestId": "req_reconciliation_example",
+  "merchantId": "11111111-1111-4111-8111-111111111111",
+  "importId": "rec_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "matchedExactCount": 4,
+  "mismatchCount": 1,
+  "unexplainedDifferenceMinorByCurrency": { "ETB": -500, "USD": 0 }
+}
+```
+
 ## RabbitMQ and projection contract
 
 The worker declares durable topic exchange `settleflow.domain-events`, with one routing key and durable quorum queue per event:
 
-| Routing key           | Projection queue                                    | Dead-letter queue                                       |
-| --------------------- | --------------------------------------------------- | ------------------------------------------------------- |
-| `payment.created.v1`  | `settleflow.webhook-projection.payment-created.v1`  | `settleflow.webhook-projection.payment-created.v1.dlq`  |
-| `payment.captured.v1` | `settleflow.webhook-projection.payment-captured.v1` | `settleflow.webhook-projection.payment-captured.v1.dlq` |
-| `payment.refunded.v1` | `settleflow.webhook-projection.payment-refunded.v1` | `settleflow.webhook-projection.payment-refunded.v1.dlq` |
+| Routing key                   | Projection queue                                            | Dead-letter queue                                               |
+| ----------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| `payment.created.v1`          | `settleflow.webhook-projection.payment-created.v1`          | `settleflow.webhook-projection.payment-created.v1.dlq`          |
+| `payment.captured.v1`         | `settleflow.webhook-projection.payment-captured.v1`         | `settleflow.webhook-projection.payment-captured.v1.dlq`         |
+| `payment.refunded.v1`         | `settleflow.webhook-projection.payment-refunded.v1`         | `settleflow.webhook-projection.payment-refunded.v1.dlq`         |
+| `settlement.finalized.v1`     | `settleflow.webhook-projection.settlement-finalized.v1`     | `settleflow.webhook-projection.settlement-finalized.v1.dlq`     |
+| `reconciliation.completed.v1` | `settleflow.webhook-projection.reconciliation-completed.v1` | `settleflow.webhook-projection.reconciliation-completed.v1.dlq` |
 
 All use durable topic DLX `settleflow.dead-letter` and the consumer queue name as the dead-letter routing key. The projection consumer uses a separate connection/channel with prefetch 2 and registers all three queues before readiness.
 

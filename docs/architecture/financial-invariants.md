@@ -12,18 +12,18 @@ These rules are normative extracts from the SettleFlow specification. PostgreSQL
 
 ## Normative invariants
 
-| ID | Rule | Primary enforcement | Required proof |
-| --- | --- | --- | --- |
-| INV-01 | Every ledger entry amount is greater than zero. | `CHECK` constraint. | Positive posting succeeds; zero/negative entries fail. |
-| INV-02 | Every posted ledger transaction has at least two entries. | Deferred constraint trigger. | Single-entry commit fails. |
-| INV-03 | Debits equal credits for every posted ledger transaction. | Deferred constraint trigger at commit. | Balanced posting succeeds; imbalance fails at commit. |
-| INV-04 | Every entry currency equals its ledger transaction currency. | Deferred constraint trigger. | Mixed-currency posting fails. |
-| INV-05 | Posted ledger transactions and entries cannot be updated or deleted. | Database trigger and restricted application role. | Update/delete and permission-negative tests fail. |
-| INV-06 | A correction is a new reversal, never mutation. | Unique reversal reference and service rule. | Reversal contains opposite entries, references the original once, and leaves the original unchanged. |
-| INV-07 | Cumulative refunds cannot exceed captured amount. | Payment row lock and `CHECK` constraint. | Concurrent refund sum never exceeds capture. |
-| INV-08 | One payment can belong to at most one settlement batch at a time. | Unique `payment_intent_id` on batch item. | Dual-worker race creates no duplicate membership. |
-| INV-09 | A settlement batch contains one merchant and one currency. | Foreign-key ownership and batch-item validation. | Cross-merchant/currency item insertion fails; totals equal items and postings. |
-| INV-10 | A duplicate command cannot create a second financial side effect. | Idempotency record and unique business keys. | Retry storms create one domain transition, ledger transaction, and event. |
+| ID     | Rule                                                                 | Primary enforcement                               | Required proof                                                                                       |
+| ------ | -------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| INV-01 | Every ledger entry amount is greater than zero.                      | `CHECK` constraint.                               | Positive posting succeeds; zero/negative entries fail.                                               |
+| INV-02 | Every posted ledger transaction has at least two entries.            | Deferred constraint trigger.                      | Single-entry commit fails.                                                                           |
+| INV-03 | Debits equal credits for every posted ledger transaction.            | Deferred constraint trigger at commit.            | Balanced posting succeeds; imbalance fails at commit.                                                |
+| INV-04 | Every entry currency equals its ledger transaction currency.         | Deferred constraint trigger.                      | Mixed-currency posting fails.                                                                        |
+| INV-05 | Posted ledger transactions and entries cannot be updated or deleted. | Database trigger and restricted application role. | Update/delete and permission-negative tests fail.                                                    |
+| INV-06 | A correction is a new reversal, never mutation.                      | Unique reversal reference and service rule.       | Reversal contains opposite entries, references the original once, and leaves the original unchanged. |
+| INV-07 | Cumulative refunds cannot exceed captured amount.                    | Payment row lock and `CHECK` constraint.          | Concurrent refund sum never exceeds capture.                                                         |
+| INV-08 | One payment can belong to at most one settlement batch at a time.    | Unique `payment_intent_id` on batch item.         | Dual-worker race creates no duplicate membership.                                                    |
+| INV-09 | A settlement batch contains one merchant and one currency.           | Foreign-key ownership and batch-item validation.  | Cross-merchant/currency item insertion fails; totals equal items and postings.                       |
+| INV-10 | A duplicate command cannot create a second financial side effect.    | Idempotency record and unique business keys.      | Retry storms create one domain transition, ledger transaction, and event.                            |
 
 Do not weaken any enforcement or its negative test to accommodate application behavior. If a constraint exposes a design conflict, stop the change and resolve the requirement through review.
 
@@ -41,6 +41,10 @@ For capture and refund, one explicit PostgreSQL transaction must:
 RabbitMQ publication and webhook delivery occur after commit and may repeat. A synchronous response must not depend on broker or merchant-endpoint availability.
 
 Settlement selection uses `FOR UPDATE SKIP LOCKED` plus unique batch-item membership so concurrent workers claim disjoint payments. A failed batch transaction rolls back all claims. Post-settlement refunds create a future adjustment while payment state continues to represent refunded value.
+
+For a finalized settlement, one explicit PostgreSQL transaction must create the run/batch and immutable membership snapshots, consume only fully applicable adjustments, post the balanced settlement Ledger transaction, finalize the batch, append the privileged audit and outbox event, and complete the idempotency response snapshot. The fixed posting debits `merchant_payable` by gross and credits `fee_revenue` plus `settlement_clearing`, where gross equals fee plus net.
+
+Reconciliation is non-mutating with respect to Payments, Ledger, and Settlements. A completed import atomically persists its deterministic results and per-currency summaries plus `reconciliation.completed.v1`; a mismatch is evidence for investigation, never authorization to adjust financial rows.
 
 ## Idempotency and concurrency
 

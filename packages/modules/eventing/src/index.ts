@@ -14,6 +14,7 @@ export type {
   InboxServiceOptions,
   InboxTransactionContext,
   ReserveInboxMessageInput,
+  ValidatedDomainEventMessage,
 } from './inbox.types';
 export { OutboxRelayService } from './outbox-relay.service';
 export type {
@@ -74,8 +75,21 @@ export {
   OUTBOX_RABBITMQ_TOPOLOGY,
   PAYMENT_EVENT_ROUTES,
   paymentEventRoute,
+  SETTLEMENT_LIFECYCLE_ROUTE,
 } from './rabbitmq-topology';
+export { RabbitMqSettlementLifecycleConsumer } from './rabbitmq-settlement-lifecycle.consumer';
+export type {
+  RabbitMqSettlementLifecycleConsumerOptions,
+  SettlementLifecycleConsumerSignal,
+  SettlementLifecycleMessageHandler,
+} from './rabbitmq-settlement-lifecycle.consumer';
 export { RabbitMqPaymentCreatedConsumer } from './rabbitmq-payment-created.consumer';
+export {
+  OperationalEventContractError,
+  serializeOperationalEvent,
+  validateOperationalEventMessage,
+} from './settlement-reconciliation-event.contract';
+export type { ValidatedOperationalEventMessage } from './settlement-reconciliation-event.contract';
 export type {
   PaymentCreatedMessageHandler,
   RabbitMqConsumerConnector,
@@ -93,6 +107,10 @@ export type {
   PaymentDomainEventType,
   PaymentRefundedEvent,
   PaymentRefundedEventInput,
+  DomainEvent,
+  DomainEventType,
+  ReconciliationCompletedEvent,
+  SettlementFinalizedEvent,
 } from './eventing.types';
 export {
   PrismaOutboxRepository,

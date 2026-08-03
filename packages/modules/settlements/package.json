@@ -1,0 +1,16 @@
+{
+  "name": "@settleflow/settlements",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@settleflow/eventing": "workspace:*",
+    "@settleflow/idempotency": "workspace:*",
+    "@settleflow/infrastructure": "workspace:*",
+    "@settleflow/ledger": "workspace:*",
+    "@settleflow/operations": "workspace:*",
+    "@settleflow/payments": "workspace:*"
+  }
+}

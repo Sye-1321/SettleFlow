@@ -14,7 +14,13 @@ export const webhookEndpointSchema = {
     status: { enum: ['active', 'inactive'], type: 'string' },
     subscriptions: {
       items: {
-        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        enum: [
+          'payment.created.v1',
+          'payment.captured.v1',
+          'payment.refunded.v1',
+          'settlement.finalized.v1',
+          'reconciliation.completed.v1',
+        ],
         type: 'string',
       },
       maxItems: 3,
@@ -36,7 +42,13 @@ export const createWebhookEndpointSchema = {
     url: { maxLength: 2048, minLength: 1, type: 'string' },
     subscriptions: {
       items: {
-        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        enum: [
+          'payment.created.v1',
+          'payment.captured.v1',
+          'payment.refunded.v1',
+          'settlement.finalized.v1',
+          'reconciliation.completed.v1',
+        ],
         type: 'string',
       },
       maxItems: 3,
@@ -71,7 +83,13 @@ export const patchWebhookEndpointSchema = {
     status: { enum: ['active', 'inactive'], type: 'string' },
     subscriptions: {
       items: {
-        enum: ['payment.created.v1', 'payment.captured.v1', 'payment.refunded.v1'],
+        enum: [
+          'payment.created.v1',
+          'payment.captured.v1',
+          'payment.refunded.v1',
+          'settlement.finalized.v1',
+          'reconciliation.completed.v1',
+        ],
         type: 'string',
       },
       maxItems: 3,

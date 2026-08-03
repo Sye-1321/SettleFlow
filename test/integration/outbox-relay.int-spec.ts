@@ -69,6 +69,18 @@ interface QueueDetails {
   readonly name: string;
 }
 
+async function waitForPublisherReady(
+  publisher: RabbitMqOutboxPublisher,
+  timeoutMs = 15_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await publisher.ensureReady()) return true;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
   let database: PrismaDatabase | undefined;
   let postgres: StartedPostgreSqlContainer | undefined;
@@ -547,7 +559,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     await publisher.close();
     publishers.delete(publisher);
     const recoveryPublisher = createPublisher();
-    await expect(recoveryPublisher.ensureReady()).resolves.toBe(true);
+    await expect(waitForPublisherReady(recoveryPublisher)).resolves.toBe(true);
     const queueResponse = await managementRequest(queuePath(OUTBOX_RABBITMQ_TOPOLOGY.queue));
     expect(queueResponse.status).toBe(200);
   });
@@ -576,6 +588,6 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     publishers.delete(publisher);
     await managementRequest(queuePath(OUTBOX_RABBITMQ_TOPOLOGY.queue), { method: 'DELETE' });
     const recoveryPublisher = createPublisher();
-    await expect(recoveryPublisher.ensureReady()).resolves.toBe(true);
+    await expect(waitForPublisherReady(recoveryPublisher)).resolves.toBe(true);
   });
 });

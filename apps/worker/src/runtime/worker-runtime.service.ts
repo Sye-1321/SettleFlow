@@ -11,8 +11,10 @@ import {
   OutboxRelayService,
   RabbitMqOutboxPublisher,
   RabbitMqPaymentCreatedConsumer,
+  RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
 import { PrismaDatabase } from '@settleflow/infrastructure';
+import { ReconciliationProcessor } from '@settleflow/reconciliation';
 import { WebhookDeliveryService } from '@settleflow/webhooks';
 
 import { WorkerEnvironment } from '../config/environment';
@@ -35,6 +37,9 @@ export class WorkerRuntimeService
   private relayInFlight: Promise<number> | undefined;
   private relayTimer: NodeJS.Timeout | undefined;
   private readinessRefresh: Promise<void> | undefined;
+  private reconciliationInFlight: Promise<boolean> | undefined;
+  private reconciliationTimer: NodeJS.Timeout | undefined;
+  private readonly reconciliationWorkerId = `reconciliation_${randomUUID()}`;
   private stopping = false;
   private webhookDeliveryUnavailableReported = false;
 
@@ -43,6 +48,8 @@ export class WorkerRuntimeService
     private readonly prisma: PrismaDatabase,
     private readonly publisher: RabbitMqOutboxPublisher,
     private readonly consumer: RabbitMqPaymentCreatedConsumer,
+    private readonly settlementConsumer: RabbitMqSettlementLifecycleConsumer,
+    private readonly reconciliation: ReconciliationProcessor,
     private readonly relay: OutboxRelayService,
     private readonly delivery: WebhookDeliveryService,
     private readonly health: WorkerHealthService,
@@ -65,11 +72,13 @@ export class WorkerRuntimeService
     this.deliverySignals.record({ event: 'webhook.delivery.dispatcher_started' });
     this.scheduleRelay(0);
     this.scheduleDelivery(0);
+    this.scheduleReconciliation(0);
   }
 
   public beforeApplicationShutdown(signal?: string): void {
     this.stopping = true;
     this.consumer.beginShutdown();
+    this.settlementConsumer.beginShutdown();
     this.delivery.beginShutdown();
     this.clearTimers();
     this.health.markStopping();
@@ -89,20 +98,34 @@ export class WorkerRuntimeService
 
     const activeRelay = this.relayInFlight;
     const activeDelivery = this.deliveryInFlight;
+    const activeReconciliation = this.reconciliationInFlight;
     const drainTimeoutMs = this.config.get('OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS', {
       infer: true,
     });
     const deliveryDrainTimeoutMs = this.config.get('WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS', {
       infer: true,
     });
-    const [relayDrained, consumerDrained, deliveryDrained] = await Promise.all([
+    const [
+      relayDrained,
+      consumerDrained,
+      settlementConsumerDrained,
+      deliveryDrained,
+      reconciliationDrained,
+    ] = await Promise.all([
       activeRelay === undefined
         ? Promise.resolve(true)
         : this.waitForOperation(activeRelay, drainTimeoutMs),
       this.consumer.close(),
+      this.settlementConsumer.close(),
       activeDelivery === undefined
         ? Promise.resolve(true)
         : this.waitForOperation(activeDelivery, deliveryDrainTimeoutMs),
+      activeReconciliation === undefined
+        ? Promise.resolve(true)
+        : this.waitForOperation(
+            activeReconciliation,
+            this.config.get('SETTLEMENT_CONSUMER_SHUTDOWN_TIMEOUT_MS', { infer: true }),
+          ),
     ]);
 
     if (!deliveryDrained && activeDelivery !== undefined) {
@@ -128,6 +151,12 @@ export class WorkerRuntimeService
     if (!consumerDrained) {
       this.logger.warn(JSON.stringify({ event: 'webhook.projection.consumer.drain_timeout' }));
     }
+    if (!settlementConsumerDrained) {
+      this.logger.warn(JSON.stringify({ event: 'settlement.consumer.drain_timeout' }));
+    }
+    if (!reconciliationDrained) {
+      this.logger.warn(JSON.stringify({ event: 'reconciliation.processor.drain_timeout' }));
+    }
     this.deliverySignals.record({
       code: deliveryDrained ? 'drained' : 'drain_timeout',
       event: 'webhook.delivery.dispatcher_stopped',
@@ -150,16 +179,25 @@ export class WorkerRuntimeService
       this.prisma.checkConnectivity(),
       this.publisher.ensureReady(),
       this.consumer.ensureReady(),
+      this.settlementConsumer.ensureReady(),
       this.delivery.ensureReady(),
     ])
-      .then(([postgresql, rabbitmqPublisher, rabbitmqConsumer, webhookDelivery]) => {
-        this.updateDependencyReadiness(
+      .then(
+        ([
           postgresql,
           rabbitmqPublisher,
           rabbitmqConsumer,
+          settlementConsumer,
           webhookDelivery,
-        );
-      })
+        ]) => {
+          this.updateDependencyReadiness(
+            postgresql,
+            rabbitmqPublisher,
+            rabbitmqConsumer && settlementConsumer,
+            webhookDelivery,
+          );
+        },
+      )
       .finally(() => {
         this.readinessRefresh = undefined;
       });
@@ -188,6 +226,33 @@ export class WorkerRuntimeService
     this.deliveryTimer.unref();
   }
 
+  private scheduleReconciliation(delayMs: number): void {
+    if (this.stopping || this.reconciliationTimer !== undefined) return;
+    this.reconciliationTimer = setTimeout(() => {
+      this.reconciliationTimer = undefined;
+      void this.runReconciliationCycle();
+    }, delayMs);
+    this.reconciliationTimer.unref();
+  }
+
+  private async runReconciliationCycle(): Promise<void> {
+    if (this.stopping || this.reconciliationInFlight !== undefined) return;
+    const operation = this.reconciliation.processNext(this.reconciliationWorkerId);
+    this.reconciliationInFlight = operation;
+    let processed = false;
+    try {
+      processed = await operation;
+      if (processed) this.logger.log(JSON.stringify({ event: 'reconciliation.import.completed' }));
+    } catch {
+      await this.refreshReadiness();
+      this.logger.warn(JSON.stringify({ event: 'reconciliation.processor.cycle_failed' }));
+    }
+    if (this.reconciliationInFlight === operation) this.reconciliationInFlight = undefined;
+    this.scheduleReconciliation(
+      processed ? 0 : this.config.get('RECONCILIATION_POLL_INTERVAL_MS', { infer: true }),
+    );
+  }
+
   private async runDeliveryCycle(): Promise<void> {
     if (this.stopping || this.deliveryInFlight !== undefined) return;
     const operation = this.executeDeliveryCycle();
@@ -208,7 +273,7 @@ export class WorkerRuntimeService
       this.updateDependencyReadiness(
         true,
         this.publisher.isReady(),
-        this.consumer.isReady(),
+        this.consumer.isReady() && this.settlementConsumer.isReady(),
         result.dispatcherReady,
       );
       if (result.claimed > 0 || result.ownershipLost > 0 || result.recoveredUnknown > 0) {
@@ -256,7 +321,7 @@ export class WorkerRuntimeService
         this.updateDependencyReadiness(
           true,
           true,
-          this.consumer.isReady(),
+          this.consumer.isReady() && this.settlementConsumer.isReady(),
           this.delivery.isReady(),
         );
       } else {
@@ -299,6 +364,10 @@ export class WorkerRuntimeService
       clearTimeout(this.deliveryTimer);
       this.deliveryTimer = undefined;
     }
+    if (this.reconciliationTimer !== undefined) {
+      clearTimeout(this.reconciliationTimer);
+      this.reconciliationTimer = undefined;
+    }
   }
 
   private updateDependencyReadiness(
@@ -332,6 +401,7 @@ export class WorkerRuntimeService
       postgresql: { status: postgresql ? 'up' : 'down' },
       rabbitmqConsumer: { status: rabbitmqConsumer ? 'up' : 'down' },
       rabbitmqPublisher: { status: rabbitmqPublisher ? 'up' : 'down' },
+      reconciliationProcessor: { status: postgresql && !this.stopping ? 'up' : 'down' },
       webhookDelivery: { status: webhookDelivery ? 'up' : 'down' },
     });
   }

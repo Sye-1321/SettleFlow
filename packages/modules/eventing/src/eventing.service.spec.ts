@@ -7,6 +7,7 @@ import { prismaOutboxRepositoryInternals } from './prisma-outbox.repository';
 describe('EventingService', () => {
   it('builds the approved flat nine-field payment.created.v1 contract', async () => {
     const repository: jest.Mocked<OutboxRepository> = {
+      insertDomainEvent: jest.fn().mockResolvedValue(undefined),
       insertPaymentEvent: jest.fn().mockResolvedValue(undefined),
     };
     const identifiers = {

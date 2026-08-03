@@ -16,6 +16,8 @@
     "@settleflow/merchant-access": "workspace:*",
     "@settleflow/operations": "workspace:*",
     "@settleflow/payments": "workspace:*",
+    "@settleflow/reconciliation": "workspace:*",
+    "@settleflow/settlements": "workspace:*",
     "@settleflow/webhooks": "workspace:*",
     "lossless-json": "4.3.0",
     "reflect-metadata": "0.2.2",

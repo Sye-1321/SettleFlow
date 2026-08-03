@@ -33,6 +33,36 @@ export interface PaymentRefundedEvent extends PaymentEventBase {
 export type PaymentDomainEvent = PaymentCapturedEvent | PaymentCreatedEvent | PaymentRefundedEvent;
 export type PaymentDomainEventType = PaymentDomainEvent['eventType'];
 
+interface OperationalEventBase {
+  readonly eventId: string;
+  readonly merchantId: string;
+  readonly occurredAt: Date;
+  readonly requestId: string;
+}
+
+export interface SettlementFinalizedEvent extends OperationalEventBase {
+  readonly batchId: string;
+  readonly currency: 'ETB' | 'USD';
+  readonly cutoffAt: Date;
+  readonly eventType: 'settlement.finalized.v1';
+  readonly feeAmountMinor: number;
+  readonly grossAmountMinor: number;
+  readonly itemCount: number;
+  readonly netAmountMinor: number;
+}
+
+export interface ReconciliationCompletedEvent extends OperationalEventBase {
+  readonly eventType: 'reconciliation.completed.v1';
+  readonly importId: string;
+  readonly matchedExactCount: number;
+  readonly mismatchCount: number;
+  readonly unexplainedDifferenceMinorByCurrency: Readonly<{ ETB: number; USD: number }>;
+}
+
+export type DomainEvent =
+  PaymentDomainEvent | ReconciliationCompletedEvent | SettlementFinalizedEvent;
+export type DomainEventType = DomainEvent['eventType'];
+
 export interface PaymentCreatedEventInput {
   readonly amountMinor: number;
   readonly currency: 'ETB' | 'USD';
@@ -63,6 +93,7 @@ export interface PaymentRefundedEventInput {
 }
 
 export interface OutboxRepository {
+  insertDomainEvent(transaction: PrismaTransactionClient, event: DomainEvent): Promise<void>;
   insertPaymentEvent(
     transaction: PrismaTransactionClient,
     event: PaymentDomainEvent,

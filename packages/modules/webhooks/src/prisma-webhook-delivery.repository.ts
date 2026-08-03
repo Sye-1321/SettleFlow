@@ -223,7 +223,9 @@ export class PrismaWebhookDeliveryRepository implements WebhookDeliveryRepositor
       if (
         (record.event.eventType !== 'payment.created.v1' &&
           record.event.eventType !== 'payment.captured.v1' &&
-          record.event.eventType !== 'payment.refunded.v1') ||
+          record.event.eventType !== 'payment.refunded.v1' &&
+          record.event.eventType !== 'settlement.finalized.v1' &&
+          record.event.eventType !== 'reconciliation.completed.v1') ||
         record.event.schemaVersion !== 1
       ) {
         throw new Error('Persisted webhook event contract is invalid');

@@ -28,11 +28,14 @@ import type {
 const BUSINESS_TYPE_TO_PRISMA = {
   capture: 'CAPTURE',
   refund: 'REFUND',
+  settlement: 'SETTLEMENT',
   reversal: 'REVERSAL',
 } as const;
 const CODE_TO_PRISMA = {
   merchant_payable: 'merchant_payable',
   provider_clearing: 'provider_clearing',
+  fee_revenue: 'fee_revenue',
+  settlement_clearing: 'settlement_clearing',
 } as const;
 const SIDE_TO_PRISMA = { credit: 'CREDIT', debit: 'DEBIT' } as const;
 
@@ -51,6 +54,9 @@ const LEDGER_INVARIANT_CONSTRAINTS = new Set([
 function accountCode(value: string): LedgerAccountCode {
   if (value === 'MERCHANT_PAYABLE' || value === 'merchant_payable') return 'merchant_payable';
   if (value === 'PROVIDER_CLEARING' || value === 'provider_clearing') return 'provider_clearing';
+  if (value === 'FEE_REVENUE' || value === 'fee_revenue') return 'fee_revenue';
+  if (value === 'SETTLEMENT_CLEARING' || value === 'settlement_clearing')
+    return 'settlement_clearing';
   throw new LedgerInvariantViolationError();
 }
 
@@ -63,6 +69,7 @@ function entrySide(value: string): LedgerEntrySide {
 function businessType(value: string): LedgerBusinessType {
   if (value === 'capture' || value === 'CAPTURE') return 'capture';
   if (value === 'refund' || value === 'REFUND') return 'refund';
+  if (value === 'settlement' || value === 'SETTLEMENT') return 'settlement';
   if (value === 'reversal' || value === 'REVERSAL') return 'reversal';
   throw new LedgerInvariantViolationError();
 }
@@ -121,7 +128,7 @@ export class PrismaLedgerRepository implements LedgerRepository {
         normalSide: entrySide(row.normalSide),
       }));
       if (
-        result.length !== 4 ||
+        result.length !== 8 ||
         result.some((row) => {
           const expected = accounts.find(
             (account) => account.code === row.code && account.currency === row.currency,
@@ -153,7 +160,7 @@ export class PrismaLedgerRepository implements LedgerRepository {
           .map((account) => [accountCode(account.code), account.id] as const),
       );
       if (
-        accountRows.length !== 4 ||
+        accountRows.length !== 8 ||
         accountRows.some((account) => {
           const code = accountCode(account.code);
           const expectedSide = code === 'provider_clearing' ? 'debit' : 'credit';
@@ -162,7 +169,7 @@ export class PrismaLedgerRepository implements LedgerRepository {
             entrySide(account.normalSide) !== expectedSide
           );
         }) ||
-        accountIds.size !== new Set(input.entries.map((entry) => entry.accountCode)).size ||
+        accountIds.size !== 4 ||
         input.entries.some((entry) => !accountIds.has(entry.accountCode))
       ) {
         throw new LedgerAccountsNotProvisionedError();

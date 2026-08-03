@@ -25,6 +25,7 @@ import {
   type RefundRepresentation,
 } from '@settleflow/payments';
 import type { MerchantRequestIdentity } from '@settleflow/merchant-access';
+import { SettlementService } from '@settleflow/settlements';
 
 import { getRequestId, headerValues, type RequestWithRequestId } from '../http/request-id';
 import {
@@ -92,7 +93,10 @@ const requestIdHeader = {
 @ApiTags('payment-intents')
 @ApiBearerAuth('merchantApiKey')
 export class PaymentIntentController {
-  public constructor(private readonly payments: PaymentIntentService) {}
+  public constructor(
+    private readonly payments: PaymentIntentService,
+    private readonly settlements: SettlementService,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -381,11 +385,15 @@ export class PaymentIntentController {
     headers: requestIdResponseHeaders,
     status: 500,
   })
-  public get(
+  public async get(
     @Param('id') id: string,
     @MerchantIdentity() identity: MerchantRequestIdentity,
   ): Promise<PaymentIntentRepresentation> {
-    return this.payments.get(identity.merchantId, id);
+    const payment = await this.payments.get(identity.merchantId, id);
+    return {
+      ...payment,
+      settlementStatus: await this.settlements.getPaymentStatus(identity.merchantId, id),
+    };
   }
 }
 

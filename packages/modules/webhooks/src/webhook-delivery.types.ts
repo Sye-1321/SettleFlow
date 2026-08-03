@@ -1,4 +1,8 @@
-import type { EncryptedWebhookSecret, WebhookEndpointStatus } from './webhook.types';
+import type {
+  EncryptedWebhookSecret,
+  WebhookEndpointStatus,
+  WebhookSubscription,
+} from './webhook.types';
 
 export type WebhookDeliveryStatus = 'dead_lettered' | 'delivered' | 'pending' | 'retrying';
 export type WebhookDeliveryAttemptOutcome =
@@ -47,7 +51,7 @@ export interface WebhookDeliveryContext {
   readonly claim: ClaimedWebhookDelivery;
   readonly currentSecret: StoredWebhookSecret;
   readonly endpointStatus: WebhookEndpointStatus;
-  readonly eventType: 'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1';
+  readonly eventType: WebhookSubscription;
   readonly normalizedUrl: string;
   readonly previousSecret: StoredWebhookSecret | undefined;
   readonly schemaVersion: 1;

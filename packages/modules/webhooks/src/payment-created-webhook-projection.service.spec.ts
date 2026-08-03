@@ -2,6 +2,7 @@ import type {
   InboxEffect,
   InboxProcessingResult,
   InboxService,
+  ValidatedOperationalEventMessage,
   ValidatedPaymentCreatedMessage,
 } from '@settleflow/eventing';
 import type { MonotonicUlidGenerator, PrismaTransactionClient } from '@settleflow/infrastructure';
@@ -36,6 +37,48 @@ function createMessage(): ValidatedPaymentCreatedMessage {
     payloadBytes: PAYLOAD,
     payloadSha256: HASH,
     publishAttempt: 1,
+    redelivered: false,
+    schemaVersion: 1,
+  };
+}
+
+function createOperationalMessage(
+  eventType: 'reconciliation.completed.v1' | 'settlement.finalized.v1',
+): ValidatedOperationalEventMessage {
+  const common = {
+    eventId:
+      eventType === 'settlement.finalized.v1'
+        ? 'evt_01ARZ3NDEKTSV4RRFFQ69G5FAA'
+        : 'evt_01ARZ3NDEKTSV4RRFFQ69G5FAB',
+    eventType,
+    merchantId: '11111111-1111-4111-8111-111111111111',
+    occurredAt: new Date('2026-08-02T11:59:00.000Z'),
+    requestId: 'req_projection_test',
+  } as const;
+  const event =
+    eventType === 'settlement.finalized.v1'
+      ? {
+          ...common,
+          batchId: 'stb_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          currency: 'ETB',
+          cutoffAt: new Date('2026-08-02T08:00:00.000Z'),
+          feeAmountMinor: 1_100,
+          grossAmountMinor: 25_000,
+          itemCount: 1,
+          netAmountMinor: 23_900,
+        }
+      : {
+          ...common,
+          importId: 'rec_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          matchedExactCount: 1,
+          mismatchCount: 0,
+          unexplainedDifferenceMinorByCurrency: { ETB: 0, USD: 0 },
+        };
+  const payloadBytes = Buffer.from(JSON.stringify(event));
+  return {
+    event,
+    payloadBytes,
+    payloadSha256: Buffer.alloc(32, eventType === 'settlement.finalized.v1' ? 7 : 8),
     redelivered: false,
     schemaVersion: 1,
   };
@@ -129,6 +172,43 @@ describe('PaymentCreatedWebhookProjectionService', () => {
       [expect.anything(), expect.anything(), []],
     ]);
   });
+
+  it.each([
+    ['settlement.finalized.v1', 'stb_01ARZ3NDEKTSV4RRFFQ69G5FAV', 'settlement_batch'],
+    ['reconciliation.completed.v1', 'rec_01ARZ3NDEKTSV4RRFFQ69G5FAV', 'reconciliation_import'],
+  ] as const)(
+    'projects %s using its operational aggregate and exact validated bytes',
+    async (eventType, aggregateId, aggregateType) => {
+      const repository = createRepository();
+      const message = createOperationalMessage(eventType);
+      const service = new PaymentCreatedWebhookProjectionService(
+        createInbox(),
+        repository,
+        createIdentifiers(),
+      );
+
+      await expect(service.handle(message)).resolves.toEqual({
+        kind: 'processed',
+        value: { alreadyProjected: false, deliveryCount: 2 },
+      });
+      expect((repository.findEligibleEndpointIds as jest.Mock).mock.calls).toEqual([
+        [expect.anything(), message.event.merchantId, eventType],
+      ]);
+      expect((repository.create as jest.Mock).mock.calls).toEqual([
+        [
+          expect.anything(),
+          expect.objectContaining({
+            aggregateId,
+            aggregateType,
+            eventType,
+            payloadBytes: message.payloadBytes,
+            payloadSha256: message.payloadSha256,
+          }),
+          expect.any(Array),
+        ],
+      ]);
+    },
+  );
 
   it('uses the retained marker as a matching fallback and rejects a conflicting marker', async () => {
     const message = createMessage();

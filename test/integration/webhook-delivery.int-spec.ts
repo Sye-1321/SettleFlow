@@ -257,6 +257,8 @@ describe('signed HTTP webhook delivery with real PostgreSQL', () => {
         });
         await transaction.webhookEventProjection.create({
           data: {
+            aggregateId: `pi_01ARZ3NDEKTSV4RRFFQ69G5F${suffix}`,
+            aggregateType: 'payment_intent',
             amountMinor: 1_000n,
             currency: 'ETB',
             eventId,

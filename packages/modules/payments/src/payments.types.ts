@@ -72,7 +72,8 @@ export interface PaymentIntentRepresentation {
   readonly id: string;
   readonly paymentStatus: PaymentStatus;
   readonly refundedAmountMinor: number;
-  readonly settlementStatus: 'NOT_ELIGIBLE';
+  readonly settlementStatus:
+    'ADJUSTMENT_PENDING' | 'BATCHED' | 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'SETTLED';
   readonly updatedAt: string;
   readonly version: number;
 }
@@ -103,6 +104,60 @@ export interface RefundRecord {
   readonly merchantId: string;
   readonly paymentIntentId: string;
   readonly publicId: string;
+}
+
+export interface PaymentReconciliationEvidence {
+  readonly businessReference: string;
+  readonly currency: PaymentCurrency;
+  readonly eventType: 'capture' | 'refund';
+  readonly externalRef: string;
+  readonly grossMinor: bigint;
+  readonly occurredAt: Date;
+  readonly publicRef: string;
+}
+
+export interface PaymentReconciliationReadPort {
+  readPaymentEvidence(
+    transaction: PrismaTransactionClient,
+    merchantId: string,
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<readonly PaymentReconciliationEvidence[]>;
+}
+
+export interface PaymentSettlementCandidateInput {
+  readonly paymentIntentId: string;
+  readonly paymentPublicId: string;
+  readonly settlementPositionId: string;
+}
+
+export interface PaymentSettlementCandidateFact extends PaymentSettlementCandidateInput {
+  readonly availableAt: Date | undefined;
+  readonly capturedAmountMinor: bigint;
+  readonly currency: PaymentCurrency;
+  readonly refundedAmountMinor: bigint;
+}
+
+export interface PaymentSettlementProjectionIdentity {
+  readonly currency: PaymentCurrency;
+  readonly paymentIntentId: string;
+  readonly paymentPublicId: string;
+  readonly refundRecordId?: string;
+  readonly refundPublicId?: string;
+}
+
+export interface PaymentSettlementReadPort {
+  lockSettlementCandidates(
+    transaction: PrismaTransactionClient,
+    merchantId: string,
+    candidates: readonly PaymentSettlementCandidateInput[],
+  ): Promise<readonly PaymentSettlementCandidateFact[]>;
+  readSettlementProjectionIdentity(
+    transaction: PrismaTransactionClient,
+    merchantId: string,
+    paymentPublicId: string,
+    refundPublicId?: string,
+  ): Promise<PaymentSettlementProjectionIdentity | undefined>;
 }
 
 export interface PaymentCommandObservation {

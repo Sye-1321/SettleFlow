@@ -191,7 +191,7 @@ describe('immutable double-entry Ledger Foundation with real PostgreSQL', () => 
     await runtime.getClient().$transaction(async (transaction) => {
       await service.provisionAccounts(transaction, merchantId);
     });
-    expect(await owner.getClient().ledgerAccount.count({ where: { merchantId } })).toBe(4);
+    expect(await owner.getClient().ledgerAccount.count({ where: { merchantId } })).toBe(8);
 
     const occurredAt = new Date('2026-08-02T13:00:00.000Z');
     const [capture, refund] = await Promise.all([

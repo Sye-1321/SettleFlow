@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { WebhookSubscription } from './webhook.types';
 
 const DELIVERY_ID_PATTERN = /^whd_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const EVENT_ID_PATTERN = /^evt_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
@@ -14,7 +15,7 @@ export interface BuildWebhookRequestHeadersInput {
   readonly current: WebhookSigningSecret;
   readonly deliveryId: string;
   readonly eventId: string;
-  readonly eventType: 'payment.captured.v1' | 'payment.created.v1' | 'payment.refunded.v1';
+  readonly eventType: WebhookSubscription;
   readonly previous?: WebhookSigningSecret;
   readonly timestamp: bigint;
 }

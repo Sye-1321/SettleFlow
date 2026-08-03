@@ -1,9 +1,38 @@
 import { findDatabaseConstraint, type PrismaTransactionClient } from '@settleflow/infrastructure';
 
 import { EventIdentifierCollisionError } from './eventing.errors';
-import type { OutboxRepository, PaymentDomainEvent } from './eventing.types';
+import type { DomainEvent, OutboxRepository, PaymentDomainEvent } from './eventing.types';
 
-function toPayload(event: PaymentDomainEvent): Readonly<Record<string, string | number>> {
+function toPayload(event: DomainEvent): Readonly<Record<string, unknown>> {
+  if (event.eventType === 'settlement.finalized.v1') {
+    return {
+      eventId: event.eventId,
+      eventType: event.eventType,
+      occurredAt: event.occurredAt.toISOString(),
+      requestId: event.requestId,
+      merchantId: event.merchantId,
+      batchId: event.batchId,
+      cutoffAt: event.cutoffAt.toISOString(),
+      grossAmountMinor: event.grossAmountMinor,
+      feeAmountMinor: event.feeAmountMinor,
+      netAmountMinor: event.netAmountMinor,
+      currency: event.currency,
+      itemCount: event.itemCount,
+    };
+  }
+  if (event.eventType === 'reconciliation.completed.v1') {
+    return {
+      eventId: event.eventId,
+      eventType: event.eventType,
+      occurredAt: event.occurredAt.toISOString(),
+      requestId: event.requestId,
+      merchantId: event.merchantId,
+      importId: event.importId,
+      matchedExactCount: event.matchedExactCount,
+      mismatchCount: event.mismatchCount,
+      unexplainedDifferenceMinorByCurrency: event.unexplainedDifferenceMinorByCurrency,
+    };
+  }
   const common = {
     eventId: event.eventId,
     eventType: event.eventType,
@@ -44,16 +73,29 @@ export class PrismaOutboxRepository implements OutboxRepository {
     transaction: PrismaTransactionClient,
     event: PaymentDomainEvent,
   ): Promise<void> {
+    return this.insertDomainEvent(transaction, event);
+  }
+
+  public async insertDomainEvent(
+    transaction: PrismaTransactionClient,
+    event: DomainEvent,
+  ): Promise<void> {
     try {
+      const aggregate =
+        event.eventType === 'settlement.finalized.v1'
+          ? { id: event.batchId, type: 'settlement_batch' }
+          : event.eventType === 'reconciliation.completed.v1'
+            ? { id: event.importId, type: 'reconciliation_import' }
+            : { id: event.paymentId, type: 'payment_intent' };
       await transaction.outboxEvent.create({
         data: {
-          aggregateId: event.paymentId,
-          aggregateType: 'payment_intent',
+          aggregateId: aggregate.id,
+          aggregateType: aggregate.type,
           eventId: event.eventId,
           eventType: event.eventType,
           merchantId: event.merchantId,
           occurredAt: event.occurredAt,
-          payload: toPayload(event),
+          payload: toPayload(event) as never,
           requestId: event.requestId,
         },
       });

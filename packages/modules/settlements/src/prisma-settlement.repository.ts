@@ -35,6 +35,11 @@ interface AdjustmentRow {
   readonly id: string;
 }
 
+export interface SettlementBacklogRow {
+  readonly currency: SettlementCurrency;
+  readonly pending: number;
+}
+
 function number(value: bigint): number {
   const result = Number(value);
   if (!Number.isSafeInteger(result)) throw new Error('Settlement aggregate exceeds JSON range');
@@ -49,6 +54,29 @@ function pageToken(batchPublicId: string, kind: 'adjustment' | 'item', internalI
 
 export class PrismaSettlementRepository implements SettlementRepository {
   public constructor(private readonly database: PrismaDatabase) {}
+
+  public async readBacklogMetrics(timeoutMs: number): Promise<readonly SettlementBacklogRow[]> {
+    try {
+      return await this.database.getClient().$transaction(
+        async (transaction) => {
+          await transaction.$queryRaw`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
+          const rows = await transaction.$queryRaw<
+            { currency: SettlementCurrency; pending: bigint }[]
+          >`
+            SELECT adjustment."currency", COUNT(*) AS "pending"
+            FROM "settlement_adjustments" AS adjustment
+            WHERE adjustment."status" = 'pending'
+              AND adjustment."currency" IN ('ETB', 'USD')
+            GROUP BY adjustment."currency"
+          `;
+          return rows.map((row) => ({ currency: row.currency, pending: Number(row.pending) }));
+        },
+        { maxWait: timeoutMs, timeout: timeoutMs + 1_000 },
+      );
+    } catch (error: unknown) {
+      return this.database.rethrowDatabaseError(error);
+    }
+  }
 
   public async transactionTime(transaction: PrismaTransactionClient): Promise<Date> {
     const rows = await transaction.$queryRaw<{ transaction_time: Date }[]>`

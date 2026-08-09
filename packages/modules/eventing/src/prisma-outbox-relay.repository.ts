@@ -22,6 +22,12 @@ interface ClaimRow {
   readonly request_id: string;
 }
 
+export interface OutboxBacklogRow {
+  readonly eventType: string;
+  readonly oldestAgeSeconds: number;
+  readonly pending: number;
+}
+
 export interface PrismaOutboxRelayRepositoryOptions {
   readonly leaseDurationMs: number;
   readonly signal?: OutboxRelaySignalSink;
@@ -33,6 +39,59 @@ export class PrismaOutboxRelayRepository implements OutboxRelayRepository {
     private readonly database: PrismaDatabase,
     private readonly options: PrismaOutboxRelayRepositoryOptions,
   ) {}
+
+  public async readBacklogMetrics(): Promise<readonly OutboxBacklogRow[]> {
+    try {
+      return await this.database.getClient().$transaction(
+        async (transaction) => {
+          await transaction.$queryRaw`
+            SELECT set_config(
+              'statement_timeout',
+              ${String(this.options.transactionTimeoutMs)},
+              TRUE
+            )
+          `;
+          const rows = await transaction.$queryRaw<
+            {
+              eventType: string;
+              oldestAgeSeconds: number;
+              pending: bigint;
+            }[]
+          >`
+            SELECT
+              outbox."event_type" AS "eventType",
+              COUNT(*) AS "pending",
+              GREATEST(
+                EXTRACT(EPOCH FROM (clock_timestamp() - MIN(outbox."available_at"))),
+                0
+              )::double precision AS "oldestAgeSeconds"
+            FROM "outbox_events" AS outbox
+            WHERE outbox."published_at" IS NULL
+              AND outbox."available_at" <= clock_timestamp()
+              AND outbox."event_type" IN (
+                'payment.created.v1',
+                'payment.captured.v1',
+                'payment.refunded.v1',
+                'settlement.finalized.v1',
+                'reconciliation.completed.v1'
+              )
+            GROUP BY outbox."event_type"
+          `;
+          return rows.map((row) => ({
+            eventType: row.eventType,
+            oldestAgeSeconds: row.oldestAgeSeconds,
+            pending: Number(row.pending),
+          }));
+        },
+        {
+          maxWait: this.options.transactionTimeoutMs,
+          timeout: this.options.transactionTimeoutMs + 1_000,
+        },
+      );
+    } catch (error: unknown) {
+      return this.database.rethrowDatabaseError(error);
+    }
+  }
 
   public async claimPending(
     input: ClaimPendingOutboxInput,

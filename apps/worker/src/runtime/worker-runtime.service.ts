@@ -1,6 +1,7 @@
 import {
   BeforeApplicationShutdown,
   Injectable,
+  Optional,
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import { WebhookDeliveryService } from '@settleflow/webhooks';
 import { WorkerEnvironment } from '../config/environment';
 import { WorkerHealthService } from '../health/worker-health.service';
 import { OutboxRelaySignalService } from './outbox-relay-signal.service';
+import { OperationalMetricsService } from './operational-metrics.service';
 import { WebhookDeliverySignalService } from './webhook-delivery-signal.service';
 
 @Injectable()
@@ -54,6 +56,7 @@ export class WorkerRuntimeService
     private readonly signals: OutboxRelaySignalService,
     private readonly deliverySignals: WebhookDeliverySignalService,
     private readonly telemetry: TelemetryRuntime,
+    @Optional() private readonly operationalMetrics?: OperationalMetricsService,
   ) {}
 
   public async onApplicationBootstrap(): Promise<void> {
@@ -61,6 +64,7 @@ export class WorkerRuntimeService
       liveness: () => this.health.getLiveness(),
       readiness: () => this.internalReadiness(),
     });
+    this.operationalMetrics?.start();
     const heartbeatIntervalMs = this.config.get('WORKER_HEARTBEAT_INTERVAL_MS', {
       infer: true,
     });
@@ -85,6 +89,7 @@ export class WorkerRuntimeService
     this.consumer.beginShutdown();
     this.settlementConsumer.beginShutdown();
     this.delivery.beginShutdown();
+    this.operationalMetrics?.beginShutdown();
     this.clearTimers();
     this.health.markStopping();
     this.signals.record({
@@ -100,6 +105,7 @@ export class WorkerRuntimeService
   public async onApplicationShutdown(): Promise<void> {
     this.stopping = true;
     this.clearTimers();
+    await this.operationalMetrics?.stop();
 
     const activeRelay = this.relayInFlight;
     const activeDelivery = this.deliveryInFlight;

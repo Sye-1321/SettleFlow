@@ -64,7 +64,10 @@ export type {
 export { PrismaInboxRepository } from './prisma-inbox.repository';
 export type { PrismaInboxRepositoryOptions } from './prisma-inbox.repository';
 export { PrismaOutboxRelayRepository } from './prisma-outbox-relay.repository';
-export type { PrismaOutboxRelayRepositoryOptions } from './prisma-outbox-relay.repository';
+export type {
+  OutboxBacklogRow,
+  PrismaOutboxRelayRepositoryOptions,
+} from './prisma-outbox-relay.repository';
 export { RabbitMqOutboxPublisher } from './rabbitmq-outbox.publisher';
 export type {
   RabbitMqConnector,

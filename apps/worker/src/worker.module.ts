@@ -45,6 +45,7 @@ import {
 import { validateWorkerEnvironment, WorkerEnvironment } from './config/environment';
 import { WorkerHealthService } from './health/worker-health.service';
 import { OutboxRelaySignalService } from './runtime/outbox-relay-signal.service';
+import { OperationalMetricsService } from './runtime/operational-metrics.service';
 import { ReconciliationPlatformReadAdapter } from './runtime/reconciliation-platform-read.adapter';
 import { SettlementLifecycleSignalService } from './runtime/settlement-lifecycle-signal.service';
 import { WebhookDeliverySignalService } from './runtime/webhook-delivery-signal.service';
@@ -66,6 +67,7 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
     SettlementLifecycleSignalService,
     WebhookProjectionSignalService,
     WebhookDeliverySignalService,
+    OperationalMetricsService,
     WorkerRuntimeService,
     MonotonicUlidGenerator,
     {

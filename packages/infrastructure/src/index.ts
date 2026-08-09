@@ -24,7 +24,12 @@ export type {
   InternalReadiness,
 } from './telemetry/internal-http-server';
 export { MetricsRegistry } from './telemetry/metrics';
-export type { MetricsRegistryOptions } from './telemetry/metrics';
+export type {
+  CurrencyBacklogMetric,
+  MetricsRegistryOptions,
+  OutboxBacklogMetric,
+  WebhookBacklogMetric,
+} from './telemetry/metrics';
 export { redactTelemetryFields } from './telemetry/redaction';
 export type { SafeTelemetryFields } from './telemetry/redaction';
 export { StructuredJsonLogger } from './telemetry/structured-json-logger';

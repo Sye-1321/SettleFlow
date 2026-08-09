@@ -45,8 +45,47 @@ function encodeCursor(ordinal: number): string {
   return Buffer.from(JSON.stringify({ ordinal, v: 1 }), 'utf8').toString('base64url');
 }
 
+export interface ReconciliationBacklogRow {
+  readonly currency: ReconciliationCurrency;
+  readonly reportsWithDifference: number;
+}
+
 export class PrismaReconciliationRepository {
   public constructor(private readonly database: PrismaDatabase) {}
+
+  public async readBacklogMetrics(timeoutMs: number): Promise<readonly ReconciliationBacklogRow[]> {
+    try {
+      return await this.database.getClient().$transaction(
+        async (transaction) => {
+          await transaction.$queryRaw`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
+          const rows = await transaction.$queryRaw<
+            { currency: ReconciliationCurrency; reportsWithDifference: bigint }[]
+          >`
+            SELECT summary."currency", COUNT(*) AS "reportsWithDifference"
+            FROM "reconciliation_summaries" AS summary
+            WHERE summary."currency" IN ('ETB', 'USD')
+              AND (
+                summary."unexplained_difference_minor" <> 0
+                OR summary."provider_only_count" > 0
+                OR summary."platform_only_count" > 0
+                OR summary."currency_mismatch_count" > 0
+                OR summary."amount_mismatch_count" > 0
+                OR summary."status_mismatch_count" > 0
+                OR summary."duplicate_provider_row_count" > 0
+              )
+            GROUP BY summary."currency"
+          `;
+          return rows.map((row) => ({
+            currency: row.currency,
+            reportsWithDifference: Number(row.reportsWithDifference),
+          }));
+        },
+        { maxWait: timeoutMs, timeout: timeoutMs + 1_000 },
+      );
+    } catch (error: unknown) {
+      return this.database.rethrowDatabaseError(error);
+    }
+  }
 
   public async merchantCode(merchantId: string): Promise<string> {
     const merchant = await this.database

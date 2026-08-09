@@ -52,6 +52,7 @@ export {
   prismaWebhookDeliveryRepositoryInternals,
 } from './prisma-webhook-delivery.repository';
 export type { PrismaWebhookDeliveryRepositoryOptions } from './prisma-webhook-delivery.repository';
+export type { WebhookBacklogRow } from './prisma-webhook-delivery.repository';
 export {
   PaymentCreatedWebhookProjectionService,
   paymentCreatedWebhookProjectionServiceInternals,

@@ -40,3 +40,5 @@ Additional runbooks are required when implementation introduces a new alert, ext
 Runbook completion requires a dry run or failure-injection exercise in the reference environment, captured commands/results, and follow-up issues for gaps. Review a runbook whenever its schema, metric, retry policy, deployment topology, authentication model, or recovery procedure changes.
 
 See [the architecture overview](../architecture/README.md), [financial invariants](../architecture/financial-invariants.md), [security policy](../../SECURITY.md), and [code-review checklist](../review/code-review-checklist.md).
+
+Executable Prometheus rule names, exact thresholds, and their runbook mapping are indexed in the [alert catalog](../operations/alert-catalog.md).

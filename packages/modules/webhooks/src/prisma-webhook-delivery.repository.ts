@@ -56,6 +56,12 @@ interface ReadinessRow {
   readonly ready: boolean;
 }
 
+export interface WebhookBacklogRow {
+  readonly deadLettered: number;
+  readonly due: number;
+  readonly oldestDueAgeSeconds: number;
+}
+
 export interface PrismaWebhookDeliveryRepositoryOptions {
   readonly leaseDurationMs?: number;
   readonly retryAttempts?: number;
@@ -138,6 +144,44 @@ export class PrismaWebhookDeliveryRepository implements WebhookDeliveryRepositor
     } catch {
       return false;
     }
+  }
+
+  public async readBacklogMetrics(): Promise<WebhookBacklogRow> {
+    return this.withTransaction(async (transaction) => {
+      const rows = await transaction.$queryRaw<
+        {
+          deadLettered: bigint;
+          due: bigint;
+          oldestDueAgeSeconds: number;
+        }[]
+      >`
+        SELECT
+          COUNT(*) FILTER (WHERE delivery."status" = 'dead_lettered') AS "deadLettered",
+          COUNT(*) FILTER (
+            WHERE delivery."status" IN ('pending', 'retrying')
+              AND delivery."next_attempt_at" <= clock_timestamp()
+          ) AS "due",
+          COALESCE(
+            GREATEST(
+              EXTRACT(EPOCH FROM (
+                clock_timestamp() - MIN(delivery."next_attempt_at") FILTER (
+                  WHERE delivery."status" IN ('pending', 'retrying')
+                    AND delivery."next_attempt_at" <= clock_timestamp()
+                )
+              )),
+              0
+            ),
+            0
+          )::double precision AS "oldestDueAgeSeconds"
+        FROM "webhook_deliveries" AS delivery
+      `;
+      const row = rows[0]!;
+      return {
+        deadLettered: Number(row.deadLettered),
+        due: Number(row.due),
+        oldestDueAgeSeconds: row.oldestDueAgeSeconds,
+      };
+    });
   }
 
   public async claimDue(

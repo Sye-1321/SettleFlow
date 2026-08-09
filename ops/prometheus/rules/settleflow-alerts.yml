@@ -1,0 +1,224 @@
+groups:
+  - name: settleflow-financial-safety
+    rules:
+      - alert: SettleFlowLedgerInvariantFailure
+        expr: sum(increase(settleflow_ledger_invariant_failures_total[2m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: A Ledger or committed Settlement invariant failed.
+          runbook: docs/runbooks/ledger-invariant-failure.md
+
+  - name: settleflow-readiness
+    rules:
+      - alert: SettleFlowPostgresqlUnavailable
+        expr: min(settleflow_dependency_ready{dependency="postgresql"}) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: PostgreSQL readiness has been down for one minute.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+      - alert: SettleFlowApiNotReadyWarning
+        expr: min(settleflow_process_ready{service="api"}) == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: API readiness has been down for two minutes.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+      - alert: SettleFlowApiNotReadyCritical
+        expr: min(settleflow_process_ready{service="api"}) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: API readiness has been down for five minutes.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+      - alert: SettleFlowWorkerNotReadyWarning
+        expr: min(settleflow_process_ready{service="worker"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker readiness has been down for five minutes.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+      - alert: SettleFlowWorkerNotReadyCritical
+        expr: min(settleflow_process_ready{service="worker"}) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker readiness has been down for fifteen minutes.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+      - alert: SettleFlowRabbitmqUnavailableWarning
+        expr: min(settleflow_dependency_ready{dependency=~"rabbitmq_consumer|rabbitmq_publisher"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: A RabbitMQ publisher or consumer dependency is unavailable.
+          runbook: docs/runbooks/outbox-backlog.md
+
+      - alert: SettleFlowRabbitmqUnavailableCritical
+        expr: min(settleflow_dependency_ready{dependency=~"rabbitmq_consumer|rabbitmq_publisher"}) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: A RabbitMQ publisher or consumer has been unavailable for fifteen minutes.
+          runbook: docs/runbooks/outbox-backlog.md
+
+  - name: settleflow-backlogs
+    rules:
+      - alert: SettleFlowOutboxBacklogWarning
+        expr: max(settleflow_outbox_oldest_age_seconds) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: The oldest available unpublished outbox event is over thirty seconds old.
+          runbook: docs/runbooks/outbox-backlog.md
+
+      - alert: SettleFlowOutboxBacklogCritical
+        expr: max(settleflow_outbox_oldest_age_seconds) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: The oldest available unpublished outbox event is over five minutes old.
+          runbook: docs/runbooks/outbox-backlog.md
+
+      - alert: SettleFlowWebhookDueBacklogWarning
+        expr: settleflow_webhook_due_oldest_age_seconds > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: The oldest due Webhook delivery is over two minutes old.
+          runbook: docs/runbooks/webhook-delivery.md
+
+      - alert: SettleFlowWebhookDueBacklogCritical
+        expr: settleflow_webhook_due_oldest_age_seconds > 900
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: The oldest due Webhook delivery is over fifteen minutes old.
+          runbook: docs/runbooks/webhook-delivery.md
+
+      - alert: SettleFlowWebhookDeadLetterWarning
+        expr: delta(settleflow_webhook_dead_lettered[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A new durable Webhook dead letter was observed.
+          runbook: docs/runbooks/webhook-delivery.md
+
+      - alert: SettleFlowWebhookDeadLetterCritical
+        expr: delta(settleflow_webhook_dead_lettered[15m]) >= 10
+        labels:
+          severity: critical
+        annotations:
+          summary: At least ten durable Webhook dead letters were observed in fifteen minutes.
+          runbook: docs/runbooks/webhook-delivery.md
+
+      - alert: SettleFlowBacklogCollectorUnavailable
+        expr: min(settleflow_backlog_collector_success) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: A bounded PostgreSQL backlog collector has failed for five minutes.
+          runbook: docs/runbooks/telemetry-degradation.md
+
+  - name: settleflow-reconciliation
+    rules:
+      - alert: SettleFlowReconciliationDifference
+        expr: max(settleflow_reconciliation_reports_with_difference) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A Reconciliation report contains a difference or mismatch bucket.
+          runbook: docs/runbooks/reconciliation-unexplained-difference.md
+
+      - alert: SettleFlowReconciliationProcessorUnavailable
+        expr: min(settleflow_dependency_ready{dependency="reconciliation_processor"}) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The Reconciliation processor has been unavailable for fifteen minutes.
+          runbook: docs/runbooks/reconciliation-unexplained-difference.md
+
+  - name: settleflow-service-objectives
+    rules:
+      - alert: SettleFlowCommandErrorRatioWarning
+        expr: |
+          (
+            sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class="5xx"}[10m]))
+            /
+            sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class=~"2xx|5xx"}[10m]))
+          ) > 0.02
+          and
+          sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class=~"2xx|5xx"}[10m])) >= 100
+        labels:
+          severity: warning
+        annotations:
+          summary: Valid synchronous command errors exceed two percent over ten minutes.
+          runbook: docs/runbooks/payment-capture-and-refunds.md
+
+      - alert: SettleFlowCommandErrorRatioCritical
+        expr: |
+          (
+            sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class="5xx"}[60m]))
+            /
+            sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class=~"2xx|5xx"}[60m]))
+          ) > 0.005
+          and
+          sum(increase(settleflow_http_requests_total{method="POST",route=~"/v1/payment-intents|/v1/payment-intents/:id/(capture|refunds)",status_class=~"2xx|5xx"}[60m])) >= 500
+        labels:
+          severity: critical
+        annotations:
+          summary: Valid synchronous command errors threaten the 99.5 percent reference objective.
+          runbook: docs/runbooks/payment-capture-and-refunds.md
+
+      - alert: SettleFlowPaymentCommandP95LatencyWarning
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(settleflow_payment_command_duration_seconds_bucket{command=~"create|capture"}[15m]))) > 0.3
+          and
+          sum(increase(settleflow_payment_command_duration_seconds_count{command=~"create|capture"}[15m])) >= 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Create or capture p95 latency exceeds three hundred milliseconds.
+          runbook: docs/runbooks/payment-capture-and-refunds.md
+
+      - alert: SettleFlowPaymentCommandP99LatencyWarning
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(settleflow_payment_command_duration_seconds_bucket{command=~"create|capture"}[15m]))) > 0.6
+          and
+          sum(increase(settleflow_payment_command_duration_seconds_count{command=~"create|capture"}[15m])) >= 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Create or capture p99 latency exceeds six hundred milliseconds.
+          runbook: docs/runbooks/payment-capture-and-refunds.md
+
+  - name: settleflow-telemetry
+    rules:
+      - alert: SettleFlowTelemetryCollectorUnavailable
+        expr: min(up{job="otel-collector"}) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The OpenTelemetry Collector scrape has failed for fifteen minutes.
+          runbook: docs/runbooks/telemetry-degradation.md

@@ -51,6 +51,18 @@ const workerEnvironmentSchema = z
     INTERNAL_TELEMETRY_HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
     INTERNAL_TELEMETRY_PORT: z.coerce.number().int().min(1).max(65_535).default(9_465),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    OPERATIONAL_METRICS_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(5_000)
+      .max(300_000)
+      .default(15_000),
+    OPERATIONAL_METRICS_QUERY_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(10_000)
+      .default(2_000),
     OUTBOX_RELAY_BATCH_SIZE: z.coerce.number().int().min(1).max(50).default(50),
     OUTBOX_RELAY_CONFIRM_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
     OUTBOX_RELAY_LEASE_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
@@ -160,6 +172,16 @@ const workerEnvironmentSchema = z
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
   })
   .superRefine((environment, context) => {
+    if (
+      environment.OPERATIONAL_METRICS_QUERY_TIMEOUT_MS >=
+      environment.OPERATIONAL_METRICS_POLL_INTERVAL_MS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'OPERATIONAL_METRICS_QUERY_TIMEOUT_MS must be shorter than the poll interval',
+        path: ['OPERATIONAL_METRICS_QUERY_TIMEOUT_MS'],
+      });
+    }
     if (environment.OUTBOX_RELAY_CONFIRM_TIMEOUT_MS >= environment.OUTBOX_RELAY_LEASE_MS) {
       context.addIssue({
         code: 'custom',

@@ -2,7 +2,7 @@
 
 ## Purpose and trigger
 
-Use this runbook when structured logging, metrics exposition, trace export, or an internal probe is unavailable or emits a bounded degradation signal. Telemetry collector/export failure becomes a warning after 15 minutes once executable alerts are added. Internal readiness failure follows the API/worker readiness thresholds in the approved operational plan.
+Use this runbook when structured logging, metrics exposition, trace export, a bounded backlog collector, or an internal probe is unavailable. `SettleFlowTelemetryCollectorUnavailable` warns after 15 minutes and `SettleFlowBacklogCollectorUnavailable` warns after five minutes. Internal readiness failure follows the API/worker readiness thresholds in the approved operational plan.
 
 This runbook restores disposable operational evidence. It does not repair or authorize financial state.
 
@@ -19,7 +19,9 @@ This runbook restores disposable operational evidence. It does not repair or aut
 2. From the same host/network boundary, query `/health/live`, `/health/ready`, and `/metrics` on the configured internal port. Never expose these endpoints to public ingress to simplify diagnosis.
 3. Inspect JSON stdout by stable `service`, `event`, `code`, `requestId`, `eventId`, or safe public resource ID. Do not search or export bodies, amounts, URLs, SQL, credentials, signatures, or arbitrary exception text.
 4. Check configuration using `pnpm config:check`. Confirm `OTEL_TRACING_ENABLED` has a bounded HTTP(S) endpoint when true and that internal hosts remain loopback for this milestone.
-5. Run the Infrastructure telemetry unit tests. If the internal listener is healthy but export is not, treat the exporter/Collector path as non-authoritative and preserve business operation.
+5. Run `pnpm telemetry:check`, then inspect the optional profile with `pnpm telemetry:ps` and `pnpm telemetry:logs`. If an application listener is healthy but its Prometheus target is down, confirm that Docker Desktop resolves `host.docker.internal`; do not change the listener to a wildcard bind.
+6. For a backlog-collector failure, inspect `settleflow_backlog_collector_success` and `settleflow_backlog_collector_last_success_timestamp_seconds`. Confirm PostgreSQL readiness independently and use only the owning domain runbook; do not run the collector query on a financial command connection manually.
+7. Run the Infrastructure and worker telemetry unit tests. If the internal listener is healthy but export is not, treat the exporter/Collector path as non-authoritative and preserve business operation.
 
 ## Containment and recovery
 
@@ -45,8 +47,8 @@ Escalate to the repository owner immediately for suspected secret exposure, publ
 
 ## Exercise record
 
-- **Last exercise date:** To be decided after the optional Collector/Prometheus milestone.
-- **Evidence:** To be decided.
+- **Last exercise date:** 2026-08-09 local configuration/rule validation; runtime outage exercise remains to be recorded before release.
+- **Evidence:** `pnpm telemetry:check`; focused Infrastructure/worker tests; Prometheus synthetic rule series.
 - **Review cadence:** with each telemetry dependency, schema, listener, redaction, or deployment-network change.
 
 See [observability guidance](../operations/observability.md), [the operational-readiness plan](../plans/2026-08-03-operational-readiness-and-v1-release.md), and the [runbook index](README.md).

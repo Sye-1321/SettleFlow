@@ -5,6 +5,7 @@ const ID_LABEL =
 
 const LABEL_VALUES = {
   business_type: new Set(['capture', 'refund', 'reversal', 'settlement']),
+  collector: new Set(['outbox', 'reconciliation', 'settlements', 'webhooks']),
   command: new Set(['capture', 'create', 'refund']),
   consumer: new Set(['settlement.lifecycle', 'webhook-projection.payment-created.v1']),
   currency: new Set(['ETB', 'USD']),
@@ -70,6 +71,23 @@ const LABEL_VALUES = {
 type ProtectedLabelName = keyof typeof LABEL_VALUES;
 type ProtectedLabels = Partial<Record<ProtectedLabelName, string>>;
 
+export interface OutboxBacklogMetric {
+  readonly eventType: string;
+  readonly oldestAgeSeconds: number;
+  readonly pending: number;
+}
+
+export interface WebhookBacklogMetric {
+  readonly deadLettered: number;
+  readonly due: number;
+  readonly oldestDueAgeSeconds: number;
+}
+
+export interface CurrencyBacklogMetric {
+  readonly currency: 'ETB' | 'USD';
+  readonly value: number;
+}
+
 export interface MetricsRegistryOptions {
   readonly releaseCommit: string;
   readonly releaseVersion: string;
@@ -83,6 +101,7 @@ export class MetricsRegistry {
   private readonly httpRequests: Counter<'method' | 'route' | 'status_class'>;
   private readonly processReady: Gauge<'service'>;
   private readonly telemetryDropped: Counter<'service'>;
+  private readonly operationalGauges = new Map<string, Gauge<string>>();
   private readonly registry = new Registry();
 
   public constructor(private readonly options: MetricsRegistryOptions) {
@@ -176,6 +195,55 @@ export class MetricsRegistry {
     });
   }
 
+  public setBacklogCollectorStatus(collector: string, success: boolean, now = new Date()): void {
+    this.nonInterfering(() => {
+      const labels = this.validateLabels({ collector });
+      this.gauge('settleflow_backlog_collector_success').set(labels, success ? 1 : 0);
+      if (success) {
+        this.gauge('settleflow_backlog_collector_last_success_timestamp_seconds').set(
+          labels,
+          safeGaugeValue(Math.floor(now.getTime() / 1_000)),
+        );
+      }
+    });
+  }
+
+  public setOutboxBacklog(values: readonly OutboxBacklogMetric[]): void {
+    this.nonInterfering(() => {
+      const prepared = values.map((value) => ({
+        labels: this.validateLabels({ event_type: value.eventType }),
+        oldestAgeSeconds: safeGaugeValue(value.oldestAgeSeconds),
+        pending: safeGaugeValue(value.pending),
+      }));
+      for (const value of prepared) {
+        this.gauge('settleflow_outbox_pending').set(value.labels, value.pending);
+        this.gauge('settleflow_outbox_oldest_age_seconds').set(
+          value.labels,
+          value.oldestAgeSeconds,
+        );
+      }
+    });
+  }
+
+  public setReconciliationBacklog(values: readonly CurrencyBacklogMetric[]): void {
+    this.setCurrencyGauge('settleflow_reconciliation_reports_with_difference', values);
+  }
+
+  public setSettlementBacklog(values: readonly CurrencyBacklogMetric[]): void {
+    this.setCurrencyGauge('settleflow_settlement_pending_adjustments', values);
+  }
+
+  public setWebhookBacklog(value: WebhookBacklogMetric): void {
+    this.nonInterfering(() => {
+      const deadLettered = safeGaugeValue(value.deadLettered);
+      const due = safeGaugeValue(value.due);
+      const oldestDueAgeSeconds = safeGaugeValue(value.oldestDueAgeSeconds);
+      this.gauge('settleflow_webhook_due').set(due);
+      this.gauge('settleflow_webhook_due_oldest_age_seconds').set(oldestDueAgeSeconds);
+      this.gauge('settleflow_webhook_dead_lettered').set(deadLettered);
+    });
+  }
+
   public validateLabels(labels: ProtectedLabels): Record<string, string> {
     const validated: Record<string, string> = {};
     for (const [name, value] of Object.entries(labels)) {
@@ -205,6 +273,8 @@ export class MetricsRegistry {
       ['settleflow_transaction_retries_total', ['module', 'error_class']],
     ];
     const gauges: readonly [string, readonly string[]][] = [
+      ['settleflow_backlog_collector_success', ['collector']],
+      ['settleflow_backlog_collector_last_success_timestamp_seconds', ['collector']],
       ['settleflow_outbox_pending', ['event_type']],
       ['settleflow_outbox_oldest_age_seconds', ['event_type']],
       ['settleflow_webhook_due', []],
@@ -229,12 +299,13 @@ export class MetricsRegistry {
       });
     }
     for (const [name, labelNames] of gauges) {
-      new Gauge({
+      const gauge = new Gauge<string>({
         help: `${name} bounded operational gauge.`,
         labelNames,
         name,
         registers: [this.registry],
       });
+      this.operationalGauges.set(name, gauge);
     }
     for (const [name, labelNames] of histograms) {
       new Histogram({
@@ -245,6 +316,24 @@ export class MetricsRegistry {
         registers: [this.registry],
       });
     }
+  }
+
+  private gauge(name: string): Gauge<string> {
+    const gauge = this.operationalGauges.get(name);
+    if (gauge === undefined) throw new Error(`Unknown operational gauge: ${name}`);
+    return gauge;
+  }
+
+  private setCurrencyGauge(name: string, values: readonly CurrencyBacklogMetric[]): void {
+    this.nonInterfering(() => {
+      const prepared = values.map((value) => ({
+        labels: this.validateLabels({ currency: value.currency }),
+        value: safeGaugeValue(value.value),
+      }));
+      for (const value of prepared) {
+        this.gauge(name).set(value.labels, value.value);
+      }
+    });
   }
 
   private nonInterfering(operation: () => void): void {
@@ -258,6 +347,11 @@ export class MetricsRegistry {
       }
     }
   }
+}
+
+function safeGaugeValue(value: number): number {
+  if (!Number.isFinite(value) || value < 0) throw new Error('Invalid operational gauge value');
+  return value;
 }
 
 function normalizeRoute(route: string): string {

@@ -246,6 +246,19 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     return eventIds;
   }
 
+  it('reads bounded available outbox backlog by approved event type', async () => {
+    await createPendingEvents(2);
+
+    await expect(createRepository().readBacklogMetrics()).resolves.toEqual([
+      expect.objectContaining({
+        eventType: 'payment.created.v1',
+        pending: 2,
+      }),
+    ]);
+    const [metric] = await createRepository().readBacklogMetrics();
+    expect(metric?.oldestAgeSeconds).toBeGreaterThanOrEqual(0);
+  });
+
   async function managementRequest(path: string, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
     headers.set(

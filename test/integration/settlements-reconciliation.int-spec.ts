@@ -300,6 +300,7 @@ describe('settlement financial transaction with real PostgreSQL', () => {
         }),
       ]),
     );
+    await expect(reconciliationRepository.readBacklogMetrics(5_000)).resolves.toEqual([]);
     expect(
       await owner.getClient().outboxEvent.count({
         where: { aggregateId: staged.id, eventType: 'reconciliation.completed.v1' },
@@ -415,6 +416,9 @@ describe('settlement financial transaction with real PostgreSQL', () => {
     expect(await service.getPaymentStatus(merchantId, 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe(
       'ADJUSTMENT_PENDING',
     );
+    await expect(
+      new PrismaSettlementRepository(runtime).readBacklogMetrics(5_000),
+    ).resolves.toEqual([{ currency: 'ETB', pending: 1 }]);
 
     const secondPaymentId = '00000000-0000-4000-8000-000000000204';
     await owner.getClient().paymentIntent.create({
@@ -471,6 +475,9 @@ describe('settlement financial transaction with real PostgreSQL', () => {
     expect(await service.getPaymentStatus(merchantId, 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe(
       'SETTLED',
     );
+    await expect(
+      new PrismaSettlementRepository(runtime).readBacklogMetrics(5_000),
+    ).resolves.toEqual([]);
 
     const racingPayments = [
       {

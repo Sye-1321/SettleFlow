@@ -166,6 +166,20 @@ describe('signed HTTP webhook delivery with real PostgreSQL', () => {
     );
   }
 
+  it('reads due and dead-lettered delivery backlog without endpoint labels', async () => {
+    await createFixture();
+    await expect(repository().readBacklogMetrics()).resolves.toMatchObject({
+      deadLettered: 0,
+      due: 1,
+    });
+    const backlog = await repository().readBacklogMetrics();
+    expect(backlog.oldestDueAgeSeconds).toBeGreaterThanOrEqual(0);
+    await expect(service().runOnce('webhook_metrics_cleanup', 1)).resolves.toMatchObject({
+      claimed: 1,
+      delivered: 1,
+    });
+  });
+
   async function createFixture(
     options: {
       readonly attemptCount?: number;
@@ -407,6 +421,10 @@ describe('signed HTTP webhook delivery with real PostgreSQL', () => {
     expect(persisted.attempts.every((attempt) => attempt.outcome === 'RETRYABLE_FAILURE')).toBe(
       true,
     );
+    await expect(repository().readBacklogMetrics()).resolves.toMatchObject({
+      deadLettered: 1,
+      due: 0,
+    });
 
     await expect(
       runtime().getClient()

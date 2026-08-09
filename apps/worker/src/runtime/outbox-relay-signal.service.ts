@@ -1,11 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { OutboxRelaySignal } from '@settleflow/eventing';
+import { TelemetryRuntime } from '@settleflow/infrastructure';
 
 @Injectable()
 export class OutboxRelaySignalService {
-  private readonly logger = new Logger(OutboxRelaySignalService.name);
+  public constructor(private readonly telemetry: TelemetryRuntime) {}
 
   public record(signal: OutboxRelaySignal): void {
-    this.logger.log(JSON.stringify(signal));
+    this.telemetry.logger.record('info', signal);
   }
 }

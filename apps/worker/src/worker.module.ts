@@ -12,7 +12,11 @@ import {
   RabbitMqPaymentCreatedConsumer,
   RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
-import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
+import {
+  MonotonicUlidGenerator,
+  PrismaDatabase,
+  TelemetryRuntime,
+} from '@settleflow/infrastructure';
 import { PrismaLedgerReconciliationReader } from '@settleflow/ledger';
 import {
   PrismaPaymentReconciliationReader,
@@ -64,6 +68,29 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
     WebhookDeliverySignalService,
     WorkerRuntimeService,
     MonotonicUlidGenerator,
+    {
+      provide: TelemetryRuntime,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<WorkerEnvironment, true>): TelemetryRuntime =>
+        new TelemetryRuntime({
+          environment: config.get('NODE_ENV', { infer: true }),
+          internalListener: {
+            enabled: config.get('INTERNAL_TELEMETRY_ENABLED', { infer: true }),
+            host: config.get('INTERNAL_TELEMETRY_HOST', { infer: true }),
+            port: config.get('INTERNAL_TELEMETRY_PORT', { infer: true }),
+          },
+          releaseCommit: config.get('RELEASE_COMMIT', { infer: true }),
+          releaseVersion: config.get('RELEASE_VERSION', { infer: true }),
+          service: 'worker',
+          tracing: {
+            demo: config.get('OTEL_DEMO_TRACE_MODE', { infer: true }),
+            enabled: config.get('OTEL_TRACING_ENABLED', { infer: true }),
+            endpoint: config.get('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', { infer: true }),
+            exportTimeoutMs: config.get('OTEL_TRACE_EXPORT_TIMEOUT_MS', { infer: true }),
+            sampleRatio: config.get('OTEL_TRACE_SAMPLE_RATIO', { infer: true }),
+          },
+        }),
+    },
     PrismaLedgerReconciliationReader,
     PrismaPaymentReconciliationReader,
     PrismaPaymentSettlementReader,

@@ -59,6 +59,13 @@ function deploy(databaseUrl: string): Promise<void> {
   });
 }
 
+function utcDayInterval(instant: Date): { readonly end: Date; readonly start: Date } {
+  const start = new Date(
+    Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate()),
+  );
+  return { end: new Date(start.getTime() + 86_400_000), start };
+}
+
 describe('settlement financial transaction with real PostgreSQL', () => {
   let postgres: StartedPostgreSqlContainer;
   let owner: PrismaDatabase;
@@ -249,6 +256,7 @@ describe('settlement financial transaction with real PostgreSQL', () => {
       new AuditService(new PrismaAuditRepository()),
       new MonotonicUlidGenerator(),
     );
+    const reconciliationPeriod = utcDayInterval(batch.settledAt!);
     const csv = Buffer.from(
       [
         'provider_txn_id,merchant_code,provider_ref,external_ref,event_type,currency,gross_minor,fee_minor,net_minor,status,occurred_at',
@@ -261,8 +269,8 @@ describe('settlement financial transaction with real PostgreSQL', () => {
       bytes: csv,
       idempotencyKey: 'reconciliation-key-1',
       merchantId,
-      periodEnd: new Date('2026-08-04T00:00:00.000Z'),
-      periodStart: new Date('2026-08-02T00:00:00.000Z'),
+      periodEnd: reconciliationPeriod.end,
+      periodStart: reconciliationPeriod.start,
       requestId: 'req_reconciliation_integration',
     });
     expect(staged.status).toBe('STAGED');
@@ -303,8 +311,8 @@ describe('settlement financial transaction with real PostgreSQL', () => {
       bytes: Buffer.from('wrong_header\nwrong_value\n'),
       idempotencyKey: 'reconciliation-key-invalid',
       merchantId,
-      periodEnd: new Date('2026-08-04T00:00:00.000Z'),
-      periodStart: new Date('2026-08-01T00:00:00.000Z'),
+      periodEnd: reconciliationPeriod.end,
+      periodStart: reconciliationPeriod.start,
       requestId: 'req_reconciliation_invalid',
     });
     expect(failed.status).toBe('FAILED');
@@ -313,6 +321,56 @@ describe('settlement financial transaction with real PostgreSQL', () => {
         where: { reconciliationImport: { publicId: failed.id } },
       }),
     ).toBe(0);
+
+    const invalidParsedRows = [
+      {
+        idempotencyKey: 'reconciliation-key-out-of-window',
+        merchantCode: 'settlement_test',
+        occurredAt: reconciliationPeriod.end,
+        providerTransactionId: 'mock_settlement_out_of_window',
+        requestId: 'req_reconciliation_out_of_window',
+      },
+      {
+        idempotencyKey: 'reconciliation-key-wrong-merchant',
+        merchantCode: 'another_merchant',
+        occurredAt: batch.settledAt!,
+        providerTransactionId: 'mock_settlement_wrong_merchant',
+        requestId: 'req_reconciliation_wrong_merchant',
+      },
+    ] as const;
+    for (const invalidRow of invalidParsedRows) {
+      const invalidCsv = Buffer.from(
+        [
+          'provider_txn_id,merchant_code,provider_ref,external_ref,event_type,currency,gross_minor,fee_minor,net_minor,status,occurred_at',
+          `${invalidRow.providerTransactionId},${invalidRow.merchantCode},${batch.ledgerTransaction.publicId},${batch.publicId},settlement,ETB,120000,3000,117000,succeeded,${invalidRow.occurredAt.toISOString()}`,
+          '',
+        ].join('\n'),
+      );
+      const rejected = await reconciliation.stage({
+        actorApiKeyId: apiKeyId,
+        bytes: invalidCsv,
+        idempotencyKey: invalidRow.idempotencyKey,
+        merchantId,
+        periodEnd: reconciliationPeriod.end,
+        periodStart: reconciliationPeriod.start,
+        requestId: invalidRow.requestId,
+      });
+      expect(rejected.status).toBe('FAILED');
+      expect(
+        await owner.getClient().reconciliationProviderRow.count({
+          where: { reconciliationImport: { publicId: rejected.id } },
+        }),
+      ).toBe(0);
+      expect(await reconciliationProcessor.processNext('reconciliation_test_worker')).toBe(false);
+      expect(
+        await owner.getClient().outboxEvent.count({
+          where: {
+            aggregateId: rejected.id,
+            eventType: 'reconciliation.completed.v1',
+          },
+        }),
+      ).toBe(0);
+    }
 
     const projectionRepository = new PrismaSettlementRepository(runtime);
     const projection = new SettlementProjectionService(

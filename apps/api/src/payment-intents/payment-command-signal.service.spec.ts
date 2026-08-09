@@ -1,10 +1,10 @@
-import { Logger } from '@nestjs/common';
+import type { TelemetryRuntime } from '@settleflow/infrastructure';
 
 import { PaymentCommandSignalService } from './payment-command-signal.service';
 
 describe('PaymentCommandSignalService', () => {
   it('logs only the bounded observation supplied by Payments', () => {
-    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const record = jest.fn();
     const observation = {
       ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
       merchantId: '11111111-1111-4111-8111-111111111111',
@@ -14,8 +14,9 @@ describe('PaymentCommandSignalService', () => {
       requestId: 'req_observation',
     };
 
-    new PaymentCommandSignalService().record(observation);
+    const telemetry = { logger: { record } } as unknown as TelemetryRuntime;
+    new PaymentCommandSignalService(telemetry).record(observation);
 
-    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: 'payment.command', ...observation }));
+    expect(record).toHaveBeenCalledWith('info', { event: 'payment.command', ...observation });
   });
 });

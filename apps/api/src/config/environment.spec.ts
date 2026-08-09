@@ -29,7 +29,23 @@ describe('API environment', () => {
       IDEMPOTENCY_LOCK_TIMEOUT_MS: 5_000,
       IDEMPOTENCY_REPLAY_TTL_HOURS: 168,
       IDEMPOTENCY_STATEMENT_TIMEOUT_MS: 10_000,
+      INTERNAL_TELEMETRY_ENABLED: false,
+      OTEL_TRACE_SAMPLE_RATIO: 0.1,
+      OTEL_TRACING_ENABLED: false,
     });
+  });
+
+  it('requires an HTTP OTLP endpoint only when tracing is enabled', () => {
+    expect(() =>
+      validateApiEnvironment({ ...baseEnvironment, OTEL_TRACING_ENABLED: 'true' }),
+    ).toThrow('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT');
+    expect(
+      validateApiEnvironment({
+        ...baseEnvironment,
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://127.0.0.1:4318/v1/traces',
+        OTEL_TRACING_ENABLED: 'true',
+      }).OTEL_TRACING_ENABLED,
+    ).toBe(true);
   });
 
   it('requires lock and statement work to fit inside the owner lease', () => {

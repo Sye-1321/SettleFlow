@@ -24,22 +24,24 @@ The implemented domain surface is Merchant Access; simulated Payment Intent crea
 
 ### Pinned toolchain
 
-| Tool           | Exact version | Selection note                                                     |
-| -------------- | ------------- | ------------------------------------------------------------------ |
-| Node.js        | 24.18.0       | Current official LTS patch when this scaffold was created          |
-| pnpm           | 11.18.0       | Current stable pnpm 11; pnpm 12 is still beta                      |
-| NestJS         | 11.1.28       | Current stable NestJS 11 framework line                            |
-| TypeScript     | 6.0.3         | Newest stable compiler supported by the pinned lint/test toolchain |
-| PostgreSQL     | 18.4          | Current supported PostgreSQL minor, pinned as a Compose image      |
-| RabbitMQ       | 4.3.4         | Current fully supported RabbitMQ patch, with management UI         |
-| pg             | 8.22.0        | Health-only PostgreSQL client                                      |
-| amqplib        | 2.0.1         | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
-| Testcontainers | 12.0.4        | Disposable real PostgreSQL/RabbitMQ integration environment        |
-| Prisma         | 7.9.1         | Current ORM/CLI patch with the PostgreSQL driver adapter           |
-| NestJS Swagger | 11.4.6        | OpenAPI support compatible with the pinned NestJS 11 line          |
-| ulid           | 3.0.2         | Approved monotonic public payment/event identifier generator       |
-| lossless-json  | 4.3.0         | Approved raw JSON-number preservation for exact amount validation  |
-| csv-parse      | 7.0.1         | Streaming parser for bounded untrusted mock-provider CSV input     |
+| Tool           | Exact version  | Selection note                                                     |
+| -------------- | -------------- | ------------------------------------------------------------------ |
+| Node.js        | 24.18.0        | Current official LTS patch when this scaffold was created          |
+| pnpm           | 11.18.0        | Current stable pnpm 11; pnpm 12 is still beta                      |
+| NestJS         | 11.1.28        | Current stable NestJS 11 framework line                            |
+| TypeScript     | 6.0.3          | Newest stable compiler supported by the pinned lint/test toolchain |
+| PostgreSQL     | 18.4           | Current supported PostgreSQL minor, pinned as a Compose image      |
+| RabbitMQ       | 4.3.4          | Current fully supported RabbitMQ patch, with management UI         |
+| pg             | 8.22.0         | Health-only PostgreSQL client                                      |
+| amqplib        | 2.0.1          | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
+| Testcontainers | 12.0.4         | Disposable real PostgreSQL/RabbitMQ integration environment        |
+| Prisma         | 7.9.1          | Current ORM/CLI patch with the PostgreSQL driver adapter           |
+| NestJS Swagger | 11.4.6         | OpenAPI support compatible with the pinned NestJS 11 line          |
+| ulid           | 3.0.2          | Approved monotonic public payment/event identifier generator       |
+| lossless-json  | 4.3.0          | Approved raw JSON-number preservation for exact amount validation  |
+| csv-parse      | 7.0.1          | Streaming parser for bounded untrusted mock-provider CSV input     |
+| OpenTelemetry  | 0.221.0/2.10.0 | Approved Node SDK/exporter and tracing SDK adapter versions        |
+| prom-client    | 15.1.3         | Process-local Prometheus-compatible metric registry                |
 
 The repository pins Node in `.node-version` and `package.json` engine metadata. It pins pnpm in `package.json` package-manager and engine metadata. Direct dependencies use exact versions and one root `pnpm-lock.yaml`.
 
@@ -208,6 +210,8 @@ The default listener is `http://127.0.0.1:3000` and exposes:
 
 Liveness never performs a dependency check. Successful readiness returns stable `up` states; an unavailable required dependency returns a generic RFC 9457 `503 service_unavailable` problem without connection URLs, credentials, or raw errors.
 
+The API also owns an internal loopback-only diagnostic listener at `http://127.0.0.1:9464` with `/health/live`, `/health/ready`, and `/metrics`. It is not part of merchant ingress or OpenAPI, and it does not change the public health contracts above.
+
 Merchant credentials use `Authorization: Bearer <merchant_api_key>`. The plaintext is returned once by the internal issue or rotation application-service call, while PostgreSQL stores only its safe `sf_test_...` prefix and a salted scrypt hash. Never put a usable key in a shell history, source file, log, screenshot, or documentation. For example, with a disposable locally issued key held only in a process variable:
 
 ```powershell
@@ -285,7 +289,7 @@ pnpm openapi:check
 pnpm dev:worker
 ```
 
-The worker is a standalone Nest application context, not an HTTP server. It relays the five approved domain events with at-least-once delivery, consumes Payment lifecycle events for Settlement projections, consumes all five Webhook projection queues, processes staged reconciliation imports, and dispatches due Webhook deliveries. Readiness requires PostgreSQL, a healthy publisher-confirm channel, complete topology, active Webhook and Settlement consumer registrations, an active Reconciliation processor, and a ready Webhook dispatcher/keyring. It remains running but not ready during a dependency outage. Shutdown stops new relay/delivery/reconciliation claims, cancels consumers, drains active work for at most 10 seconds, aborts Webhook sockets that exceed the drain, then closes consumer, publisher, and Prisma resources.
+The worker is a standalone Nest application context with no public/business HTTP server. It relays the five approved domain events with at-least-once delivery, consumes Payment lifecycle events for Settlement projections, consumes all five Webhook projection queues, processes staged reconciliation imports, and dispatches due Webhook deliveries. Its dedicated loopback-only diagnostic listener defaults to `http://127.0.0.1:9465` and exposes `/health/live`, `/health/ready`, and `/metrics`. Readiness requires PostgreSQL, a healthy publisher-confirm channel, complete topology, active Webhook and Settlement consumer registrations, an active Reconciliation processor, and a ready Webhook dispatcher/keyring. It remains running but not ready during a dependency outage. Shutdown makes internal readiness false before it stops new relay/delivery/reconciliation claims, cancels consumers, drains active work for at most 10 seconds, aborts Webhook sockets that exceed the drain, then closes consumer, publisher, Prisma, probes, and trace export resources.
 
 The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID. The projection consumer deduplicates under event-specific names such as `webhook-projection.payment-captured.v1`, using one serializable transaction for inbox completion, retained event evidence, event-specific endpoint eligibility, and pending deliveries. It acknowledges only after commit; invalid/unsupported messages go to the matching DLQ, while transient dependency failures remain unacknowledged for reconnect/redelivery.
 
@@ -335,7 +339,14 @@ For local delivery, load the same ignored local keyring values used by the API, 
 pnpm lint
 pnpm format:check
 pnpm typecheck
+pnpm boundaries:check
+pnpm docs:check
+pnpm contracts:check
+pnpm config:check
 pnpm test
+pnpm test:infrastructure
+pnpm test:quality
+pnpm test:coverage
 pnpm test:merchant-access
 pnpm test:payments
 pnpm test:ledger
@@ -345,12 +356,17 @@ pnpm test:webhooks
 pnpm test:settlements
 pnpm test:reconciliation
 pnpm test:integration
+pnpm db:migrate:verify
+pnpm db:permissions:check
+pnpm db:invariants:check
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
-`pnpm test` runs all Docker-independent API, worker, and bounded-module unit suites. The focused Settlement and Reconciliation commands exercise cutoff/fee/arithmetic and CSV/classification contracts. `pnpm test:event-contract` checks all five exact producer/consumer event contracts. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires Docker. It covers migrations/permissions/invariants, atomic Payment and Settlement evidence, reconciliation reports/events, races, relay/projection, signing/retries, and immutable Webhook evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`.
+`pnpm test` runs all Docker-independent API, worker, Infrastructure, and bounded-module unit suites. The quality commands validate declared module edges, local Markdown paths/anchors, strict OpenAPI/event conventions, compiled environment examples, and database verifier safety. `test:coverage` enforces the approved overall 85% statements/lines and 80% branches/functions, plus 90% statements/lines and 85% branches for critical financial/asynchronous modules. Database verification commands are read-only and require the checked local Compose database to be running with the exact `settleflow`/`settleflow_app` target. The focused Settlement and Reconciliation commands exercise cutoff/fee/arithmetic and CSV/classification contracts. `pnpm test:event-contract` checks all five exact producer/consumer event contracts. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires Docker. It covers migrations/permissions/invariants, atomic Payment and Settlement evidence, reconciliation reports/events, races, relay/projection, signing/retries, and immutable Webhook evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`.
+
+Structured JSON logging, AsyncLocalStorage request correlation, protected process-local metrics, optional OpenTelemetry export, redaction, and internal-probe configuration are documented in [Observability and Internal Probes](docs/operations/observability.md). Collector/Prometheus configuration and executable alert rules remain deferred to the next approved implementation-order step; there is no public metrics endpoint or dashboard.
 
 API readiness remains PostgreSQL/RabbitMQ dependency-aware; the pure local provider adds no readiness dependency. Worker readiness independently reports publisher, Webhook projection, Settlement projection, Reconciliation processor, and Webhook dispatcher paths. The worker writes only projections/reconciliation reports and performs no provider contact, Ledger posting, payout, or real-funds operation.
 

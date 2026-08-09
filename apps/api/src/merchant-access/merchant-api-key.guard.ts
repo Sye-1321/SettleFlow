@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { MerchantAccessService, type MerchantApiKeyScope } from '@settleflow/merchant-access';
+import { TelemetryRuntime } from '@settleflow/infrastructure';
 
 import {
   PUBLIC_ROUTE_METADATA,
@@ -34,6 +35,7 @@ export class MerchantApiKeyGuard implements CanActivate {
   public constructor(
     private readonly merchantAccess: MerchantAccessService,
     private readonly reflector: Reflector,
+    private readonly telemetry: TelemetryRuntime,
   ) {}
 
   public async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -52,7 +54,11 @@ export class MerchantApiKeyGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    const identity = await this.merchantAccess.authenticate(credential);
+    const identity = await this.telemetry.span(
+      'merchant.authenticate',
+      { operation: 'merchant.authenticate' },
+      () => this.merchantAccess.authenticate(credential),
+    );
     if (identity === undefined) {
       throw new UnauthorizedException();
     }
@@ -72,6 +78,7 @@ export class MerchantApiKeyGuard implements CanActivate {
       value: identity,
       writable: false,
     });
+    this.telemetry.context.enrich({ merchantId: identity.merchantId });
     return true;
   }
 }

@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { MerchantAccessService, MerchantRequestIdentity } from '@settleflow/merchant-access';
+import type { TelemetryRuntime } from '@settleflow/infrastructure';
 
 import { MerchantApiKeyGuard, merchantApiKeyGuardInternals } from './merchant-api-key.guard';
 import { MERCHANT_REQUEST_IDENTITY, MerchantAuthenticatedRequest } from './merchant-request';
@@ -50,10 +51,20 @@ describe('MerchantApiKeyGuard', () => {
           ),
         ),
     } as unknown as jest.Mocked<MerchantAccessService>;
+    const telemetry = {
+      context: { enrich: jest.fn() },
+      span: jest.fn(
+        async (
+          _name: string,
+          _attributes: object,
+          operation: () => Promise<unknown>,
+        ): Promise<unknown> => operation(),
+      ),
+    } as unknown as TelemetryRuntime;
 
     return {
       context,
-      guard: new MerchantApiKeyGuard(merchantAccess, reflector),
+      guard: new MerchantApiKeyGuard(merchantAccess, reflector, telemetry),
       merchantAccess,
       request,
     };

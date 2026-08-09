@@ -16,6 +16,7 @@ import { provisionTestRuntimeRole, testRuntimeDatabaseUrl } from './support/post
 
 const POSTGRES_IMAGE =
   'postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296';
+jest.setTimeout(120_000);
 
 function deployMigrations(databaseUrl: string): Promise<void> {
   const prismaCli = resolve(process.cwd(), 'node_modules/prisma/build/index.js');

@@ -1,6 +1,7 @@
 const common = {
   clearMocks: true,
   collectCoverageFrom: ['<rootDir>/apps/**/*.ts', '!<rootDir>/apps/**/main.ts'],
+  coveragePathIgnorePatterns: ['/dist/', '/generated/'],
   moduleFileExtensions: ['js', 'json', 'ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
@@ -37,6 +38,15 @@ module.exports = {
       ...common,
       displayName: 'worker',
       testMatch: ['<rootDir>/apps/worker/src/**/*.spec.ts'],
+    },
+    {
+      ...common,
+      collectCoverageFrom: [
+        '<rootDir>/packages/infrastructure/src/**/*.ts',
+        '!<rootDir>/packages/infrastructure/src/generated/**',
+      ],
+      displayName: 'infrastructure',
+      testMatch: ['<rootDir>/packages/infrastructure/src/**/*.spec.ts'],
     },
     {
       ...common,

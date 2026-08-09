@@ -1,7 +1,6 @@
 import {
   BeforeApplicationShutdown,
   Injectable,
-  Logger,
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
@@ -13,7 +12,7 @@ import {
   RabbitMqPaymentCreatedConsumer,
   RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
-import { PrismaDatabase } from '@settleflow/infrastructure';
+import { PrismaDatabase, TelemetryRuntime } from '@settleflow/infrastructure';
 import { ReconciliationProcessor } from '@settleflow/reconciliation';
 import { WebhookDeliveryService } from '@settleflow/webhooks';
 
@@ -26,7 +25,6 @@ import { WebhookDeliverySignalService } from './webhook-delivery-signal.service'
 export class WorkerRuntimeService
   implements OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown
 {
-  private readonly logger = new Logger(WorkerRuntimeService.name);
   private readonly deliveryWorkerId = `webhook_${randomUUID()}`;
   private readonly outboxWorkerId = `outbox_${randomUUID()}`;
   private deliveryInFlight: Promise<number> | undefined;
@@ -55,9 +53,14 @@ export class WorkerRuntimeService
     private readonly health: WorkerHealthService,
     private readonly signals: OutboxRelaySignalService,
     private readonly deliverySignals: WebhookDeliverySignalService,
+    private readonly telemetry: TelemetryRuntime,
   ) {}
 
   public async onApplicationBootstrap(): Promise<void> {
+    await this.telemetry.start({
+      liveness: () => this.health.getLiveness(),
+      readiness: () => this.internalReadiness(),
+    });
     const heartbeatIntervalMs = this.config.get('WORKER_HEARTBEAT_INTERVAL_MS', {
       infer: true,
     });
@@ -68,6 +71,7 @@ export class WorkerRuntimeService
 
     await this.refreshReadiness();
     this.health.markRunning();
+    this.refreshTelemetryReadiness();
     this.signals.record({ event: 'outbox.relay.started' });
     this.deliverySignals.record({ event: 'webhook.delivery.dispatcher_started' });
     this.scheduleRelay(0);
@@ -76,6 +80,7 @@ export class WorkerRuntimeService
   }
 
   public beforeApplicationShutdown(signal?: string): void {
+    this.telemetry.beginShutdown();
     this.stopping = true;
     this.consumer.beginShutdown();
     this.settlementConsumer.beginShutdown();
@@ -149,29 +154,29 @@ export class WorkerRuntimeService
       event: 'outbox.relay.stopped',
     });
     if (!consumerDrained) {
-      this.logger.warn(JSON.stringify({ event: 'webhook.projection.consumer.drain_timeout' }));
+      this.telemetry.logger.record('warn', {
+        event: 'webhook.projection.consumer.drain_timeout',
+      });
     }
     if (!settlementConsumerDrained) {
-      this.logger.warn(JSON.stringify({ event: 'settlement.consumer.drain_timeout' }));
+      this.telemetry.logger.record('warn', { event: 'settlement.consumer.drain_timeout' });
     }
     if (!reconciliationDrained) {
-      this.logger.warn(JSON.stringify({ event: 'reconciliation.processor.drain_timeout' }));
+      this.telemetry.logger.record('warn', {
+        event: 'reconciliation.processor.drain_timeout',
+      });
     }
     this.deliverySignals.record({
       code: deliveryDrained ? 'drained' : 'drain_timeout',
       event: 'webhook.delivery.dispatcher_stopped',
     });
+    await this.telemetry.shutdown();
   }
 
   private async recordHeartbeat(): Promise<void> {
     await this.refreshReadiness();
-    this.logger.debug(
-      JSON.stringify({
-        event: 'worker.heartbeat',
-        liveness: this.health.getLiveness(),
-        readiness: this.health.getReadiness(),
-      }),
-    );
+    this.refreshTelemetryReadiness();
+    this.telemetry.logger.record('debug', { event: 'worker.heartbeat' });
   }
 
   private async refreshReadiness(): Promise<void> {
@@ -237,15 +242,20 @@ export class WorkerRuntimeService
 
   private async runReconciliationCycle(): Promise<void> {
     if (this.stopping || this.reconciliationInFlight !== undefined) return;
-    const operation = this.reconciliation.processNext(this.reconciliationWorkerId);
+    const operation = this.telemetry.withContext({}, () =>
+      this.telemetry.span('reconciliation.classify', { operation: 'reconciliation.classify' }, () =>
+        this.reconciliation.processNext(this.reconciliationWorkerId),
+      ),
+    );
     this.reconciliationInFlight = operation;
     let processed = false;
     try {
       processed = await operation;
-      if (processed) this.logger.log(JSON.stringify({ event: 'reconciliation.import.completed' }));
+      if (processed)
+        this.telemetry.logger.record('info', { event: 'reconciliation.import.completed' });
     } catch {
       await this.refreshReadiness();
-      this.logger.warn(JSON.stringify({ event: 'reconciliation.processor.cycle_failed' }));
+      this.telemetry.logger.record('warn', { event: 'reconciliation.processor.cycle_failed' });
     }
     if (this.reconciliationInFlight === operation) this.reconciliationInFlight = undefined;
     this.scheduleReconciliation(
@@ -269,7 +279,11 @@ export class WorkerRuntimeService
         this.config.get('WEBHOOK_DELIVERY_BATCH_SIZE', { infer: true }),
         this.config.get('WEBHOOK_DELIVERY_CONCURRENCY', { infer: true }),
       );
-      const result = await this.delivery.runOnce(this.deliveryWorkerId, batchSize);
+      const result = await this.telemetry.withContext({}, () =>
+        this.telemetry.span('webhook.deliver', { operation: 'webhook.deliver' }, () =>
+          this.delivery.runOnce(this.deliveryWorkerId, batchSize),
+        ),
+      );
       this.updateDependencyReadiness(
         true,
         this.publisher.isReady(),
@@ -316,7 +330,11 @@ export class WorkerRuntimeService
   private async executeRelayCycle(): Promise<number> {
     let nextDelayMs = this.config.get('OUTBOX_RELAY_POLL_INTERVAL_MS', { infer: true });
     try {
-      const result = await this.relay.runOnce(this.outboxWorkerId);
+      const result = await this.telemetry.withContext({}, () =>
+        this.telemetry.span('outbox.publish', { operation: 'outbox.publish' }, () =>
+          this.relay.runOnce(this.outboxWorkerId),
+        ),
+      );
       if (result.publisherReady) {
         this.updateDependencyReadiness(
           true,
@@ -329,24 +347,14 @@ export class WorkerRuntimeService
       }
 
       if (result.claimed > 0 || result.ownershipLost > 0) {
-        this.logger.log(
-          JSON.stringify({
-            ...result,
-            event: 'outbox.relay.batch',
-          }),
-        );
+        this.telemetry.logger.record('info', { ...result, event: 'outbox.relay.batch' });
       }
       if (result.claimed === this.config.get('OUTBOX_RELAY_BATCH_SIZE', { infer: true })) {
         nextDelayMs = 0;
       }
     } catch {
       await this.refreshReadiness();
-      this.logger.warn(
-        JSON.stringify({
-          event: 'outbox.relay.cycle_failed',
-          readiness: this.health.getReadiness(),
-        }),
-      );
+      this.telemetry.logger.record('warn', { event: 'outbox.relay.cycle_failed' });
     }
     return nextDelayMs;
   }
@@ -404,6 +412,29 @@ export class WorkerRuntimeService
       reconciliationProcessor: { status: postgresql && !this.stopping ? 'up' : 'down' },
       webhookDelivery: { status: webhookDelivery ? 'up' : 'down' },
     });
+    this.refreshTelemetryReadiness();
+  }
+
+  private internalReadiness(): {
+    readonly checks: Readonly<Record<string, boolean>>;
+    readonly ready: boolean;
+  } {
+    const readiness = this.health.getReadiness();
+    return {
+      checks: {
+        configuration: true,
+        postgresql: readiness.checks.postgresql === 'up',
+        rabbitmq_consumer: readiness.checks.rabbitmqConsumer === 'up',
+        rabbitmq_publisher: readiness.checks.rabbitmqPublisher === 'up',
+        reconciliation_processor: readiness.checks.reconciliationProcessor === 'up',
+        webhook_delivery: readiness.checks.webhookDelivery === 'up',
+      },
+      ready: readiness.status === 'ready',
+    };
+  }
+
+  private refreshTelemetryReadiness(): void {
+    this.telemetry.updateReadinessMetrics(this.internalReadiness());
   }
 
   private async waitForOperation(operation: Promise<unknown>, timeoutMs: number): Promise<boolean> {

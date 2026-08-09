@@ -1,19 +1,22 @@
-import { Logger } from '@nestjs/common';
+import type { TelemetryRuntime } from '@settleflow/infrastructure';
 
 import { OutboxRelaySignalService } from './outbox-relay-signal.service';
 
 describe('OutboxRelaySignalService', () => {
   it('emits only the bounded signal object supplied by Eventing', () => {
-    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    const service = new OutboxRelaySignalService();
+    const record = jest.fn();
+    const service = new OutboxRelaySignalService({
+      logger: { record },
+    } as unknown as TelemetryRuntime);
 
     service.record({
       code: 'rabbitmq_unavailable',
       event: 'outbox.relay.dependency_unavailable',
     });
 
-    expect(log).toHaveBeenCalledWith(
-      '{"code":"rabbitmq_unavailable","event":"outbox.relay.dependency_unavailable"}',
-    );
+    expect(record).toHaveBeenCalledWith('info', {
+      code: 'rabbitmq_unavailable',
+      event: 'outbox.relay.dependency_unavailable',
+    });
   });
 });

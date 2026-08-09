@@ -34,6 +34,15 @@ const developmentOriginsSchema = z
     return parsed as readonly string[];
   });
 
+const exactBooleanSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
+const telemetryEndpointSchema = z
+  .string()
+  .trim()
+  .url()
+  .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), {
+    message: 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT must use http:// or https://',
+  });
+
 const apiEnvironmentSchema = z
   .object({
     API_HOST: z.string().trim().min(1).default('127.0.0.1'),
@@ -49,8 +58,24 @@ const apiEnvironmentSchema = z
       .min(1_000)
       .max(120_000)
       .default(10_000),
+    INTERNAL_TELEMETRY_ENABLED: exactBooleanSchema.optional(),
+    INTERNAL_TELEMETRY_HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
+    INTERNAL_TELEMETRY_PORT: z.coerce.number().int().min(1).max(65_535).default(9_464),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    OTEL_DEMO_TRACE_MODE: exactBooleanSchema.default(false),
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: telemetryEndpointSchema.optional(),
+    OTEL_TRACE_EXPORT_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(5_000),
+    OTEL_TRACE_SAMPLE_RATIO: z.coerce.number().min(0.1).max(0.1).default(0.1),
+    OTEL_TRACING_ENABLED: exactBooleanSchema.default(false),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    RELEASE_COMMIT: z
+      .string()
+      .regex(/^(?:local|[a-f\d]{7,64})$/iu)
+      .default('local'),
+    RELEASE_VERSION: z
+      .string()
+      .regex(/^[a-z\d][a-z\d.+-]{0,63}$/iu)
+      .default('0.0.0-dev'),
     WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS: developmentOriginsSchema,
     WEBHOOK_ENDPOINT_LOCK_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
     WEBHOOK_ENDPOINT_STATEMENT_TIMEOUT_MS: z.coerce
@@ -107,7 +132,18 @@ const apiEnvironmentSchema = z
         path: ['WEBHOOK_KEYRING_PROVIDER'],
       });
     }
-  });
+    if (config.OTEL_TRACING_ENABLED && config.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Tracing requires OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+        path: ['OTEL_EXPORTER_OTLP_TRACES_ENDPOINT'],
+      });
+    }
+  })
+  .transform((config) => ({
+    ...config,
+    INTERNAL_TELEMETRY_ENABLED: config.INTERNAL_TELEMETRY_ENABLED ?? config.NODE_ENV !== 'test',
+  }));
 
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
 

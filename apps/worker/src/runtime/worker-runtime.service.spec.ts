@@ -5,7 +5,7 @@ import type {
   RabbitMqPaymentCreatedConsumer,
   RabbitMqSettlementLifecycleConsumer,
 } from '@settleflow/eventing';
-import type { PrismaDatabase } from '@settleflow/infrastructure';
+import type { PrismaDatabase, TelemetryRuntime } from '@settleflow/infrastructure';
 import type { ReconciliationProcessor } from '@settleflow/reconciliation';
 import type { WebhookDeliveryService } from '@settleflow/webhooks';
 
@@ -19,6 +19,9 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
   const values: WorkerEnvironment = {
     DATABASE_URL: 'postgresql://settleflow:local@127.0.0.1:5432/settleflow',
     DEPENDENCY_READINESS_TIMEOUT_MS: 2_000,
+    INTERNAL_TELEMETRY_ENABLED: false,
+    INTERNAL_TELEMETRY_HOST: '127.0.0.1',
+    INTERNAL_TELEMETRY_PORT: 9_465,
     NODE_ENV: 'test',
     OUTBOX_RELAY_BATCH_SIZE: 50,
     OUTBOX_RELAY_CONFIRM_TIMEOUT_MS: 5_000,
@@ -27,7 +30,13 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
     OUTBOX_RELAY_RETRY_BASE_MS: 1_000,
     OUTBOX_RELAY_RETRY_MAX_MS: 60_000,
     OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS: 10_000,
+    OTEL_DEMO_TRACE_MODE: false,
+    OTEL_TRACE_EXPORT_TIMEOUT_MS: 5_000,
+    OTEL_TRACE_SAMPLE_RATIO: 0.1,
+    OTEL_TRACING_ENABLED: false,
     RABBITMQ_URL: 'amqp://settleflow:local@127.0.0.1:5672/settleflow',
+    RELEASE_COMMIT: 'local',
+    RELEASE_VERSION: '0.0.0-test',
     RECONCILIATION_POLL_INTERVAL_MS: 500,
     SETTLEMENT_CONSUMER_BODY_LIMIT_BYTES: 16_384,
     SETTLEMENT_CONSUMER_PREFETCH: 2,
@@ -63,6 +72,23 @@ function createConfig(): ConfigService<WorkerEnvironment, true> {
 }
 
 describe('WorkerRuntimeService', () => {
+  function createTelemetry(): TelemetryRuntime {
+    return {
+      beginShutdown: jest.fn(),
+      logger: { record: jest.fn() },
+      shutdown: jest.fn().mockResolvedValue(undefined),
+      span: jest.fn(
+        async (
+          _name: string,
+          _attributes: object,
+          operation: () => Promise<unknown>,
+        ): Promise<unknown> => operation(),
+      ),
+      start: jest.fn().mockResolvedValue(undefined),
+      updateReadinessMetrics: jest.fn(),
+      withContext: jest.fn((_context: object, operation: () => unknown) => operation()),
+    } as unknown as TelemetryRuntime;
+  }
   function createSettlementConsumer(): RabbitMqSettlementLifecycleConsumer {
     return {
       beginShutdown: jest.fn(),
@@ -124,6 +150,23 @@ describe('WorkerRuntimeService', () => {
     const record = jest.fn();
     const signals = { record } as unknown as OutboxRelaySignalService;
     const delivery = createDelivery();
+    const telemetryStart = jest.fn().mockResolvedValue(undefined);
+    const telemetryBeginShutdown = jest.fn();
+    const telemetry = {
+      beginShutdown: telemetryBeginShutdown,
+      logger: { record: jest.fn() },
+      shutdown: jest.fn().mockResolvedValue(undefined),
+      span: jest.fn(
+        async (
+          _name: string,
+          _attributes: object,
+          operation: () => Promise<unknown>,
+        ): Promise<unknown> => operation(),
+      ),
+      start: telemetryStart,
+      updateReadinessMetrics: jest.fn(),
+      withContext: jest.fn((_context: object, operation: () => unknown) => operation()),
+    } as unknown as TelemetryRuntime;
     const runtime = new WorkerRuntimeService(
       createConfig(),
       prisma,
@@ -136,6 +179,7 @@ describe('WorkerRuntimeService', () => {
       health,
       signals,
       { record: jest.fn() } as unknown as WebhookDeliverySignalService,
+      telemetry,
     );
 
     await runtime.onApplicationBootstrap();
@@ -144,7 +188,9 @@ describe('WorkerRuntimeService', () => {
     expect(ensureReady).toHaveBeenCalledTimes(1);
     expect(ensureConsumerReady).toHaveBeenCalledTimes(1);
     expect(record).toHaveBeenCalledWith({ event: 'outbox.relay.started' });
+    expect(telemetryStart).toHaveBeenCalledTimes(1);
     runtime.beforeApplicationShutdown('SIGTERM');
+    expect(telemetryBeginShutdown).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });
 
@@ -196,6 +242,7 @@ describe('WorkerRuntimeService', () => {
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
       { record: jest.fn() } as unknown as WebhookDeliverySignalService,
+      createTelemetry(),
     );
 
     await runtime.onApplicationBootstrap();
@@ -283,6 +330,7 @@ describe('WorkerRuntimeService', () => {
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
       { record: jest.fn() } as unknown as WebhookDeliverySignalService,
+      createTelemetry(),
     );
 
     await runtime.onApplicationBootstrap();
@@ -344,6 +392,7 @@ describe('WorkerRuntimeService', () => {
       new WorkerHealthService(),
       { record: jest.fn() } as unknown as OutboxRelaySignalService,
       { record: jest.fn() } as unknown as WebhookDeliverySignalService,
+      createTelemetry(),
     );
 
     runtime.beforeApplicationShutdown('SIGTERM');

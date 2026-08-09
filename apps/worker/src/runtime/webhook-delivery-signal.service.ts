@@ -1,11 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { WebhookDeliverySignal } from '@settleflow/webhooks';
+import { TelemetryRuntime } from '@settleflow/infrastructure';
 
 @Injectable()
 export class WebhookDeliverySignalService {
-  private readonly logger = new Logger(WebhookDeliverySignalService.name);
+  public constructor(private readonly telemetry: TelemetryRuntime) {}
 
   public record(signal: WebhookDeliverySignal): void {
-    this.logger.log(JSON.stringify(signal));
+    this.telemetry.logger.record('info', signal);
   }
 }

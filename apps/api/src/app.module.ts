@@ -7,6 +7,7 @@ import {
   DependencyConnections,
   MonotonicUlidGenerator,
   PrismaDatabase,
+  TelemetryRuntime,
 } from '@settleflow/infrastructure';
 import {
   ApiKeyCredentialService,
@@ -42,6 +43,7 @@ import { PaymentIntentController } from './payment-intents/payment-intent.contro
 import { PaymentCommandSignalService } from './payment-intents/payment-command-signal.service';
 import { ReconciliationController } from './reconciliation/reconciliation.controller';
 import { SettlementController } from './settlements/settlement.controller';
+import { ApiTelemetryMiddleware } from './telemetry/api-telemetry.middleware';
 import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.controller';
 
 @Module({
@@ -63,8 +65,32 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
   ],
   providers: [
     ApiLifecycleService,
+    ApiTelemetryMiddleware,
     ApiKeyCredentialService,
     MonotonicUlidGenerator,
+    {
+      provide: TelemetryRuntime,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<ApiEnvironment, true>): TelemetryRuntime =>
+        new TelemetryRuntime({
+          environment: config.get('NODE_ENV', { infer: true }),
+          internalListener: {
+            enabled: config.get('INTERNAL_TELEMETRY_ENABLED', { infer: true }),
+            host: config.get('INTERNAL_TELEMETRY_HOST', { infer: true }),
+            port: config.get('INTERNAL_TELEMETRY_PORT', { infer: true }),
+          },
+          releaseCommit: config.get('RELEASE_COMMIT', { infer: true }),
+          releaseVersion: config.get('RELEASE_VERSION', { infer: true }),
+          service: 'api',
+          tracing: {
+            demo: config.get('OTEL_DEMO_TRACE_MODE', { infer: true }),
+            enabled: config.get('OTEL_TRACING_ENABLED', { infer: true }),
+            endpoint: config.get('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', { infer: true }),
+            exportTimeoutMs: config.get('OTEL_TRACE_EXPORT_TIMEOUT_MS', { infer: true }),
+            sampleRatio: config.get('OTEL_TRACE_SAMPLE_RATIO', { infer: true }),
+          },
+        }),
+    },
     {
       provide: PrismaDatabase,
       inject: [ConfigService],
@@ -312,6 +338,8 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
 })
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes({ path: '*path', method: RequestMethod.ALL });
+    consumer
+      .apply(RequestIdMiddleware, ApiTelemetryMiddleware)
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }

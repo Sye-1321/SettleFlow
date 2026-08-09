@@ -1,6 +1,6 @@
 # Implementation Plan: Operational Readiness and v1 Release
 
-- **Status:** Approved
+- **Status:** In progress — implementation-order steps 2 and 3 implemented
 - **Owner:** SettleFlow Project
 - **Created:** 2026-08-03
 - **Last updated:** 2026-08-09
@@ -589,9 +589,10 @@ Every final verification record must state exact tool/image/action versions and 
 ## Execution checklist
 
 - [x] Approval Gates 1-10 resolved and owners recorded on 2026-08-09.
-- [ ] Design, module boundaries, telemetry non-interference, and sensitive-data classification reviewed.
-- [ ] Required dependencies pinned and supply-chain review completed.
-- [ ] Observability, probes, correlation, metrics, logs, traces, alerts, and runbooks implemented/tested.
+- [x] Step 2 deterministic documentation, contract, module-boundary, configuration, database, and coverage commands implemented with focused tests.
+- [x] Step 3 Infrastructure telemetry boundary, redaction, correlation, internal probes, metrics/tracing adapters, lifecycle behavior, and degradation runbook implemented with focused tests.
+- [ ] Step 4 Prometheus/Collector configuration, executable alerts, bounded background collectors, and alert-rule tests implemented.
+- [ ] Required dependency supply-chain review completed; exact step 3 telemetry dependencies are pinned.
 - [ ] CI, migration, security, dependency, container, contract, concurrency, performance, and recovery gates implemented.
 - [ ] OCI images and release-simulation Compose verified from a clean clone.
 - [ ] Demo seed/orchestration is deterministic, synthetic, secret-safe, and invariant-safe.
@@ -602,15 +603,21 @@ Every final verification record must state exact tool/image/action versions and 
 
 ## Verification record
 
-| Command or review                   | Result | Date/evidence                                                                                                                                                                                              |
-| ----------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Clean baseline                      | Pass   | 2026-08-03: clean `## main...origin/main` at `85085a4` before this plan                                                                                                                                    |
-| Specification/repository inspection | Pass   | Complete specification including tables; governance, architecture, ADRs/plans, schema/migrations, runtime/config, tests, runbooks, Compose, CI absence, examples, and current docs inspected               |
-| Owner approval                      | Pass   | 2026-08-09: repository owner approved Gates 1-10, including revised GHCR sequencing, sole security/incident ownership, response commitments, and classified release scope                                  |
-| New-plan Markdown format            | Pass   | 2026-08-09: `corepack pnpm exec prettier --check docs/plans/2026-08-03-operational-readiness-and-v1-release.md`                                                                                            |
-| New-plan relative links             | Pass   | 2026-08-09: PowerShell local-link validation resolved all 11 relative references to repository targets                                                                                                     |
-| `git diff --check`                  | Pass   | 2026-08-09: tracked check produced no errors; no-index `--check` separately proved the untracked plan has no whitespace errors                                                                             |
-| Final Git status                    | Pass   | 2026-08-09: `## main...origin/main` with only `?? docs/plans/2026-08-03-operational-readiness-and-v1-release.md`; no implementation, dependency, schema, migration, API, finance behavior, commit, or push |
+| Command or review                   | Result  | Date/evidence                                                                                                                                                                                             |
+| ----------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clean baseline                      | Pass    | 2026-08-03: clean `## main...origin/main` at `85085a4` before this plan                                                                                                                                   |
+| Specification/repository inspection | Pass    | Complete specification including tables; governance, architecture, ADRs/plans, schema/migrations, runtime/config, tests, runbooks, Compose, CI absence, examples, and current docs inspected              |
+| Owner approval                      | Pass    | 2026-08-09: repository owner approved Gates 1-10, including revised GHCR sequencing, sole security/incident ownership, response commitments, and classified release scope                                 |
+| Steps 2-3 baseline                  | Pass    | 2026-08-09: clean `## main...origin/main` at remote commit `c43a847` before implementation                                                                                                                |
+| Deterministic quality tools         | Pass    | 2026-08-09: seven focused tool tests passed; repository module-boundary, contract, configuration, documentation-link, migration, permission, and financial-invariant checks passed                        |
+| Telemetry unit/regression suites    | Pass    | 2026-08-09: 51 suites and 215 tests passed, including Infrastructure redaction/context/metrics/tracing/probes, API middleware/lifecycle, and worker lifecycle tests                                       |
+| Internal runtime probes             | Pass    | 2026-08-09: built API and worker returned HTTP 200 for loopback liveness, readiness, and Prometheus exposition with real local PostgreSQL/RabbitMQ dependencies                                           |
+| Approved coverage floors            | Blocked | 2026-08-09: all 213 instrumented tests passed; aggregate statements/branches/functions/lines were 61.10/52.63/48.30/62.28%, below the approved 85/80/80/85% floors; thresholds were not weakened          |
+| Real-dependency integration         | Blocked | 2026-08-09: 9/10 suites and 60/61 tests passed; the unchanged Settlement/Reconciliation exact-match case twice produced `provider_only/platform_record_not_found` and requires a separate baseline repair |
+| New-plan Markdown format            | Pass    | 2026-08-09: `corepack pnpm exec prettier --check docs/plans/2026-08-03-operational-readiness-and-v1-release.md`                                                                                           |
+| New-plan relative links             | Pass    | 2026-08-09: PowerShell local-link validation resolved all 11 relative references to repository targets                                                                                                    |
+| `git diff --check`                  | Pass    | 2026-08-09: final scoped steps 2-3 implementation diff produced no whitespace errors                                                                                                                      |
+| Final Git status                    | Pass    | 2026-08-09: `main` still tracks `origin/main`; only scoped quality, telemetry, app-composition, documentation, test, manifest, and lockfile changes are present; no commit or push occurred               |
 
 ## Definition of done
 

@@ -79,6 +79,7 @@ export class ReconciliationService {
       if (error instanceof ReconciliationRowLimitExceededError) failureCode = 'row_limit_exceeded';
       else if (error instanceof ReconciliationCsvInvalidError) failureCode = 'csv_invalid';
       else throw error;
+      rows = undefined;
     }
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const importId = `rec_${this.identifiers.generate(this.clock().getTime())}`;

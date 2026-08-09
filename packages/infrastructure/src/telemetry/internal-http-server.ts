@@ -6,6 +6,7 @@ export interface InternalReadiness {
 }
 
 export interface InternalHttpServerOptions {
+  readonly allowContainerWildcard?: boolean;
   readonly host: string;
   readonly port: number;
 }
@@ -26,7 +27,12 @@ export class InternalHttpServer {
       readonly contentType: string;
     }>,
   ) {
-    if (!isLoopbackHost(options.host)) throw new Error('Internal listener must bind to loopback');
+    if (
+      !isLoopbackHost(options.host) &&
+      !(options.allowContainerWildcard === true && options.host === '0.0.0.0')
+    ) {
+      throw new Error('Internal listener must bind to loopback or an approved container wildcard');
+    }
   }
 
   public address(): { readonly address: string; readonly port: number } | undefined {

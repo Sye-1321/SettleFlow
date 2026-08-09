@@ -1,0 +1,175 @@
+name: settleflow-release-simulation
+
+x-app-security: &app-security
+  cap_drop: [ALL]
+  init: true
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=1777
+  user: '10001:10001'
+
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    OCI_CREATED: ${SETTLEFLOW_IMAGE_CREATED:?generate release configuration first}
+    OCI_REVISION: ${SETTLEFLOW_IMAGE_REVISION:?generate release configuration first}
+    OCI_VERSION: ${SETTLEFLOW_IMAGE_VERSION:?generate release configuration first}
+  provenance: mode=max
+  sbom: true
+
+services:
+  postgres:
+    image: postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+    env_file: [.settleflow/release-simulation/postgres.env]
+    networks: [backend]
+    volumes:
+      - release_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+    stop_grace_period: 30s
+    mem_limit: 512m
+    cpus: 1.0
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management@sha256:4e628d3cbc61ef45c5918e19bb9844874410d96d4ced897ced7d072d63ad555c
+    env_file: [.settleflow/release-simulation/rabbitmq.env]
+    networks: [backend]
+    volumes:
+      - release_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [CMD, gosu, rabbitmq, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+    stop_grace_period: 30s
+    mem_limit: 512m
+    cpus: 1.0
+
+  role-provisioner:
+    image: postgres:18.4-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    env_file: [.settleflow/release-simulation/role-provisioner.env]
+    entrypoint: [psql]
+    command: [--file, /opt/settleflow/database/provision-runtime-role.sql]
+    volumes:
+      - ./tools/database/provision-runtime-role.sql:/opt/settleflow/database/provision-runtime-role.sql:ro
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  migrator:
+    image: settleflow-migrator:${SETTLEFLOW_IMAGE_VERSION:?generate release configuration first}
+    build:
+      <<: *app-build
+      target: migrator
+    <<: *app-security
+    env_file: [.settleflow/release-simulation/migrator.env]
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+      role-provisioner: { condition: service_completed_successfully }
+    restart: 'no'
+    mem_limit: 384m
+    cpus: 1.0
+
+  api:
+    image: settleflow-api:${SETTLEFLOW_IMAGE_VERSION:?generate release configuration first}
+    build:
+      <<: *app-build
+      target: api
+    <<: *app-security
+    env_file: [.settleflow/release-simulation/api.env]
+    networks: [backend, telemetry, api-ingress]
+    ports:
+      - 127.0.0.1:${SETTLEFLOW_API_PORT:-3000}:3000
+    depends_on:
+      migrator: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    stop_grace_period: 20s
+    mem_limit: 384m
+    cpus: 1.0
+
+  worker:
+    image: settleflow-worker:${SETTLEFLOW_IMAGE_VERSION:?generate release configuration first}
+    build:
+      <<: *app-build
+      target: worker
+    <<: *app-security
+    env_file: [.settleflow/release-simulation/worker.env]
+    networks: [backend, telemetry, worker-egress]
+    depends_on:
+      migrator: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    stop_grace_period: 15s
+    mem_limit: 512m
+    cpus: 1.0
+
+  otel-collector:
+    profiles: [telemetry]
+    image: otel/opentelemetry-collector-contrib:0.158.0@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    volumes:
+      - ./ops/otel-collector/config.yml:/etc/otelcol-contrib/config.yaml:ro
+    networks: [telemetry]
+    stop_grace_period: 10s
+    mem_limit: 256m
+    cpus: 0.5
+
+  prometheus:
+    profiles: [telemetry]
+    image: prom/prometheus:v3.13.2@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    ports:
+      - 127.0.0.1:${SETTLEFLOW_PROMETHEUS_PORT:-9091}:9090
+    volumes:
+      - ./ops/prometheus/prometheus.release.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/rules:/etc/prometheus/rules:ro
+      - release_prometheus_data:/prometheus
+    networks: [telemetry, operations-ingress]
+    depends_on: [api, worker, otel-collector]
+    stop_grace_period: 10s
+    mem_limit: 256m
+    cpus: 0.5
+
+networks:
+  backend:
+    internal: true
+  telemetry:
+    internal: true
+  api-ingress: {}
+  worker-egress: {}
+  operations-ingress: {}
+
+volumes:
+  release_postgres_data:
+  release_prometheus_data:
+  release_rabbitmq_data:

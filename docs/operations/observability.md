@@ -25,7 +25,7 @@ Each listener provides:
 - `GET /health/ready`: HTTP 200 only while the process is accepting work and every required dependency class is ready, otherwise HTTP 503; and
 - `GET /metrics`: Prometheus text exposition from a process-local registry.
 
-These routes are absent from the merchant OpenAPI document, require no merchant credential, and rely on a loopback/network boundary. The implementation rejects a public wildcard bind. Do not publish or proxy the listeners. The API's existing public `/health/live` and `/health/ready` contracts remain unchanged.
+These routes are absent from the merchant OpenAPI document, require no merchant credential, and rely on a loopback/network boundary. Host mode rejects a public wildcard bind. The explicit `release-simulation` mode requires `NODE_ENV=development`, binds the diagnostic listeners to the non-published internal telemetry network, and rejects production relabeling. Do not publish or proxy the listeners. The API's existing public `/health/live` and `/health/ready` contracts remain unchanged.
 
 Worker readiness preserves separate PostgreSQL, RabbitMQ publisher, RabbitMQ consumer, Reconciliation processor, and Webhook dispatcher checks. API readiness preserves its PostgreSQL/RabbitMQ policy. A dependency outage changes readiness but not liveness. Shutdown makes readiness false before claims, consumers, and connections drain.
 
@@ -44,24 +44,27 @@ The release policy records all spans in-process so final errors can always be se
 
 The optional Compose `telemetry` profile runs pinned OpenTelemetry Collector Contrib 0.158.0 and Prometheus 3.13.2 images. OTLP ports 4317/4318 and Prometheus 9090 bind only to host loopback; Collector self-metrics and application scrape traffic stay on the Compose network/host boundary. The Collector accepts bounded OTLP traces and emits only its basic debug output; no trace storage or dashboard is included. Prometheus scrapes the API and worker internal listeners through `host.docker.internal` and the Collector on the internal Compose network.
 
+The separate [release-simulation topology](release-simulation.md) keeps OTLP fully internal and scrapes `api:9464` and `worker:9465` directly on its internal telemetry network. Its optional Prometheus UI alone binds to host loopback on port 9091.
+
 ## Configuration
 
 Both deployables validate the following settings before accepting work:
 
-| Setting                                | API default | Worker default | Rule                                     |
-| -------------------------------------- | ----------- | -------------- | ---------------------------------------- |
-| `INTERNAL_TELEMETRY_ENABLED`           | environment | environment    | examples set `true`; tests default false |
-| `INTERNAL_TELEMETRY_HOST`              | `127.0.0.1` | `127.0.0.1`    | loopback only in this milestone          |
-| `INTERNAL_TELEMETRY_PORT`              | `9464`      | `9465`         | 1-65535                                  |
-| `RELEASE_VERSION`                      | `0.0.0-dev` | `0.0.0-dev`    | bounded build identity                   |
-| `RELEASE_COMMIT`                       | `local`     | `local`        | `local` or 7-64 hexadecimal characters   |
-| `OTEL_TRACING_ENABLED`                 | `false`     | `false`        | exact boolean text                       |
-| `OTEL_TRACE_SAMPLE_RATIO`              | `0.1`       | `0.1`          | fixed approved successful sampling ratio |
-| `OTEL_TRACE_EXPORT_TIMEOUT_MS`         | `5000`      | `5000`         | bounded 100-10000 milliseconds           |
-| `OTEL_DEMO_TRACE_MODE`                 | `false`     | `false`        | exports every explicitly simulated trace |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`   | unset       | unset          | required HTTP(S) URL only when enabled   |
-| `OPERATIONAL_METRICS_POLL_INTERVAL_MS` | N/A         | `15000`        | bounded 5000-300000 milliseconds         |
-| `OPERATIONAL_METRICS_QUERY_TIMEOUT_MS` | N/A         | `2000`         | shorter than the collector poll interval |
+| Setting                                | API default | Worker default | Rule                                                      |
+| -------------------------------------- | ----------- | -------------- | --------------------------------------------------------- |
+| `INTERNAL_TELEMETRY_ENABLED`           | environment | environment    | examples set `true`; tests default false                  |
+| `INTERNAL_TELEMETRY_HOST`              | `127.0.0.1` | `127.0.0.1`    | loopback on host; internal wildcard in release simulation |
+| `SETTLEFLOW_DEPLOYMENT_MODE`           | `host`      | `host`         | wildcard only in release-simulation                       |
+| `INTERNAL_TELEMETRY_PORT`              | `9464`      | `9465`         | 1-65535                                                   |
+| `RELEASE_VERSION`                      | `0.0.0-dev` | `0.0.0-dev`    | bounded build identity                                    |
+| `RELEASE_COMMIT`                       | `local`     | `local`        | `local` or 7-64 hexadecimal characters                    |
+| `OTEL_TRACING_ENABLED`                 | `false`     | `false`        | exact boolean text                                        |
+| `OTEL_TRACE_SAMPLE_RATIO`              | `0.1`       | `0.1`          | fixed approved successful sampling ratio                  |
+| `OTEL_TRACE_EXPORT_TIMEOUT_MS`         | `5000`      | `5000`         | bounded 100-10000 milliseconds                            |
+| `OTEL_DEMO_TRACE_MODE`                 | `false`     | `false`        | exports every explicitly simulated trace                  |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`   | unset       | unset          | required HTTP(S) URL only when enabled                    |
+| `OPERATIONAL_METRICS_POLL_INTERVAL_MS` | N/A         | `15000`        | bounded 5000-300000 milliseconds                          |
+| `OPERATIONAL_METRICS_QUERY_TIMEOUT_MS` | N/A         | `2000`         | shorter than the collector poll interval                  |
 
 Release identity appears only in startup telemetry, traces, metrics, and future image metadata. It does not change `GET /v1`.
 

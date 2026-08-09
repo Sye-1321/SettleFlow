@@ -48,4 +48,30 @@ describe('InternalHttpServer', () => {
         ),
     ).toThrow('loopback');
   });
+
+  it('allows only the explicit release-container wildcard', () => {
+    const health = {
+      liveness: (): object => ({}),
+      readiness: (): { checks: Record<string, never>; ready: boolean } => ({
+        checks: {},
+        ready: false,
+      }),
+    };
+    expect(
+      () =>
+        new InternalHttpServer(
+          { allowContainerWildcard: true, host: '0.0.0.0', port: 9_465 },
+          health,
+          () => Promise.resolve({ body: '', contentType: 'text/plain' }),
+        ),
+    ).not.toThrow();
+    expect(
+      () =>
+        new InternalHttpServer(
+          { allowContainerWildcard: true, host: '192.0.2.1', port: 9_465 },
+          health,
+          () => Promise.resolve({ body: '', contentType: 'text/plain' }),
+        ),
+    ).toThrow('approved container wildcard');
+  });
 });

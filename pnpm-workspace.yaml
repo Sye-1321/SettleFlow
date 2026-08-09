@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - packages/modules/*
+  - tools/migrator
 
 sharedWorkspaceLockfile: true
 

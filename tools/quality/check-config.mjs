@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { checkReleaseConfiguration } from '../release/create-release-config.mjs';
+
 export function parseEnvironmentExample(source) {
   const environment = {};
   for (const [index, line] of source.split(/\r?\n/u).entries()) {
@@ -62,6 +64,31 @@ export function checkConfiguration(root) {
       failures.push(`${service}: local keyring must fail production validation`);
     } catch {
       // Expected production-fatal local keyring behavior.
+    }
+  }
+  const releaseDirectory = resolve(root, '.settleflow/release-simulation');
+  if (existsSync(releaseDirectory)) {
+    try {
+      const release = checkReleaseConfiguration(releaseDirectory);
+      for (const [service, validate, fileName] of [
+        ['api', validateApiEnvironment, 'api.env'],
+        ['worker', validateWorkerEnvironment, 'worker.env'],
+      ]) {
+        const validated = validate(release[fileName]);
+        if (validated.SETTLEFLOW_DEPLOYMENT_MODE !== 'release-simulation') {
+          failures.push(`${service}: generated release configuration has the wrong mode`);
+        }
+        try {
+          validate({ ...release[fileName], NODE_ENV: 'production' });
+          failures.push(`${service}: release-simulation must fail production relabeling`);
+        } catch {
+          // Required: the development-only keyring and release mode are production-fatal.
+        }
+      }
+    } catch (error) {
+      failures.push(
+        `release-simulation: ${error instanceof Error ? error.message : 'invalid configuration'}`,
+      );
     }
   }
   return failures;

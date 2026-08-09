@@ -81,6 +81,23 @@ The local keyring and development URL policy are rejected when `NODE_ENV=product
 
 If a default port is already occupied, change its value in the root `.env` and update the matching application URL. For example, set `POSTGRES_PORT=55432` and use port `55432` in both application `DATABASE_URL` values.
 
+### Build and run the release simulation
+
+The separate release-simulation topology builds production-dependency-only, non-root API and worker images; provisions the least-privilege database role; runs committed migrations exactly once through a one-shot job; and starts applications only after dependencies and migration verification succeed. Generate ignored synthetic secrets, validate, build, and start it with:
+
+```shell
+pnpm release:config:create
+pnpm release:compose:check
+pnpm images:build
+pnpm images:validate
+pnpm release:up
+pnpm release:ps
+```
+
+Only API port 3000 is loopback-published. PostgreSQL, RabbitMQ, worker, OTLP, and application metric ports remain internal. `pnpm release:up:telemetry` optionally exposes only the Prometheus UI on `127.0.0.1:9091`. Stop without deleting volumes using `pnpm release:down`.
+
+This topology is explicitly a non-production finance-grade simulation because it uses the local Webhook keyring; configuration validation rejects production relabeling. See [OCI Images and Release Simulation](docs/operations/release-simulation.md) for startup sequencing, security boundaries, inspection, reset, and deferred production requirements.
+
 ### Start and inspect local infrastructure
 
 Start PostgreSQL and RabbitMQ and wait for both health checks:

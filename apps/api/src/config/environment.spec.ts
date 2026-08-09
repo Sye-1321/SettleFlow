@@ -73,4 +73,26 @@ describe('API environment', () => {
       }),
     ).toThrow('Production');
   });
+
+  it('requires an explicitly non-production release-simulation internal listener', () => {
+    expect(
+      validateApiEnvironment({
+        ...baseEnvironment,
+        INTERNAL_TELEMETRY_HOST: '0.0.0.0',
+        NODE_ENV: 'development',
+        SETTLEFLOW_DEPLOYMENT_MODE: 'release-simulation',
+      }).SETTLEFLOW_DEPLOYMENT_MODE,
+    ).toBe('release-simulation');
+    expect(() =>
+      validateApiEnvironment({ ...baseEnvironment, INTERNAL_TELEMETRY_HOST: '0.0.0.0' }),
+    ).toThrow('Host mode requires a loopback');
+    expect(() =>
+      validateApiEnvironment({
+        ...baseEnvironment,
+        INTERNAL_TELEMETRY_HOST: '0.0.0.0',
+        NODE_ENV: 'production',
+        SETTLEFLOW_DEPLOYMENT_MODE: 'release-simulation',
+      }),
+    ).toThrow('Release-simulation mode requires NODE_ENV=development');
+  });
 });

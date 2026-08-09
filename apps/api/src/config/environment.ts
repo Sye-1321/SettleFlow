@@ -59,7 +59,9 @@ const apiEnvironmentSchema = z
       .max(120_000)
       .default(10_000),
     INTERNAL_TELEMETRY_ENABLED: exactBooleanSchema.optional(),
-    INTERNAL_TELEMETRY_HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
+    INTERNAL_TELEMETRY_HOST: z
+      .enum(['127.0.0.1', '::1', 'localhost', '0.0.0.0'])
+      .default('127.0.0.1'),
     INTERNAL_TELEMETRY_PORT: z.coerce.number().int().min(1).max(65_535).default(9_464),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     OTEL_DEMO_TRACE_MODE: exactBooleanSchema.default(false),
@@ -68,6 +70,7 @@ const apiEnvironmentSchema = z
     OTEL_TRACE_SAMPLE_RATIO: z.coerce.number().min(0.1).max(0.1).default(0.1),
     OTEL_TRACING_ENABLED: exactBooleanSchema.default(false),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    SETTLEFLOW_DEPLOYMENT_MODE: z.enum(['host', 'release-simulation']).default('host'),
     RELEASE_COMMIT: z
       .string()
       .regex(/^(?:local|[a-f\d]{7,64})$/iu)
@@ -90,6 +93,27 @@ const apiEnvironmentSchema = z
     WEBHOOK_URL_POLICY_MODE: z.enum(['development', 'production']).default('production'),
   })
   .superRefine((config, context) => {
+    if (
+      config.SETTLEFLOW_DEPLOYMENT_MODE === 'host' &&
+      config.INTERNAL_TELEMETRY_HOST === '0.0.0.0'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Host mode requires a loopback internal telemetry listener',
+        path: ['INTERNAL_TELEMETRY_HOST'],
+      });
+    }
+    if (
+      config.SETTLEFLOW_DEPLOYMENT_MODE === 'release-simulation' &&
+      (config.NODE_ENV !== 'development' || config.INTERNAL_TELEMETRY_HOST !== '0.0.0.0')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Release-simulation mode requires NODE_ENV=development and an internal 0.0.0.0 telemetry listener',
+        path: ['SETTLEFLOW_DEPLOYMENT_MODE'],
+      });
+    }
     if (config.IDEMPOTENCY_LOCK_TIMEOUT_MS > config.IDEMPOTENCY_STATEMENT_TIMEOUT_MS) {
       context.addIssue({
         code: 'custom',

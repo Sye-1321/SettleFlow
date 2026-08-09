@@ -48,7 +48,9 @@ const workerEnvironmentSchema = z
     DATABASE_URL: databaseUrlSchema,
     DEPENDENCY_READINESS_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2_000),
     INTERNAL_TELEMETRY_ENABLED: exactBooleanSchema.optional(),
-    INTERNAL_TELEMETRY_HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
+    INTERNAL_TELEMETRY_HOST: z
+      .enum(['127.0.0.1', '::1', 'localhost', '0.0.0.0'])
+      .default('127.0.0.1'),
     INTERNAL_TELEMETRY_PORT: z.coerce.number().int().min(1).max(65_535).default(9_465),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     OPERATIONAL_METRICS_POLL_INTERVAL_MS: z.coerce
@@ -81,6 +83,7 @@ const workerEnvironmentSchema = z
     OTEL_TRACE_SAMPLE_RATIO: z.coerce.number().min(0.1).max(0.1).default(0.1),
     OTEL_TRACING_ENABLED: exactBooleanSchema.default(false),
     RABBITMQ_URL: rabbitmqUrlSchema,
+    SETTLEFLOW_DEPLOYMENT_MODE: z.enum(['host', 'release-simulation']).default('host'),
     RELEASE_COMMIT: z
       .string()
       .regex(/^(?:local|[a-f\d]{7,64})$/iu)
@@ -172,6 +175,27 @@ const workerEnvironmentSchema = z
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
   })
   .superRefine((environment, context) => {
+    if (
+      environment.SETTLEFLOW_DEPLOYMENT_MODE === 'host' &&
+      environment.INTERNAL_TELEMETRY_HOST === '0.0.0.0'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Host mode requires a loopback internal telemetry listener',
+        path: ['INTERNAL_TELEMETRY_HOST'],
+      });
+    }
+    if (
+      environment.SETTLEFLOW_DEPLOYMENT_MODE === 'release-simulation' &&
+      (environment.NODE_ENV !== 'development' || environment.INTERNAL_TELEMETRY_HOST !== '0.0.0.0')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Release-simulation mode requires NODE_ENV=development and an internal 0.0.0.0 telemetry listener',
+        path: ['SETTLEFLOW_DEPLOYMENT_MODE'],
+      });
+    }
     if (
       environment.OPERATIONAL_METRICS_QUERY_TIMEOUT_MS >=
       environment.OPERATIONAL_METRICS_POLL_INTERVAL_MS

@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "commonjs",
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@nestjs/common": "11.1.28",
     "@nestjs/config": "4.0.4",

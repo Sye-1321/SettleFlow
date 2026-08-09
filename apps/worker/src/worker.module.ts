@@ -77,6 +77,8 @@ import { WorkerRuntimeService } from './runtime/worker-runtime.service';
         new TelemetryRuntime({
           environment: config.get('NODE_ENV', { infer: true }),
           internalListener: {
+            allowContainerWildcard:
+              config.get('SETTLEFLOW_DEPLOYMENT_MODE', { infer: true }) === 'release-simulation',
             enabled: config.get('INTERNAL_TELEMETRY_ENABLED', { infer: true }),
             host: config.get('INTERNAL_TELEMETRY_HOST', { infer: true }),
             port: config.get('INTERNAL_TELEMETRY_PORT', { infer: true }),

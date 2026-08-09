@@ -1,0 +1,10 @@
+{
+  "name": "@settleflow/migrator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pg": "8.22.0",
+    "prisma": "7.9.1"
+  }
+}

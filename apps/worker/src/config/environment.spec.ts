@@ -68,4 +68,18 @@ describe('validateWorkerEnvironment', () => {
       }),
     ).toThrow('OUTBOX_RELAY_CONFIRM_TIMEOUT_MS must be shorter');
   });
+
+  it('requires an explicitly non-production release-simulation internal listener', () => {
+    expect(
+      validateWorkerEnvironment({
+        ...baseEnvironment,
+        INTERNAL_TELEMETRY_HOST: '0.0.0.0',
+        NODE_ENV: 'development',
+        SETTLEFLOW_DEPLOYMENT_MODE: 'release-simulation',
+      }).SETTLEFLOW_DEPLOYMENT_MODE,
+    ).toBe('release-simulation');
+    expect(() =>
+      validateWorkerEnvironment({ ...baseEnvironment, INTERNAL_TELEMETRY_HOST: '0.0.0.0' }),
+    ).toThrow('Host mode requires a loopback');
+  });
 });

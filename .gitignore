@@ -35,6 +35,7 @@ pnpm-debug.log*
 docker-data/
 pgdata/
 .rabbitmq/
+.settleflow/
 
 # Temporary files
 tmp/

@@ -13,6 +13,7 @@ import { TracingRuntime } from './tracing';
 export interface TelemetryRuntimeOptions {
   readonly environment: 'development' | 'production' | 'test';
   readonly internalListener: {
+    readonly allowContainerWildcard?: boolean;
     readonly enabled: boolean;
     readonly host: string;
     readonly port: number;

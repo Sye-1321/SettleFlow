@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "reviews": [
+    {
+      "packageName": "graphmatch",
+      "version": "1.1.0",
+      "reportedLicense": "Unknown",
+      "concludedLicense": "MIT",
+      "licenseFile": "license",
+      "licenseSha256": "0cb826ec0d67e9918daeb89ac839aba3b85cfd7579ee96208b1d81bef46593fd",
+      "reviewedBy": "Security Owner",
+      "reviewedAt": "2026-08-10"
+    }
+  ]
+}

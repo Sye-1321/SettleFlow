@@ -360,6 +360,8 @@ pnpm boundaries:check
 pnpm docs:check
 pnpm contracts:check
 pnpm config:check
+pnpm security:policy
+pnpm security:secrets
 pnpm test
 pnpm test:infrastructure
 pnpm test:quality
@@ -373,15 +375,20 @@ pnpm test:webhooks
 pnpm test:settlements
 pnpm test:reconciliation
 pnpm test:integration
+pnpm test:concurrency
+pnpm test:failure
 pnpm db:migrate:verify
 pnpm db:permissions:check
 pnpm db:invariants:check
+pnpm db:schema:drift
 pnpm build
 pnpm start:api
 pnpm start:worker
 ```
 
 `pnpm test` runs all Docker-independent API, worker, Infrastructure, and bounded-module unit suites. The quality commands validate declared module edges, local Markdown paths/anchors, strict OpenAPI/event conventions, compiled environment examples, and database verifier safety. `test:coverage` enforces the approved overall 85% statements/lines and 80% branches/functions, plus 90% statements/lines and 85% branches for critical financial/asynchronous modules. Database verification commands are read-only and require the checked local Compose database to be running with the exact `settleflow`/`settleflow_app` target. The focused Settlement and Reconciliation commands exercise cutoff/fee/arithmetic and CSV/classification contracts. `pnpm test:event-contract` checks all five exact producer/consumer event contracts. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires Docker. It covers migrations/permissions/invariants, atomic Payment and Settlement evidence, reconciliation reports/events, races, relay/projection, signing/retries, and immutable Webhook evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`.
+
+CI, pinned action/tool policy, dependency/license/secret/image scanning, scheduled race and failure evidence, SBOMs, main-branch attestations, artifact retention, GitHub prerequisites, and the intentionally blocking coverage gap are documented in [Continuous Integration and Supply-Chain Evidence](docs/operations/continuous-integration.md). No workflow needs a repository secret or publishes an image, package, tag, or release.
 
 Structured JSON logging, AsyncLocalStorage request correlation, protected process-local metrics, optional OpenTelemetry export, redaction, internal probes, the local Collector/Prometheus profile, and executable alerts are documented in [Observability and Internal Probes](docs/operations/observability.md). Validate and start only that optional profile with `pnpm telemetry:check` and `pnpm telemetry:up`; inspect it with `pnpm telemetry:ps` and `pnpm telemetry:logs`, then stop it with `pnpm telemetry:stop`. Prometheus is loopback-only at `http://127.0.0.1:9090`; application metrics remain on their dedicated internal listeners and there is no public metrics endpoint or dashboard. The [alert catalog](docs/operations/alert-catalog.md) maps every rule to its safe runbook.
 

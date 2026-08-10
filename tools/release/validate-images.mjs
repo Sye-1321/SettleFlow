@@ -48,6 +48,7 @@ const filesystemCheck = String.raw`
 const fs=require('node:fs');
 if(process.getuid?.()!==10001||process.getgid?.()!==10001)throw Error('unexpected runtime identity');
 for(const path of ['/app/.env','/app/.git','/app/src','/app/test','/app/tsconfig.json'])if(fs.existsSync(path))throw Error('forbidden artifact '+path);
+for(const path of ['/usr/local/bin/corepack','/usr/local/bin/npm','/usr/local/bin/npx','/usr/local/bin/yarn','/usr/local/bin/yarnpkg','/usr/local/lib/node_modules/corepack','/usr/local/lib/node_modules/npm','/opt/yarn-v1.22.22'])if(fs.existsSync(path))throw Error('forbidden package manager '+path);
 for(const dependency of ['jest','typescript']){try{require.resolve(dependency+'/package.json');throw Error('development dependency '+dependency)}catch(error){if(!String(error.message).startsWith('Cannot find module'))throw error}}
 if(process.env.SETTLEFLOW_IMAGE_ROLE!=='migrator'){try{require.resolve('prisma/package.json');throw Error('development dependency prisma')}catch(error){if(!String(error.message).startsWith('Cannot find module'))throw error}}
 const scan=(directory)=>{for(const entry of fs.readdirSync(directory,{withFileTypes:true})){if(entry.name==='node_modules')continue;const path=directory+'/'+entry.name;if(entry.isDirectory())scan(path);else if(/\.(?:map|ts|tsbuildinfo)$/.test(entry.name))throw Error('source artifact '+path)}};

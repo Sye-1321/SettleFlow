@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:17'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    groups:
+      compatible-development-tooling:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:31'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:43'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5

@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+
+jobs:
+  quality:
+    name: Quality, contracts, and configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Activate the exact pnpm version
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          test "$(node --version)" = "v24.18.0"
+          test "$(pnpm --version)" = "11.18.0"
+      - name: Frozen dependency installation
+        run: pnpm install --frozen-lockfile
+      - name: Repository and workflow policies
+        run: |
+          pnpm security:repository
+          pnpm security:workflows
+          pnpm security:exceptions
+      - name: Formatting, lint, types, and build
+        run: |
+          pnpm format:check
+          pnpm lint
+          pnpm typecheck
+          pnpm build
+      - name: Architecture, contracts, and documentation
+        run: |
+          pnpm boundaries:check
+          pnpm contracts:check
+          pnpm openapi:check
+          pnpm docs:check
+          pnpm prisma:validate
+      - name: Configuration and telemetry policy
+        run: |
+          pnpm config:check
+          pnpm telemetry:check
+          pnpm release:config:create
+          pnpm release:compose:check
+      - name: Deterministic tooling tests
+        run: pnpm test:quality
+
+  unit:
+    name: Unit and event contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Unit suites
+        run: pnpm test
+      - name: Exact event contracts
+        run: pnpm test:event-contract
+
+  coverage:
+    name: Approved coverage floors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Enforce approved coverage policy
+        run: pnpm test:coverage
+      - name: Retain bounded coverage evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage/
+          if-no-files-found: error
+          retention-days: 7
+
+  integration:
+    name: Real PostgreSQL, RabbitMQ, and HTTP integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Integration suite without skipped dependencies
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: 'false'
+        run: pnpm test:integration
+
+  migrations:
+    name: Empty database migrations, grants, drift, and invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Create ephemeral masked infrastructure credentials
+        shell: bash
+        run: |
+          owner_password="$(openssl rand -hex 32)"
+          app_password="$(openssl rand -hex 32)"
+          rabbit_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$owner_password"
+          echo "::add-mask::$app_password"
+          echo "::add-mask::$rabbit_password"
+          {
+            echo "POSTGRES_DB=settleflow"
+            echo "POSTGRES_USER=settleflow"
+            echo "POSTGRES_PASSWORD=$owner_password"
+            echo "POSTGRES_APP_USER=settleflow_app"
+            echo "POSTGRES_APP_PASSWORD=$app_password"
+            echo "MIGRATION_DATABASE_URL=postgresql://settleflow:$owner_password@127.0.0.1:5432/settleflow"
+            echo "DATABASE_URL=postgresql://settleflow_app:$app_password@127.0.0.1:5432/settleflow"
+            echo "RABBITMQ_DEFAULT_USER=settleflow_ci"
+            echo "RABBITMQ_DEFAULT_PASS=$rabbit_password"
+            echo "RABBITMQ_DEFAULT_VHOST=settleflow"
+          } >> "$GITHUB_ENV"
+      - name: Start pinned PostgreSQL and RabbitMQ
+        run: docker compose up --detach --wait --wait-timeout 120 postgres rabbitmq
+      - name: Apply and validate the complete migration chain
+        run: |
+          pnpm db:provision-runtime-role
+          pnpm db:migrate:apply
+          pnpm db:migrate:status
+          pnpm db:migrate:verify
+          pnpm db:permissions:check
+          pnpm db:invariants:check
+          pnpm db:schema:drift
+      - name: Stop ephemeral infrastructure
+        if: always()
+        run: docker compose down --volumes --remove-orphans

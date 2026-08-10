@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "reviews": [
+    {
+      "fingerprint": "85085a4f39bc00ad1a4e17c171a316faaa870e0e:test/integration/settlements-reconciliation.int-spec.ts:generic-api-key:262",
+      "classification": "synthetic test idempotency label and value",
+      "reviewedAt": "2026-08-10"
+    },
+    {
+      "fingerprint": "9006a38ff48d8eb2f62ac7fc393ff44d348115ef:docs/runbooks/webhook-projection-consumer.md:generic-api-key:18",
+      "classification": "security runbook prohibition text",
+      "reviewedAt": "2026-08-10"
+    }
+  ]
+}

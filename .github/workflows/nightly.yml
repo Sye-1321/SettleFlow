@@ -1,0 +1,57 @@
+name: Reliability evidence
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reliability-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+
+jobs:
+  repeated-races:
+    name: Three clean concurrency runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Repeat financial and asynchronous races three times without retry-to-green
+        run: pnpm test:concurrency
+
+  failure-injection:
+    name: Dependency and crash-recovery behavior
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Install the locked workspace
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.18.0 --activate
+          pnpm install --frozen-lockfile
+      - name: Prove dependency, lease, poison-message, and delivery recovery
+        run: pnpm test:failure

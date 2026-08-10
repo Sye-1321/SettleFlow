@@ -1,5 +1,6 @@
 .git
 .github
+.gitleaksignore
 .settleflow
 .env
 .env.*
@@ -20,8 +21,11 @@ docs
 examples
 test
 ops
+security
+tools/ci
 tools/database
 tools/quality
+tools/security
 tools/release/create-release-config.mjs
 tools/release/validate-*.mjs
 tools/**/*.test.mjs

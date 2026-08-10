@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "gitleaks": {
+      "version": "8.30.1",
+      "image": "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
+    },
+    "hadolint": {
+      "version": "2.15.1",
+      "image": "hadolint/hadolint:v2.15.1-debian@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27"
+    },
+    "syft": {
+      "version": "1.50.0",
+      "image": "anchore/syft:v1.50.0@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026"
+    },
+    "trivy": {
+      "version": "0.73.0",
+      "image": "aquasec/trivy:0.73.0@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c"
+    }
+  }
+}

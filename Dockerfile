@@ -37,6 +37,8 @@ RUN apt-get update && \
       libssl3=3.0.20-1~deb12u2 \
       openssl=3.0.20-1~deb12u2 && \
     rm -rf /var/lib/apt/lists/* && \
+    rm -rf /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/npm /opt/yarn-v1.22.22 && \
+    rm -f /usr/local/bin/corepack /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg && \
     groupadd --gid 10001 settleflow && \
     useradd --uid 10001 --gid 10001 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin settleflow
 ENV HOME=/tmp

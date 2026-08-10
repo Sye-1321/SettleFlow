@@ -1,9 +1,14 @@
 import {
+  InvalidWebhookEndpointRequestError,
   WebhookEndpointUrlProhibitedError,
   WebhookEndpointUrlResolutionUnavailableError,
   WebhookEndpointUrlUnresolvableError,
 } from './webhook.errors';
-import { NodeWebhookUrlPolicy, type WebhookDnsResolver } from './node-webhook-url-policy';
+import {
+  NodeWebhookUrlPolicy,
+  nodeWebhookUrlPolicyInternals,
+  type WebhookDnsResolver,
+} from './node-webhook-url-policy';
 
 function resolver(
   ipv4: readonly string[] | Error,
@@ -150,5 +155,83 @@ describe('NodeWebhookUrlPolicy', () => {
       WebhookEndpointUrlResolutionUnavailableError,
     );
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['', InvalidWebhookEndpointRequestError],
+    ['x'.repeat(2_049), InvalidWebhookEndpointRequestError],
+    ['https://example.com/\u0001', InvalidWebhookEndpointRequestError],
+    ['https://example.com/\ud800', InvalidWebhookEndpointRequestError],
+    ['https://example.com/#fragment', InvalidWebhookEndpointRequestError],
+    ['not a URL', InvalidWebhookEndpointRequestError],
+    ['ftp://example.com/hook', WebhookEndpointUrlProhibitedError],
+    ['https://user:password@example.com/hook', WebhookEndpointUrlProhibitedError],
+  ])('rejects malformed or prohibited URL %p', async (url, errorType): Promise<void> => {
+    const policy = new NodeWebhookUrlPolicy({ developmentAllowedOrigins: [], mode: 'production' });
+    await expect(policy.normalizeAndValidate(url)).rejects.toBeInstanceOf(errorType);
+  });
+
+  it('validates configuration origins and prohibits development exceptions in production', () => {
+    expect(
+      () =>
+        new NodeWebhookUrlPolicy({
+          developmentAllowedOrigins: ['not an origin'],
+          mode: 'development',
+        }),
+    ).toThrow('invalid origin');
+    expect(
+      () =>
+        new NodeWebhookUrlPolicy({
+          developmentAllowedOrigins: ['http://127.0.0.1:8080/'],
+          mode: 'development',
+        }),
+    ).toThrow('canonical origins');
+    expect(
+      () =>
+        new NodeWebhookUrlPolicy({
+          developmentAllowedOrigins: ['http://127.0.0.1:8080'],
+          mode: 'production',
+        }),
+    ).toThrow('cannot be configured in production');
+  });
+
+  it('rejects noncanonical delivery URLs and malformed DNS answers', async () => {
+    const global = resolver(['93.184.216.34', '93.184.216.34']);
+    const policy = new NodeWebhookUrlPolicy({
+      developmentAllowedOrigins: [],
+      mode: 'production',
+      resolverFactory: (): WebhookDnsResolver => global,
+    });
+    await expect(policy.resolveForDelivery('https://EXAMPLE.COM/hook')).rejects.toBeInstanceOf(
+      WebhookEndpointUrlProhibitedError,
+    );
+    await expect(policy.normalizeAndValidate('https://example.com/hook')).resolves.toBe(
+      'https://example.com/hook',
+    );
+
+    const malformed = new NodeWebhookUrlPolicy({
+      developmentAllowedOrigins: [],
+      mode: 'production',
+      resolverFactory: (): WebhookDnsResolver => resolver(['not-an-ip']),
+    });
+    await expect(malformed.normalizeAndValidate('https://example.com/hook')).rejects.toBeInstanceOf(
+      WebhookEndpointUrlProhibitedError,
+    );
+  });
+
+  it('covers the explicit address and normalization security predicates', () => {
+    expect(nodeWebhookUrlPolicyInternals.hostnameWithoutBrackets('[::1]')).toBe('::1');
+    expect(nodeWebhookUrlPolicyInternals.hostnameWithoutBrackets('example.com')).toBe(
+      'example.com',
+    );
+    expect(nodeWebhookUrlPolicyInternals.hasControlCharacters('safe')).toBe(false);
+    expect(nodeWebhookUrlPolicyInternals.hasControlCharacters('bad\u007f')).toBe(true);
+    expect(nodeWebhookUrlPolicyInternals.isProhibitedAddress('127.0.0.1')).toBe(true);
+    expect(nodeWebhookUrlPolicyInternals.isProhibitedAddress('::1')).toBe(true);
+    expect(nodeWebhookUrlPolicyInternals.isProhibitedAddress('93.184.216.34')).toBe(false);
+    expect(nodeWebhookUrlPolicyInternals.isProhibitedAddress('invalid')).toBe(true);
+    expect(nodeWebhookUrlPolicyInternals.normalize('https://EXAMPLE.COM./').href).toBe(
+      'https://example.com/',
+    );
   });
 });

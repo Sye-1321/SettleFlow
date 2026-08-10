@@ -71,4 +71,96 @@ describe('WebhookSecretCipher', () => {
         }),
     ).toThrow(WebhookKeyringUnavailableError);
   });
+
+  it.each([
+    {
+      activeKeyId: 'local-v1',
+      keysJson: '{}',
+      nodeEnvironment: 'test' as const,
+      provider: 'kms',
+    },
+    {
+      activeKeyId: 'invalid key id',
+      keysJson: '{}',
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'local-v1',
+      keysJson: '{',
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'local-v1',
+      keysJson: '[]',
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'local-v1',
+      keysJson: '{}',
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'missing',
+      keysJson: JSON.stringify({ 'local-v1': Buffer.alloc(32).toString('base64url') }),
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'local-v1',
+      keysJson: JSON.stringify({ 'invalid key id': Buffer.alloc(32).toString('base64url') }),
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+    {
+      activeKeyId: 'local-v1',
+      keysJson: JSON.stringify(
+        Object.fromEntries(
+          Array.from({ length: 17 }, (_, index) => [
+            `local-${index}`,
+            Buffer.alloc(32, index).toString('base64url'),
+          ]),
+        ),
+      ),
+      nodeEnvironment: 'test' as const,
+      provider: 'local',
+    },
+  ])('fails closed for unusable keyring options %#', (options) => {
+    expect(() => new LocalWebhookKeyring(options)).toThrow(WebhookKeyringUnavailableError);
+  });
+
+  it('fails closed for missing keys, malformed entropy, invalid active keys, and algorithms', () => {
+    const local = keyring();
+    expect(() => local.get('missing')).toThrow(WebhookKeyringUnavailableError);
+
+    const context = {
+      endpointId: '00000000-0000-4000-8000-000000000002',
+      merchantId: '00000000-0000-4000-8000-000000000001',
+      secretVersion: 1,
+    };
+    expect(() => new WebhookSecretCipher(local, () => Buffer.alloc(1)).create(context)).toThrow(
+      WebhookKeyringUnavailableError,
+    );
+    expect(() =>
+      new WebhookSecretCipher(
+        {
+          active: (): { readonly id: string; readonly key: Buffer } => ({
+            id: 'bad',
+            key: Buffer.alloc(31),
+          }),
+          get: (): Buffer => Buffer.alloc(31),
+        },
+        (size: number): Buffer => Buffer.alloc(size),
+      ).create(context),
+    ).toThrow(WebhookKeyringUnavailableError);
+
+    const cipher = new WebhookSecretCipher(local);
+    const encrypted = cipher.create(context).encrypted;
+    expect(() =>
+      cipher.decrypt(context, { ...encrypted, algorithm: 'invalid' as 'aes-256-gcm' }),
+    ).toThrow(WebhookKeyringUnavailableError);
+  });
 });

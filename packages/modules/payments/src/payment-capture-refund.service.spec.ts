@@ -1,4 +1,5 @@
 import {
+  EventIdentifierCollisionError,
   EventingService,
   type PaymentCapturedEvent,
   type PaymentCapturedEventInput,
@@ -11,13 +12,25 @@ import {
   type IdempotentOperation,
 } from '@settleflow/idempotency';
 import { MonotonicUlidGenerator, type PrismaTransactionClient } from '@settleflow/infrastructure';
-import type { LedgerPostingPort, LedgerPostingResult } from '@settleflow/ledger';
+import {
+  LedgerIdentifierCollisionError,
+  type LedgerPostingPort,
+  type LedgerPostingResult,
+} from '@settleflow/ledger';
 
 import type { PaymentExecutionPort } from './payment-execution';
 import { PaymentIntentService, paymentIntentServiceInternals } from './payment-intent.service';
 import {
   CaptureAmountMismatchError,
+  IdentifierGenerationExhaustedError,
+  PaymentCurrencyMismatchError,
+  PaymentIntentNotCapturableError,
+  PaymentIntentNotFoundError,
+  PaymentIntentNotRefundableError,
   PaymentProviderDeclinedError,
+  PaymentProviderUnavailableError,
+  RefundExternalReferenceConflictError,
+  RefundIdentifierCollisionError,
   RefundAmountExceedsAvailableError,
 } from './payments.errors';
 import type {
@@ -74,6 +87,7 @@ describe('Payment capture and refund orchestration', () => {
     readonly idempotency: jest.Mocked<IdempotencyService>;
     readonly ledger: jest.Mocked<LedgerPostingPort>;
     readonly repository: jest.Mocked<PaymentIntentRepository>;
+    readonly observer: { readonly record: jest.Mock };
     readonly service: PaymentIntentService;
     readonly transaction: PrismaTransactionClient;
   }
@@ -140,12 +154,14 @@ describe('Payment capture and refund orchestration', () => {
     const identifiers = {
       generate: jest.fn().mockReturnValue('01ARZ3NDEKTSV4RRFFQ69G5FAV'),
     } as unknown as jest.Mocked<MonotonicUlidGenerator>;
+    const observer = { record: jest.fn() };
     return {
       eventing,
       execution,
       idempotency,
       ledger,
       repository,
+      observer,
       service: new PaymentIntentService(
         repository,
         idempotency,
@@ -155,6 +171,7 @@ describe('Payment capture and refund orchestration', () => {
         identifiers,
         () => now,
         () => '33333333-3333-4333-8333-333333333333',
+        observer,
       ),
       transaction,
     };
@@ -276,5 +293,161 @@ describe('Payment capture and refund orchestration', () => {
         amountMinor: Number('1e3'),
       }),
     );
+  });
+
+  it.each([
+    [undefined, PaymentIntentNotFoundError],
+    [{ ...created, currency: 'USD' as const }, PaymentCurrencyMismatchError],
+    [captured, PaymentIntentNotCapturableError],
+  ])('snapshots capture validation failure %# without effects', async (payment, ErrorType) => {
+    const test = harness(payment ?? created);
+    if (payment === undefined) test.repository.lockByPublicId.mockResolvedValue(undefined);
+    await expect(test.service.capture(captureCommand)).rejects.toBeInstanceOf(ErrorType);
+    expect(test.ledger.postCapture.mock.calls).toHaveLength(0);
+    expect(test.observer.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'rejected' }),
+    );
+  });
+
+  it.each([
+    [undefined, PaymentIntentNotFoundError],
+    [created, PaymentIntentNotRefundableError],
+    [{ ...captured, currency: 'USD' as const }, PaymentCurrencyMismatchError],
+  ])('snapshots refund validation failure %# without effects', async (payment, ErrorType) => {
+    const test = harness(payment ?? captured);
+    if (payment === undefined) test.repository.lockByPublicId.mockResolvedValue(undefined);
+    await expect(
+      test.service.refund({
+        amountMinor: 100,
+        currency: 'ETB',
+        externalRef: 'refund',
+        idempotencyKey: 'refund-key',
+        merchantId,
+        paymentId,
+        requestId: 'req_refund',
+      }),
+    ).rejects.toBeInstanceOf(ErrorType);
+    expect(test.ledger.postRefund.mock.calls).toHaveLength(0);
+  });
+
+  it('replays valid successes and stable terminal problems', async () => {
+    const capture = harness();
+    capture.idempotency.acquire.mockResolvedValue({
+      kind: 'replay',
+      response: {
+        body: {
+          ...paymentIntentServiceInternals.toRepresentation(captured),
+          ledgerTransactionId: ledgerResult.publicId,
+        },
+        contentType: 'application/json',
+        headers: {},
+        resultReference: paymentId,
+        status: 200,
+      },
+    });
+    await expect(capture.service.capture(captureCommand)).resolves.toMatchObject({
+      paymentStatus: 'captured',
+    });
+    const refund = harness(captured);
+    refund.idempotency.acquire.mockResolvedValue({
+      kind: 'replay',
+      response: {
+        body: {
+          amountMinor: 100,
+          createdAt: now.toISOString(),
+          cumulativeRefundedAmountMinor: 100,
+          currency: 'ETB',
+          externalRef: 'refund',
+          id: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          ledgerTransactionId: ledgerResult.publicId,
+          paymentId,
+          paymentStatus: 'partially_refunded',
+        },
+        contentType: 'application/json',
+        headers: {},
+        resultReference: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        status: 201,
+      },
+    });
+    await expect(
+      refund.service.refund({
+        amountMinor: 100,
+        currency: 'ETB',
+        externalRef: 'refund',
+        idempotencyKey: 'refund-key',
+        merchantId,
+        paymentId,
+        requestId: 'request',
+      }),
+    ).resolves.toMatchObject({ paymentStatus: 'partially_refunded' });
+    const conflict = harness();
+    conflict.idempotency.acquire.mockResolvedValue({
+      kind: 'replay',
+      response: {
+        body: { code: 'currency_mismatch' },
+        contentType: 'application/problem+json',
+        headers: {},
+        status: 422,
+      },
+    });
+    await expect(conflict.service.capture(captureCommand)).rejects.toBeInstanceOf(
+      PaymentCurrencyMismatchError,
+    );
+  });
+
+  it('maps provider outages and bounds capture and refund collision retries', async () => {
+    const unavailable = harness();
+    unavailable.execution.capture.mockRejectedValue(new Error('offline'));
+    await expect(unavailable.service.capture(captureCommand)).rejects.toBeInstanceOf(
+      PaymentProviderUnavailableError,
+    );
+
+    for (const collision of [
+      new EventIdentifierCollisionError(),
+      new LedgerIdentifierCollisionError(),
+    ]) {
+      const capture = harness();
+      capture.eventing.persistPaymentEvent.mockRejectedValue(collision);
+      await expect(capture.service.capture(captureCommand)).rejects.toBeInstanceOf(
+        IdentifierGenerationExhaustedError,
+      );
+    }
+
+    for (const collision of [
+      new RefundIdentifierCollisionError(),
+      new EventIdentifierCollisionError(),
+      new LedgerIdentifierCollisionError(),
+    ]) {
+      const refund = harness(captured);
+      refund.repository.createRefund.mockRejectedValue(collision);
+      await expect(
+        refund.service.refund({
+          amountMinor: 100,
+          currency: 'ETB',
+          externalRef: 'refund',
+          idempotencyKey: 'refund-key',
+          merchantId,
+          paymentId,
+          requestId: 'request',
+        }),
+      ).rejects.toBeInstanceOf(IdentifierGenerationExhaustedError);
+    }
+  });
+
+  it('durably snapshots refund external-reference conflicts', async () => {
+    const test = harness(captured);
+    test.repository.createRefund.mockRejectedValue(new RefundExternalReferenceConflictError());
+    await expect(
+      test.service.refund({
+        amountMinor: 100,
+        currency: 'ETB',
+        externalRef: 'refund',
+        idempotencyKey: 'refund-key',
+        merchantId,
+        paymentId,
+        requestId: 'request',
+      }),
+    ).rejects.toBeInstanceOf(RefundExternalReferenceConflictError);
+    expect(test.idempotency.complete.mock.calls).toHaveLength(2);
   });
 });

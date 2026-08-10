@@ -67,8 +67,8 @@ for (const image of images) {
   const config = model.Config;
   assert(config.User === '10001:10001', `${image.name} image user is not fixed non-root`);
   assert(
-    JSON.stringify(config.Entrypoint) === JSON.stringify(['node']),
-    `${image.name} entrypoint is not exec-form node`,
+    JSON.stringify(config.Entrypoint) === JSON.stringify(['/nodejs/bin/node']),
+    `${image.name} entrypoint is not the absolute distroless Node runtime`,
   );
   assert(
     JSON.stringify(config.Cmd) === JSON.stringify([image.command]),

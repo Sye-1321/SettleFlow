@@ -182,4 +182,29 @@ describe('InboxService', () => {
     expect((repository.withSerializableTransaction as jest.Mock).mock.calls).toHaveLength(3);
     expect(sleep).toHaveBeenCalledTimes(2);
   });
+
+  it('uses bounded default retry timing and then commits the whole transaction', async () => {
+    let attempt = 0;
+    const serializationFailure = Object.assign(new Error('serialization failure'), {
+      code: '40001',
+    });
+    const repository = createRepository(
+      jest.fn().mockResolvedValue({ kind: 'reserved' }),
+      async (operation) => {
+        attempt += 1;
+        if (attempt === 1) throw serializationFailure;
+        return operation({
+          processedAt: new Date('2026-08-02T10:01:00.000Z'),
+          transaction: {} as PrismaTransactionClient,
+        });
+      },
+    );
+    await expect(
+      new InboxService(repository, { retryAttempts: 2 }).process(
+        createMessage(),
+        jest.fn().mockResolvedValue('committed'),
+      ),
+    ).resolves.toEqual({ kind: 'processed', value: 'committed' });
+    expect(attempt).toBe(2);
+  });
 });

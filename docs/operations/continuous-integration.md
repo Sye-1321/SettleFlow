@@ -65,7 +65,7 @@ pnpm images:sbom
 pnpm release:evidence
 ```
 
-Gitleaks 8.30.1, Hadolint 2.15.1, Trivy 0.73.0, and Syft 1.50.0 run from version-and-digest-pinned containers declared in `tools/security/tool-images.json`. Gitleaks redacts findings. Trivy blocks critical and unreviewed high package or filesystem-secret findings across API, worker, and migrator images. The dependency audit applies the same severity policy; critical findings cannot be excepted. Runtime images remove the upstream npm, Corepack, and Yarn installations after build so their unused command and dependency surfaces cannot create avoidable release findings.
+Gitleaks 8.30.1, Hadolint 2.15.1, Trivy 0.73.0, and Syft 1.50.0 run from version-and-digest-pinned containers declared in `tools/security/tool-images.json`. Gitleaks redacts findings. Trivy blocks critical and unreviewed high package or filesystem-secret findings across API, worker, and migrator images. The dependency audit applies the same severity policy; critical findings cannot be excepted. Final runtime stages use the digest-pinned distroless Node.js 24 Debian 13 image, which contains no npm, Corepack, Yarn, shell, or package manager; build tooling remains confined to the separate pinned toolchain stage.
 
 Gitleaks ignores are exact historical fingerprints, never path/rule wildcards. Every ignored fingerprint must have a matching bounded false-positive classification in `security/gitleaks-reviews.json`; repository policy fails if either side changes. The current two entries cover a synthetic integration-test idempotency value and security-prohibition prose, not usable credentials.
 
@@ -77,12 +77,12 @@ Coverage diagnostics are retained for 7 days. Image evidence is retained for 14 
 
 On a push to `main`, GitHub signs provenance for the downloaded evidence files through its short-lived OIDC identity and attestation service. The job does not push the application images or attest to a registry reference. Public GHCR publication remains gated on the later clean-room `v1.0.0` release simulation.
 
-## GitHub prerequisites and current blocker
+## GitHub prerequisites and local gate status
 
 No repository secrets or Actions variables are required. GitHub-hosted Ubuntu 24.04 runners need Docker, outbound package/advisory/scanner-database access, dependency graph support for Dependency Review, code-scanning upload support for CodeQL, and artifact-attestation support for the main-branch provenance job. These GitHub services cannot be proven locally; the first remote workflow run must validate them before required-check configuration.
 
-The approved coverage floors are intentionally unchanged. The latest recorded baseline—62.45% statements, 53.93% branches, 50.45% functions, and 63.58% lines—does not satisfy the 85/80/80/85 global floors or the per-critical-module floors. Consequently `Approved coverage floors` is expected to block until focused coverage remediation is completed. Do not mark it optional, lower the threshold, add exclusions, or use a workflow exception.
+The approved coverage floors remain unchanged. The Step 7 run records 91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines globally against the 85/80/80/85 floors. Eventing, Idempotency, Ledger, Payments, Reconciliation, Settlements, and Webhooks each also clear their 90% statements/lines and 85% branches/functions floors. Coverage is assembled from one unit shard and isolated real-dependency integration shards using compatible raw Istanbul maps; every shard must pass before the merged report is accepted.
 
-The runtime image gate is independently blocking. Trivy 0.73.0 currently reports 5 critical and 17 high Debian findings in each pinned Debian 12.15 API, worker, and migrator image. Application Node packages and filesystem secrets have zero image findings, and the installed affected Debian packages equal the candidates available from the pinned base. No exception, suppression, severity downgrade, or unreviewed base-image change was made. CI retains a sanitized finding summary and the SBOM/evidence manifest even though the image job fails; a release remains blocked until the base is remediated or the owner approves a time-bounded high-only exception under policy. Critical findings cannot be excepted.
+The runtime image gate now passes without an exception or suppression. Trivy 0.73.0 reports zero critical and zero high package findings and zero filesystem-secret findings for each rebuilt API, worker, and migrator image. The build stage remains the exact Node.js 24.18.0 Trixie-slim digest with pinned OpenSSL packages; only the minimal final runtime changed to the exact distroless Node.js 24 Debian 13 digest.
 
 Use the [CI and security gate failure runbook](../runbooks/ci-security-gate-failure.md) for safe triage. OCI runtime details remain in [OCI Images and Release Simulation](release-simulation.md).

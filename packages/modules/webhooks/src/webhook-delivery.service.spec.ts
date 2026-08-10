@@ -1,4 +1,9 @@
 import { LocalWebhookKeyring, WebhookSecretCipher } from './webhook-secret-crypto';
+import {
+  WebhookEndpointUrlProhibitedError,
+  WebhookEndpointUrlResolutionUnavailableError,
+  WebhookEndpointUrlUnresolvableError,
+} from './webhook.errors';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import type {
   ClaimedWebhookDelivery,
@@ -168,5 +173,202 @@ describe('WebhookDeliveryService', () => {
     });
     expect(releaseUnstarted).toHaveBeenCalledWith(claim);
     expect(startAttempt).not.toHaveBeenCalled();
+  });
+
+  it('reports readiness failures and stops without claiming more work', async () => {
+    const localKeyring = keyring();
+    const cipher = new WebhookSecretCipher(localKeyring);
+    const repo = repository({ checkReadiness: jest.fn().mockResolvedValue(false) });
+    const httpClient = { abortActive: jest.fn(), deliver: jest.fn() };
+    const service = new WebhookDeliveryService(
+      repo,
+      localKeyring,
+      cipher,
+      { resolveForDelivery: jest.fn() },
+      httpClient,
+    );
+    await expect(service.ensureReady()).resolves.toBe(false);
+    expect(service.isReady()).toBe(false);
+    service.abortActive();
+    expect(httpClient.abortActive).toHaveBeenCalled();
+    service.beginShutdown();
+    await expect(service.ensureReady()).resolves.toBe(false);
+    await expect(service.runOnce('worker', 4)).resolves.toMatchObject({
+      claimed: 0,
+      dispatcherReady: false,
+    });
+  });
+
+  it('records lease recovery and ownership loss without network contact', async () => {
+    const localKeyring = keyring();
+    const cipher = new WebhookSecretCipher(localKeyring);
+    const signal = jest.fn();
+    const repo = repository({
+      loadContext: jest.fn().mockResolvedValue(undefined),
+      recoverExpired: jest
+        .fn()
+        .mockResolvedValue({ clearedUnstarted: 1, deadLettered: 1, recoveredUnknown: 1 }),
+    });
+    const service = new WebhookDeliveryService(
+      repo,
+      localKeyring,
+      cipher,
+      { resolveForDelivery: jest.fn() },
+      { abortActive: jest.fn(), deliver: jest.fn() },
+      { signal },
+    );
+    await expect(service.runOnce('worker', 4)).resolves.toMatchObject({
+      claimed: 1,
+      deadLettered: 1,
+      ownershipLost: 1,
+      recoveredUnknown: 1,
+    });
+    expect(signal).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'webhook.delivery.ownership_lost' }),
+    );
+  });
+
+  it('handles start-attempt ownership loss and secret-version drift safely', async () => {
+    const localKeyring = keyring();
+    const cipher = new WebhookSecretCipher(localKeyring);
+    const stored = context(cipher);
+    const ownership = new WebhookDeliveryService(
+      repository({
+        loadContext: jest.fn().mockResolvedValue(stored),
+        startAttempt: jest.fn().mockResolvedValue({ kind: 'ownership_lost' }),
+      }),
+      localKeyring,
+      cipher,
+      { resolveForDelivery: jest.fn() },
+      { abortActive: jest.fn(), deliver: jest.fn() },
+    );
+    await expect(ownership.runOnce('worker', 4)).resolves.toMatchObject({ ownershipLost: 1 });
+
+    const drift = new WebhookDeliveryService(
+      repository({
+        loadContext: jest.fn().mockResolvedValue(stored),
+        startAttempt: jest.fn().mockResolvedValue({
+          attempt: {
+            attemptNumber: 1,
+            currentSecretVersion: 99,
+            nextAttemptAt: new Date(),
+            previousSecretVersion: undefined,
+            signatureTimestamp: 1n,
+            startedAt: new Date(),
+          },
+          kind: 'started',
+        }),
+      }),
+      localKeyring,
+      cipher,
+      { resolveForDelivery: jest.fn() },
+      { abortActive: jest.fn(), deliver: jest.fn() },
+    );
+    await expect(drift.runOnce('worker', 4)).resolves.toMatchObject({ dispatcherReady: false });
+  });
+
+  it.each([
+    [
+      new WebhookEndpointUrlResolutionUnavailableError(),
+      'dns_unavailable',
+      'retryable_failure',
+      'retrying',
+    ],
+    [
+      new WebhookEndpointUrlUnresolvableError(),
+      'dns_unresolvable',
+      'non_retryable_failure',
+      'dead_lettered',
+    ],
+    [
+      new WebhookEndpointUrlProhibitedError(),
+      'destination_prohibited',
+      'non_retryable_failure',
+      'dead_lettered',
+    ],
+    [new Error('socket failed'), 'network_error', 'retryable_failure', 'retrying'],
+  ])(
+    'persists classified evidence for delivery failure %#',
+    async (error, code, outcome, status) => {
+      const localKeyring = keyring();
+      const cipher = new WebhookSecretCipher(localKeyring);
+      const stored = context(cipher);
+      const finalizeAttempt = jest.fn().mockResolvedValue({ status, updated: true });
+      const repo = repository({
+        finalizeAttempt,
+        loadContext: jest.fn().mockResolvedValue(stored),
+        startAttempt: jest.fn().mockResolvedValue({
+          attempt: {
+            attemptNumber: 1,
+            currentSecretVersion: 1,
+            nextAttemptAt: new Date('2026-08-02T10:01:00.000Z'),
+            previousSecretVersion: undefined,
+            signatureTimestamp: 1n,
+            startedAt: new Date(),
+          },
+          kind: 'started',
+        }),
+      });
+      const service = new WebhookDeliveryService(
+        repo,
+        localKeyring,
+        cipher,
+        { resolveForDelivery: jest.fn().mockRejectedValue(error) },
+        { abortActive: jest.fn(), deliver: jest.fn() },
+        { random: (): number => 0 },
+      );
+      await expect(service.runOnce('worker', 4)).resolves.toMatchObject(
+        status === 'retrying' ? { retrying: 1 } : { deadLettered: 1 },
+      );
+      expect(finalizeAttempt).toHaveBeenCalledWith(
+        claim,
+        expect.anything(),
+        expect.objectContaining({ errorCode: code, outcome }),
+      );
+    },
+  );
+
+  it('treats lost finalization ownership as an ownership loss', async () => {
+    const localKeyring = keyring();
+    const cipher = new WebhookSecretCipher(localKeyring);
+    const stored = context(cipher);
+    const repo = repository({
+      finalizeAttempt: jest.fn().mockResolvedValue({ status: 'delivered', updated: false }),
+      loadContext: jest.fn().mockResolvedValue(stored),
+      startAttempt: jest.fn().mockResolvedValue({
+        attempt: {
+          attemptNumber: 1,
+          currentSecretVersion: 1,
+          nextAttemptAt: undefined,
+          previousSecretVersion: undefined,
+          signatureTimestamp: 1n,
+          startedAt: new Date(),
+        },
+        kind: 'started',
+      }),
+    });
+    const service = new WebhookDeliveryService(
+      repo,
+      localKeyring,
+      cipher,
+      {
+        resolveForDelivery: jest.fn().mockResolvedValue({
+          address: '93.184.216.34',
+          family: 4,
+          hostname: 'example.com',
+          url: stored.normalizedUrl,
+        }),
+      },
+      {
+        abortActive: jest.fn(),
+        deliver: jest.fn().mockResolvedValue({
+          bodySha256: Buffer.alloc(32),
+          bodyTruncated: false,
+          kind: 'response',
+          statusCode: 200,
+        }),
+      },
+    );
+    await expect(service.runOnce('worker', 4)).resolves.toMatchObject({ ownershipLost: 1 });
   });
 });

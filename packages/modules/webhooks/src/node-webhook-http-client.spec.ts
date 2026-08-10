@@ -32,6 +32,24 @@ describe('NodeWebhookHttpClient', () => {
     },
   );
 
+  it.each([
+    ['SETTLEFLOW_WEBHOOK_TIMEOUT', 'request_timeout'],
+    ['ECONNREFUSED', 'connection_refused'],
+    ['ECONNRESET', 'connection_reset'],
+    ['EPIPE', 'connection_reset'],
+    ['EAI_AGAIN', 'dns_unavailable'],
+    ['ENOTFOUND', 'dns_unavailable'],
+    ['ESERVFAIL', 'dns_unavailable'],
+    ['UNKNOWN', 'network_error'],
+  ] as const)('classifies %s transport evidence', (code, expected) => {
+    expect(nodeWebhookHttpClientInternals.classifyTransportError({ code })).toBe(expected);
+  });
+
+  it('uses fixed ADR resource limits and rejects configuration drift', () => {
+    expect(() => new NodeWebhookHttpClient({ maxResponseBytes: 1 })).toThrow('ADR-0019');
+    expect(() => new NodeWebhookHttpClient({ timeoutMs: 1 })).toThrow('ADR-0019');
+  });
+
   it('posts exact bytes and headers to one pinned address without following redirects', async () => {
     const received: { body: Buffer; headers: IncomingMessage['headers']; url: string }[] = [];
     const target = await listen((request, response) => {
@@ -100,6 +118,30 @@ describe('NodeWebhookHttpClient', () => {
         kind: 'response',
         statusCode: 200,
       });
+    } finally {
+      await close(target.server);
+    }
+  });
+
+  it('hashes a bounded response body as immutable attempt evidence', async () => {
+    const target = await listen((_request, response) => {
+      response.statusCode = 204;
+      response.end('evidence');
+    });
+    try {
+      const client = new NodeWebhookHttpClient();
+      const result = await client.deliver({
+        body: Buffer.from('{}'),
+        destination: {
+          address: '127.0.0.1',
+          family: 4,
+          hostname: '127.0.0.1',
+          url: `${target.origin}/hash`,
+        },
+        headers: { 'Content-Length': '2' },
+      });
+      expect(result).toMatchObject({ bodyTruncated: false, kind: 'response', statusCode: 204 });
+      expect(result.kind === 'response' ? result.bodySha256 : undefined).toHaveLength(32);
     } finally {
       await close(target.server);
     }

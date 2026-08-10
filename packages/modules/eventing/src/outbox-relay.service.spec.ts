@@ -116,6 +116,77 @@ describe('OutboxRelayService', () => {
     });
   });
 
+  it('returns ready without finalization when no event is available', async () => {
+    const finalize = jest.fn();
+    const repository: jest.Mocked<OutboxRelayRepository> = {
+      claimPending: jest.fn().mockResolvedValue([]),
+      finalize,
+    };
+    const publisher: jest.Mocked<OutboxPublisher> = {
+      close: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(true),
+      publishBatch: jest.fn(),
+    };
+
+    await expect(
+      new OutboxRelayService(repository, publisher, {
+        batchSize: 50,
+        retryBaseMs: 1_000,
+        retryMaxMs: 60_000,
+      }).runOnce('worker_one'),
+    ).resolves.toEqual({
+      claimed: 0,
+      ownershipLost: 0,
+      published: 0,
+      publisherReady: true,
+      retryScheduled: 0,
+    });
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it('retries mandatory returns and every claim omitted from publisher outcomes', async () => {
+    const signal = jest.fn();
+    const repository: jest.Mocked<OutboxRelayRepository> = {
+      claimPending: jest.fn().mockResolvedValue(claimedEvents),
+      finalize: jest.fn().mockResolvedValue({ ownershipLost: 1, updated: 1 }),
+    };
+    const publisher: jest.Mocked<OutboxPublisher> = {
+      close: jest.fn(),
+      ensureReady: jest.fn().mockResolvedValue(true),
+      isReady: jest.fn().mockReturnValue(false),
+      publishBatch: jest.fn().mockResolvedValue([
+        {
+          code: 'mandatory_return',
+          eventId: claimedEvents[0]!.eventId,
+          kind: 'retry',
+        },
+      ]),
+    };
+
+    await expect(
+      new OutboxRelayService(repository, publisher, {
+        batchSize: 50,
+        random: (): number => 0,
+        retryBaseMs: 1_000,
+        retryMaxMs: 60_000,
+        signal,
+      }).runOnce('worker_one'),
+    ).resolves.toEqual({
+      claimed: 2,
+      ownershipLost: 1,
+      published: 0,
+      publisherReady: false,
+      retryScheduled: 2,
+    });
+    expect(signal).toHaveBeenCalledWith({ count: 1, event: 'outbox.publish.returned' });
+    expect(signal).toHaveBeenCalledWith({
+      count: 2,
+      event: 'outbox.publish.retry_scheduled',
+      failureCounts: { mandatory_return: 1, publisher_unavailable: 1 },
+    });
+  });
+
   it('uses inclusive capped full-jitter bounds without overflowing', () => {
     expect(
       calculateFullJitterBackoff({

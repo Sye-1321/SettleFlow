@@ -9,6 +9,10 @@ import { AuditService } from '@settleflow/operations';
 import { PrismaReconciliationRepository } from './prisma-reconciliation.repository';
 import { ReconciliationService } from './reconciliation.service';
 import type { StageReconciliationCommand } from './reconciliation.types';
+import {
+  InvalidReconciliationRequestError,
+  ReconciliationIdentifierExhaustedError,
+} from './reconciliation.errors';
 
 describe('ReconciliationService', () => {
   const periodStart = new Date('2026-08-03T00:00:00.000Z');
@@ -112,5 +116,107 @@ describe('ReconciliationService', () => {
       harness.transaction,
       expect.objectContaining({ details: { outcome: 'failed', rowCount: 0 } }),
     );
+  });
+
+  it('stages a valid import, audits it atomically, and returns a replay without staging', async () => {
+    const harness = createHarness();
+    harness.stage.mockResolvedValue({
+      created: true,
+      representation: {
+        createdAt: '2026-08-03T10:00:00.000Z',
+        id: importId,
+        periodEnd: periodEnd.toISOString(),
+        periodStart: periodStart.toISOString(),
+        rowCount: 1,
+        status: 'STAGED',
+      },
+    });
+    const command: StageReconciliationCommand = {
+      actorApiKeyId: '00000000-0000-4000-8000-000000000202',
+      bytes: csv('settlement_test', new Date('2026-08-03T10:00:00.000Z')),
+      idempotencyKey: 'valid-import',
+      merchantId: '00000000-0000-4000-8000-000000000201',
+      periodEnd,
+      periodStart,
+      requestId: 'req_reconciliation_valid',
+    };
+
+    await expect(harness.service.stage(command)).resolves.toMatchObject({
+      rowCount: 1,
+      status: 'STAGED',
+    });
+    expect(harness.stage).toHaveBeenCalledWith(
+      harness.transaction,
+      expect.objectContaining({
+        rows: [expect.objectContaining({ merchantCode: 'settlement_test' })],
+      }),
+    );
+    expect(harness.appendOperational).toHaveBeenCalledWith(
+      harness.transaction,
+      expect.objectContaining({ details: { outcome: 'staged', rowCount: 1 } }),
+    );
+
+    const replayHarness = createHarness();
+    const replay = { id: importId, rowCount: 1, status: 'STAGED' };
+    const idempotency = (
+      replayHarness.service as unknown as {
+        idempotency: { acquire: jest.Mock };
+      }
+    ).idempotency;
+    idempotency.acquire.mockResolvedValue({
+      kind: 'replay',
+      response: { body: replay },
+    });
+    await expect(replayHarness.service.stage(command)).resolves.toBe(replay);
+    expect(replayHarness.stage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new Date(Number.NaN), periodEnd],
+    [periodStart, new Date(Number.NaN)],
+    [periodEnd, periodStart],
+    [periodStart, new Date('2026-09-04T00:00:00.001Z')],
+  ])('rejects invalid reconciliation interval %#', async (start, end) => {
+    const harness = createHarness();
+    await expect(
+      harness.service.stage({
+        actorApiKeyId: '00000000-0000-4000-8000-000000000202',
+        bytes: Buffer.from('unused'),
+        idempotencyKey: 'invalid-window',
+        merchantId: '00000000-0000-4000-8000-000000000201',
+        periodEnd: end,
+        periodStart: start,
+        requestId: 'req_invalid_window',
+      }),
+    ).rejects.toBeInstanceOf(InvalidReconciliationRequestError);
+  });
+
+  it('retries public-ID conflicts three times, then fails closed', async () => {
+    const harness = createHarness();
+    harness.stage.mockRejectedValue(new Error('unique constraint'));
+    await expect(
+      harness.service.stage({
+        actorApiKeyId: '00000000-0000-4000-8000-000000000202',
+        bytes: csv('settlement_test', new Date('2026-08-03T10:00:00.000Z')),
+        idempotencyKey: 'collision',
+        merchantId: '00000000-0000-4000-8000-000000000201',
+        periodEnd,
+        periodStart,
+        requestId: 'req_collision',
+      }),
+    ).rejects.toBeInstanceOf(ReconciliationIdentifierExhaustedError);
+    expect(harness.stage).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ['rec_invalid', 20, undefined],
+    [importId, 0, undefined],
+    [importId, 101, undefined],
+    [importId, 20, 'bad cursor!'],
+  ] as const)('rejects invalid report request %#', (id, limit, cursor) => {
+    const harness = createHarness();
+    expect(() =>
+      harness.service.getReport('00000000-0000-4000-8000-000000000201', id, limit, cursor),
+    ).toThrow(InvalidReconciliationRequestError);
   });
 });

@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-ARG NODE_IMAGE=node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+ARG NODE_IMAGE=node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573
+ARG NODE_RUNTIME_IMAGE=gcr.io/distroless/nodejs24-debian13@sha256:fbbdda866ea71aef98c4abece17e3d61fbf820cc2ef3961522caa2478716171a
 
 FROM ${NODE_IMAGE} AS toolchain
 ENV PNPM_HOME=/pnpm
@@ -8,8 +9,8 @@ ENV PATH=/pnpm:$PATH
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
-      libssl3=3.0.20-1~deb12u2 \
-      openssl=3.0.20-1~deb12u2 && \
+      libssl3t64=3.5.6-1~deb13u2 \
+      openssl=3.5.6-1~deb13u2 && \
     rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.18.0 --activate
 COPY . .
@@ -31,21 +32,13 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
       /opt/settleflow-migrator/node_modules/.pnpm/@prisma+engines@7.9.1/node_modules/@prisma/engines/schema-engine-debian-openssl-3.0.x && \
     find /opt/settleflow-api /opt/settleflow-worker -type f \( -name '*.map' -o -name '*.d.ts' -o -name '*.tsbuildinfo' \) -delete
 
-FROM ${NODE_IMAGE} AS runtime
-RUN apt-get update && \
-    apt-get install --yes --no-install-recommends \
-      libssl3=3.0.20-1~deb12u2 \
-      openssl=3.0.20-1~deb12u2 && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /usr/local/lib/node_modules/corepack /usr/local/lib/node_modules/npm /opt/yarn-v1.22.22 && \
-    rm -f /usr/local/bin/corepack /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg && \
-    groupadd --gid 10001 settleflow && \
-    useradd --uid 10001 --gid 10001 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin settleflow
+FROM ${NODE_RUNTIME_IMAGE} AS runtime
 ENV HOME=/tmp
 ENV NODE_ENV=development
 ENV XDG_CACHE_HOME=/tmp/.cache
 WORKDIR /app
 STOPSIGNAL SIGTERM
+USER 10001:10001
 
 FROM runtime AS api
 ARG OCI_CREATED=unknown
@@ -61,8 +54,8 @@ COPY --from=deploy --chown=10001:10001 /opt/settleflow-api/ ./
 USER 10001:10001
 EXPOSE 3000 9464
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(2000)}).then(r=>{if(!r.ok)throw Error(String(r.status))}).catch(()=>process.exit(1))"]
-ENTRYPOINT ["node"]
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/health/ready',{signal:AbortSignal.timeout(2000)}).then(r=>{if(!r.ok)throw Error(String(r.status))}).catch(()=>process.exit(1))"]
+ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["dist/main.js"]
 
 FROM runtime AS worker
@@ -79,8 +72,8 @@ COPY --from=deploy --chown=10001:10001 /opt/settleflow-worker/ ./
 USER 10001:10001
 EXPOSE 9465
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=6 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:9465/health/ready',{signal:AbortSignal.timeout(2000)}).then(r=>{if(!r.ok)throw Error(String(r.status))}).catch(()=>process.exit(1))"]
-ENTRYPOINT ["node"]
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:9465/health/ready',{signal:AbortSignal.timeout(2000)}).then(r=>{if(!r.ok)throw Error(String(r.status))}).catch(()=>process.exit(1))"]
+ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["dist/main.js"]
 
 FROM runtime AS migrator
@@ -98,5 +91,5 @@ COPY --chown=10001:10001 prisma ./prisma
 COPY --chown=10001:10001 prisma.config.mts ./prisma.config.mts
 COPY --chown=10001:10001 tools/release/run-migrations.mjs tools/release/verify-release-database.mjs ./tools/release/
 USER 10001:10001
-ENTRYPOINT ["node"]
+ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["tools/release/run-migrations.mjs"]

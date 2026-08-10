@@ -5,9 +5,11 @@ import {
   PaymentCreatedEventContractError,
   PaymentCreatedMessageContractError,
   serializePaymentCreatedEvent,
+  validatePaymentEventMessage,
   validatePaymentCreatedMessage,
 } from './payment-created-event.contract';
 import { OUTBOX_RABBITMQ_TOPOLOGY } from './rabbitmq-topology';
+import { PaymentLifecycleMessageContractError } from './payment-lifecycle-event.contract';
 
 const EVENT_ID = 'evt_01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const PAYMENT_ID = 'pi_01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -181,5 +183,150 @@ describe('payment.created.v1 relay contract', () => {
         }),
       ),
     ).toThrow(PaymentCreatedMessageContractError);
+  });
+
+  it.each([
+    [
+      'exchange',
+      (message: ConsumeMessage): void => {
+        message.fields.exchange = 'other';
+      },
+    ],
+    [
+      'routing key',
+      (message: ConsumeMessage): void => {
+        message.fields.routingKey = 'other';
+      },
+    ],
+    [
+      'message ID',
+      (message: ConsumeMessage): void => {
+        message.properties.messageId = 'other';
+      },
+    ],
+    [
+      'type',
+      (message: ConsumeMessage): void => {
+        message.properties.type = 'other';
+      },
+    ],
+    [
+      'correlation ID',
+      (message: ConsumeMessage): void => {
+        message.properties.correlationId = 'other';
+      },
+    ],
+    [
+      'content type',
+      (message: ConsumeMessage): void => {
+        message.properties.contentType = 'text/plain';
+      },
+    ],
+    [
+      'content encoding',
+      (message: ConsumeMessage): void => {
+        message.properties.contentEncoding = 'gzip';
+      },
+    ],
+    [
+      'delivery mode',
+      (message: ConsumeMessage): void => {
+        message.properties.deliveryMode = 1;
+      },
+    ],
+    [
+      'app ID',
+      (message: ConsumeMessage): void => {
+        message.properties.appId = 'other';
+      },
+    ],
+    [
+      'timestamp',
+      (message: ConsumeMessage): void => {
+        message.properties.timestamp = 1;
+      },
+    ],
+    [
+      'aggregate type',
+      (message: ConsumeMessage): void => {
+        message.properties.headers!['x-settleflow-aggregate-type'] = 'other';
+      },
+    ],
+    [
+      'aggregate ID',
+      (message: ConsumeMessage): void => {
+        message.properties.headers!['x-settleflow-aggregate-id'] = 'other';
+      },
+    ],
+    [
+      'merchant ID',
+      (message: ConsumeMessage): void => {
+        message.properties.headers!['x-settleflow-merchant-id'] = 'other';
+      },
+    ],
+    [
+      'publish attempt type',
+      (message: ConsumeMessage): void => {
+        message.properties.headers!['x-settleflow-publish-attempt'] = '1';
+      },
+    ],
+    [
+      'publish attempt value',
+      (message: ConsumeMessage): void => {
+        message.properties.headers!['x-settleflow-publish-attempt'] = 0;
+      },
+    ],
+  ] as const)('rejects an invalid AMQP %s', (_case, mutate) => {
+    const invalid = createMessage();
+    mutate(invalid);
+    expect(() => validatePaymentCreatedMessage(invalid)).toThrow(
+      PaymentCreatedMessageContractError,
+    );
+  });
+
+  it.each([
+    { eventId: 'invalid' },
+    { eventType: 'other' },
+    { occurredAt: 'not-a-date' },
+    { requestId: '' },
+    { merchantId: 'invalid' },
+    { paymentId: 'invalid' },
+    { amountMinor: 0 },
+    { currency: 'EUR' },
+    { status: 'CAPTURED' },
+  ])('rejects invalid body field %#', (mutation) => {
+    const body = JSON.parse(createMessage().content.toString('utf8')) as Record<string, unknown>;
+    expect(() =>
+      validatePaymentCreatedMessage(
+        createMessage({ content: Buffer.from(JSON.stringify({ ...body, ...mutation })) }),
+      ),
+    ).toThrow(PaymentCreatedMessageContractError);
+  });
+
+  it.each([
+    { aggregateId: 'invalid' },
+    { aggregateType: 'other' },
+    { attemptCount: 0 },
+    { eventId: 'invalid' },
+    { eventType: 'other' },
+    { merchantId: 'invalid' },
+    { requestId: '' },
+    { payload: [] },
+  ])('rejects an invalid claimed outbox envelope %#', (mutation) => {
+    expect(() =>
+      serializePaymentCreatedEvent({
+        ...createEvent(),
+        ...mutation,
+      }),
+    ).toThrow(PaymentCreatedEventContractError);
+  });
+
+  it('routes supported payment messages and rejects unsupported schemas', () => {
+    expect(validatePaymentEventMessage(createMessage()).event.eventType).toBe('payment.created.v1');
+    const unsupported = createMessage();
+    unsupported.properties.type = 'payment.unknown.v1';
+    expect(() => validatePaymentEventMessage(unsupported)).toThrow(
+      PaymentLifecycleMessageContractError,
+    );
   });
 });

@@ -147,4 +147,177 @@ describe('payment capture/refund event contracts', () => {
       PaymentLifecycleMessageContractError,
     );
   });
+
+  it.each([
+    [
+      'exchange',
+      (value: ConsumeMessage): void => {
+        value.fields.exchange = 'other';
+      },
+    ],
+    [
+      'routing key',
+      (value: ConsumeMessage): void => {
+        value.fields.routingKey = 'other';
+      },
+    ],
+    [
+      'message ID',
+      (value: ConsumeMessage): void => {
+        value.properties.messageId = 'other';
+      },
+    ],
+    [
+      'type',
+      (value: ConsumeMessage): void => {
+        value.properties.type = 'other';
+      },
+    ],
+    [
+      'correlation ID',
+      (value: ConsumeMessage): void => {
+        value.properties.correlationId = 'other';
+      },
+    ],
+    [
+      'content type',
+      (value: ConsumeMessage): void => {
+        value.properties.contentType = 'text/plain';
+      },
+    ],
+    [
+      'content encoding',
+      (value: ConsumeMessage): void => {
+        value.properties.contentEncoding = 'gzip';
+      },
+    ],
+    [
+      'delivery mode',
+      (value: ConsumeMessage): void => {
+        value.properties.deliveryMode = 1;
+      },
+    ],
+    [
+      'app ID',
+      (value: ConsumeMessage): void => {
+        value.properties.appId = 'other';
+      },
+    ],
+    [
+      'timestamp',
+      (value: ConsumeMessage): void => {
+        value.properties.timestamp = 1;
+      },
+    ],
+    [
+      'schema version',
+      (value: ConsumeMessage): void => {
+        value.properties.headers!['x-settleflow-schema-version'] = 2;
+      },
+    ],
+    [
+      'aggregate type',
+      (value: ConsumeMessage): void => {
+        value.properties.headers!['x-settleflow-aggregate-type'] = 'other';
+      },
+    ],
+    [
+      'aggregate ID',
+      (value: ConsumeMessage): void => {
+        value.properties.headers!['x-settleflow-aggregate-id'] = 'other';
+      },
+    ],
+    [
+      'merchant ID',
+      (value: ConsumeMessage): void => {
+        value.properties.headers!['x-settleflow-merchant-id'] = 'other';
+      },
+    ],
+    [
+      'publish attempt',
+      (value: ConsumeMessage): void => {
+        value.properties.headers!['x-settleflow-publish-attempt'] = 0;
+      },
+    ],
+  ] as const)('rejects invalid lifecycle AMQP %s', (_case, mutate) => {
+    const invalid = message('payment.captured.v1');
+    mutate(invalid);
+    expect(() => validatePaymentLifecycleMessage(invalid)).toThrow(
+      PaymentLifecycleMessageContractError,
+    );
+  });
+
+  it.each([
+    { eventId: 'invalid' },
+    { occurredAt: 'not-a-date' },
+    { requestId: '' },
+    { merchantId: 'invalid' },
+    { paymentId: 'invalid' },
+    { capturedAmountMinor: 0 },
+    { currency: 'EUR' },
+    { availableOn: '2026-08-03T10:20:12.345Z' },
+    { ledgerTransactionId: 'invalid' },
+  ])('rejects invalid captured field %#', (mutation) => {
+    const invalid = message('payment.captured.v1');
+    invalid.content = Buffer.from(
+      JSON.stringify({
+        ...(JSON.parse(invalid.content.toString()) as Record<string, unknown>),
+        ...mutation,
+      }),
+    );
+    expect(() => validatePaymentLifecycleMessage(invalid)).toThrow(
+      PaymentLifecycleMessageContractError,
+    );
+  });
+
+  it.each([
+    { refundId: 'invalid' },
+    { amountMinor: 0 },
+    { cumulativeRefundedAmountMinor: 0 },
+    { amountMinor: 500, cumulativeRefundedAmountMinor: 400 },
+    { ledgerTransactionId: 'invalid' },
+  ])('rejects invalid refunded field %#', (mutation) => {
+    const invalid = message('payment.refunded.v1');
+    invalid.content = Buffer.from(
+      JSON.stringify({
+        ...(JSON.parse(invalid.content.toString()) as Record<string, unknown>),
+        ...mutation,
+      }),
+    );
+    expect(() => validatePaymentLifecycleMessage(invalid)).toThrow(
+      PaymentLifecycleMessageContractError,
+    );
+  });
+
+  it.each([
+    { aggregateId: 'invalid' },
+    { aggregateType: 'other' },
+    { eventId: 'invalid' },
+    { merchantId: 'invalid' },
+    { requestId: 'other' },
+    { payload: [] },
+  ])('rejects lifecycle outbox envelope %#', (mutation) => {
+    expect(() =>
+      serializePaymentLifecycleEvent({
+        ...claimed('payment.captured.v1'),
+        ...mutation,
+      }),
+    ).toThrow(PaymentLifecycleEventContractError);
+  });
+
+  it('rejects oversized, BOM-prefixed, invalid UTF-8, malformed JSON, and non-record bodies', () => {
+    for (const content of [
+      Buffer.alloc(16_385),
+      Buffer.from([0xef, 0xbb, 0xbf, 0x7b, 0x7d]),
+      Buffer.from([0xc3, 0x28]),
+      Buffer.from('{'),
+      Buffer.from('[]'),
+    ]) {
+      const invalid = message('payment.captured.v1');
+      invalid.content = content;
+      expect(() => validatePaymentLifecycleMessage(invalid)).toThrow(
+        PaymentLifecycleMessageContractError,
+      );
+    }
+  });
 });

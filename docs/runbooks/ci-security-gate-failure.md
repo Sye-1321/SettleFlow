@@ -12,7 +12,7 @@ Use this runbook when a required local or GitHub CI, security, migration, contra
 4. For migration failures, preserve the database/container logs privately, then inspect migration history, runtime grants, and financial invariants. Never edit a migration already relied upon, posted Ledger evidence, lifecycle audit, inbox/outbox, Settlement, Reconciliation, or Webhook-delivery evidence to pass a check.
 5. For race/failure evidence, rerun only as diagnosis and record every result. Any intermittent failure remains blocking until its cause is removed; do not add a Jest retry or increase a timeout without evidence.
 6. For dependency, CodeQL, Gitleaks, or Trivy findings, prefer a compatible patched dependency or code/configuration correction. Critical findings cannot be excepted. A high exception requires the checked schema, explicit owner approval, compensating controls, and expiry within 30 days.
-7. For the known coverage failure, add behavior-focused tests. Do not lower thresholds, exclude modules/files, mark the job non-blocking, or treat passing test counts as coverage compliance.
+7. For a coverage failure, add behavior-focused tests. Do not lower thresholds, exclude modules/files, mark the job non-blocking, or treat passing test counts as coverage compliance.
 
 ## Validation and closure
 

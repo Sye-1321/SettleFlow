@@ -1,8 +1,155 @@
 # SettleFlow
 
-SettleFlow is a finance-grade payment-platform simulation and engineering case study. It is not authorized to process real funds or store cardholder data. The authoritative product and architecture baseline is [the SettleFlow specification](docs/specification/SettleFlow_Technical_Product_and_Architecture_Specification_v1.0.docx).
+[![CI](https://github.com/Sye-1321/SettleFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/Sye-1321/SettleFlow/actions/workflows/ci.yml)
+[![Security and supply chain](https://github.com/Sye-1321/SettleFlow/actions/workflows/security.yml/badge.svg)](https://github.com/Sye-1321/SettleFlow/actions/workflows/security.yml)
+[![Reliability evidence](https://github.com/Sye-1321/SettleFlow/actions/workflows/nightly.yml/badge.svg)](https://github.com/Sye-1321/SettleFlow/actions/workflows/nightly.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-## Local application and infrastructure foundation
+SettleFlow is an open-source, finance-grade simulation of a merchant payment platform. It follows a payment from intent and capture through immutable accounting, reliable event delivery, signed Webhooks, settlement batching, and reconciliation against a mock provider statement.
+
+**The project demonstrates financial correctness through executable evidence, not a production-readiness claim.**
+
+SettleFlow never connects to real payment rails, moves funds, initiates payouts, or stores cardholder data. The authoritative baseline is the [SettleFlow v1.0 specification](docs/specification/SettleFlow_Technical_Product_and_Architecture_Specification_v1.0.docx); accepted [architecture decisions](docs/adr/README.md) refine its implementation without weakening the [financial invariants](docs/architecture/financial-invariants.md).
+
+## Why SettleFlow exists
+
+Typical payment examples stop after a successful request. SettleFlow concentrates on the harder questions:
+
+- What happens when the same financial command arrives 50 times?
+- Can payment state, balanced ledger entries, and the event intent commit atomically?
+- What survives a broker outage or a crash between publication and acknowledgement?
+- Can an untrusted Webhook destination be contacted without creating an SSRF path?
+- Can two settlement workers race without claiming the same payment?
+- Can a reconciliation report explain differences without mutating financial history?
+
+The result is a bounded NestJS modular monolith whose claims are traceable to PostgreSQL constraints, explicit transactions, contract tests, failure injection, operational signals, and runbooks.
+
+## System at a glance
+
+```mermaid
+flowchart LR
+  Merchant[Merchant backend] -->|Scoped API key · REST /v1| API[API deployable]
+  API --> Payments[Payments]
+  API --> WebhookConfig[Webhook endpoint management]
+  API --> SettlementAPI[Settlement and reconciliation commands]
+
+  Payments -->|One PostgreSQL transaction| Ledger[Immutable Ledger]
+  Payments -->|Same transaction| Outbox[Transactional outbox]
+  Ledger --> PostgreSQL[(PostgreSQL source of truth)]
+  Outbox --> PostgreSQL
+  WebhookConfig --> PostgreSQL
+  SettlementAPI --> PostgreSQL
+
+  Worker[Worker deployable] -->|Claim and confirm| Outbox
+  Worker <--> RabbitMQ[(RabbitMQ)]
+  Worker -->|Signed HTTPS POST| MerchantEndpoint[Merchant Webhook endpoint]
+  Worker --> Settlements[Settlement projections]
+  Worker --> Reconciliation[Mock-provider reconciliation]
+  Settlements --> PostgreSQL
+  Reconciliation --> PostgreSQL
+
+  API -. Internal-only telemetry .-> Observability[Prometheus · OpenTelemetry]
+  Worker -. Internal-only telemetry .-> Observability
+```
+
+The API and worker are independent deployables from one codebase. PostgreSQL is authoritative. RabbitMQ and telemetry are deliberately non-authoritative and may be unavailable without invalidating an already committed financial transaction.
+
+## Implemented guarantees
+
+| Area             | What is implemented                                                                                                 | Principal evidence                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Merchant access  | Hashed, scoped, revocable API keys; one-time plaintext disclosure; merchant predicates on owned data                | Authentication, scope, lifecycle, and tenant-isolation tests                                      |
+| Payment commands | Lossless integer-minor-unit validation, direct full capture, partial/full refunds, response-snapshot idempotency    | Replay, changed-key, concurrency, overflow, and over-refund tests                                 |
+| Accounting       | Closed ETB/USD chart and immutable double-entry postings with exact reversals                                       | Deferred balance/entry-count triggers and permission-negative tests                               |
+| Event delivery   | Atomic outbox intent, leased relay, publisher confirms, inbox deduplication, manual acknowledgement                 | Broker-outage, crash recovery, duplicate delivery, and poison-message tests                       |
+| Webhooks         | Merchant endpoints, encrypted rotating secrets, SSRF controls, exact-byte HMAC signatures, immutable attempts       | Signature vectors, DNS/IP policy, retry, terminal-state, and redaction tests                      |
+| Settlement       | Merchant/currency-isolated eligibility, batching, fee snapshots, adjustments, and guarded Ledger posting            | Dual-worker, uniqueness, arithmetic, audit, and invariant tests                                   |
+| Reconciliation   | Bounded mock-provider CSV staging and deterministic, non-mutating mismatch classification                           | Malformed, duplicate, isolation, exact-match, and mismatch integration tests                      |
+| Operations       | Structured redacted logs, correlation context, internal probes, bounded metrics, alerts, SBOMs, and hardened images | Executable alert rules, configuration tests, CI, CodeQL, Trivy, and release-simulation inspection |
+
+The concise [engineering evidence guide](docs/review/engineering-evidence.md) maps these claims to the commands and artifacts that falsify them.
+
+## Financial safety model
+
+SettleFlow treats the following rules as release-blocking:
+
+1. Money is represented only as integer minor units with an explicit currency.
+2. Capture, refund, and settlement state commit with their balanced Ledger posting and outbox event—or all roll back.
+3. Every posted Ledger transaction has at least two positive entries, one currency, and equal debit and credit totals.
+4. Posted Ledger transactions and entries cannot be updated or deleted; corrections use exact linked reversals.
+5. Cumulative refunds cannot exceed captured value, including under concurrency.
+6. A payment cannot belong to more than one settlement batch.
+7. Duplicate commands cannot create a second financial side effect.
+8. Asynchronous delivery is at-least-once; stable identifiers and durable deduplication make repetition safe.
+
+The complete normative set is [INV-01 through INV-10](docs/architecture/financial-invariants.md). No mutable stored-balance column exists; balances are derived from immutable entries.
+
+## Run the deterministic demonstration
+
+The isolated demo exercises real API, worker, PostgreSQL, RabbitMQ, Ledger, Webhook, Settlement, Reconciliation, telemetry, and dependency-recovery paths using synthetic data only. It writes a sanitized evidence manifest and never prints or persists plaintext merchant/Webhook secrets outside controlled process memory.
+
+Prerequisites are the pinned Node.js/pnpm toolchain and Docker with Linux containers:
+
+```powershell
+pnpm install --frozen-lockfile
+$env:SETTLEFLOW_DEMO_MODE = 'true'
+pnpm demo
+```
+
+```sh
+pnpm install --frozen-lockfile
+SETTLEFLOW_DEMO_MODE=true pnpm demo
+```
+
+The ten-step flow proves idempotent creation, a same-key capture storm, balanced capture/refund/settlement postings, signed Webhook retry, deterministic reconciliation, RabbitMQ outage recovery, outbox catch-up, and consumer deduplication. See the [demo contract and safety boundary](docs/demo/README.md). A cold run includes image builds and bounded retry delays; no fixed completion-time claim is made until the clean-room release exercise is complete.
+
+## Verification snapshot
+
+- Global coverage is **91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines**, above the approved 85/80/80/85 floors.
+- Eventing, Idempotency, Ledger, Payments, Reconciliation, Settlements, and Webhooks each clear their stricter 90% statements/lines and 85% branches/functions floors.
+- API, worker, and migrator runtime images are non-root, distroless, read-only compatible, and currently pass the zero-critical/zero-unreviewed-high vulnerability policy without an exception.
+- CI applies the full migration history and checks grants, schema drift, deferred financial invariants, API/event contracts, integration behavior, repeated races, dependency failures, SBOM generation, and provenance evidence.
+
+The badges above report the current `main` result. Exact gate definitions, versions, retention, and limitations are documented in [Continuous Integration and Supply-Chain Evidence](docs/operations/continuous-integration.md).
+
+## Project status and boundaries
+
+SettleFlow is a **pre-release finance-grade simulation**. It is intentionally not described as production-ready or specification-complete.
+
+Implemented scope includes merchant API-key access, Payment Intent create/read, direct full capture, partial/full refunds, immutable Ledger postings, transactional outbox/inbox delivery, signed Webhooks, settlement batching/adjustments, mock-provider reconciliation, observability, hardened OCI images, and a deterministic end-to-end demo.
+
+Deliberate exclusions and approved release limitations include:
+
+- no real payment provider, bank transfer, payout, card storage, KYC/AML, customer wallet, subscription, FX, tax, dispute, or chargeback capability;
+- no authorize-then-capture flow or partial capture;
+- no merchant Webhook-delivery inspection/manual replay API, public Ledger read API, destructive retention jobs, dashboards, or production KMS adapter;
+- no claim that PostgreSQL recovery targets, reference performance thresholds, or a clean-room `v1.0.0` release have passed yet; and
+- no guarantee against loss of published-but-unconsumed work after catastrophic RabbitMQ-volume loss because controlled recovery replay is deferred.
+
+The remaining recovery, performance, public-release, and clean-room work stays governed by the [operational-readiness and v1 release plan](docs/plans/2026-08-03-operational-readiness-and-v1-release.md).
+
+## Documentation map
+
+| Start here                                                        | Purpose                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| [Engineering evidence](docs/review/engineering-evidence.md)       | Claim-to-test review path and current evidence boundaries     |
+| [Architecture overview](docs/architecture/README.md)              | Deployables, consistency model, and bounded modules           |
+| [Module boundaries](docs/architecture/module-boundaries.md)       | Persistence ownership and permitted dependencies              |
+| [Financial invariants](docs/architecture/financial-invariants.md) | Normative INV-01–INV-10 rules and transaction boundaries      |
+| [Architecture decisions](docs/adr/README.md)                      | Accepted design decisions and trade-offs                      |
+| [OpenAPI](docs/api/openapi.json)                                  | Committed machine-readable HTTP contract                      |
+| [Events and Webhook signing](docs/events/README.md)               | Closed event schemas, AMQP metadata, and exact-byte signing   |
+| [Deterministic demo](docs/demo/README.md)                         | Isolated ten-step execution and sanitized evidence            |
+| [Operations](docs/operations/observability.md)                    | Telemetry, probes, alerts, and release-simulation operation   |
+| [Runbooks](docs/runbooks/README.md)                               | Failure diagnosis and recovery without financial row edits    |
+| [Security policy](SECURITY.md)                                    | Disclosure, secret, tenant, Webhook, and data-handling policy |
+| [Contributing](CONTRIBUTING.md)                                   | Governance, plans, reviews, migrations, and verification      |
+
+## Development and operations
+
+The sections below are the complete local setup and operator reference. For an architecture-first review, begin with the documentation map above.
+
+### Workspace and implemented modules
 
 The repository provides two independent NestJS processes and their local supporting services:
 
@@ -425,3 +572,7 @@ For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoin
 ## Governance
 
 Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture overview](docs/architecture/README.md), and the [ADR index](docs/adr/README.md) before extending the scaffold. Implementation plans are governed by [PLANS.md](PLANS.md).
+
+## License
+
+SettleFlow is licensed under the [Apache License 2.0](LICENSE). The license permits use, modification, and distribution under its terms; it does not make the simulation suitable for processing real funds or remove the independent review required for a regulated deployment.

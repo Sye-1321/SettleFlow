@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Finance-grade payment-platform simulation and engineering case study.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "packageManager": "pnpm@11.18.0",
   "engines": {

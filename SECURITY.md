@@ -6,9 +6,29 @@ SettleFlow is a finance-grade simulation and engineering case study. These docum
 
 Do not open a public issue for a suspected vulnerability or include exploit details, secrets, or sensitive data in a public pull request.
 
-Report privately to **[SECURITY CONTACT TO BE DECIDED]** using **[PRIVATE REPORTING CHANNEL TO BE DECIDED]**. Include the affected version or commit, impact, reproduction steps, and any suggested mitigation. Use only synthetic data. Project maintainers must define acknowledgement, triage, remediation, disclosure, and supported-version expectations before the first public release.
+The primary disclosure channel is [GitHub Private Vulnerability Reporting](https://github.com/Sye-1321/SettleFlow/security/advisories). Select **Report a vulnerability** and include the affected version or commit, impact, reproduction steps, and any suggested mitigation. Use only synthetic data and remove credentials, personal data, and unrelated system information.
 
-If no private channel is published, do not post vulnerability details publicly. Contact the repository owner through a non-sensitive public channel only to request private reporting instructions.
+Private Vulnerability Reporting must be enabled and exercised by the repository owner before `v1.0.0`. Until the **Report a vulnerability** control is visible, do not post vulnerability details publicly. Contact [@Sye-1321](https://github.com/Sye-1321) through a non-sensitive public channel only to request private reporting instructions.
+
+## Supported versions and response commitments
+
+SettleFlow has no public stable release yet. The default branch is a pre-release engineering case study and may change without a compatibility promise.
+
+| Version                                    | Security support                                               |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `main` pre-release                         | Best-effort investigation; not a production support commitment |
+| Latest `v1` minor/patch line after release | Supported under the response targets below                     |
+| Older or untagged snapshots                | Not supported                                                  |
+
+The repository owner targets:
+
+- acknowledgement within three business days;
+- initial triage within seven business days;
+- withdrawal of affected public artifacts when a confirmed critical issue requires it, with a fix or advisory targeted within seven calendar days;
+- remediation of confirmed high findings within 30 days, medium findings within 90 days, and low findings in a planned release; and
+- coordinated disclosure only after affected users have a reasonable opportunity to apply the fix, unless active exploitation or another overriding safety concern requires earlier action.
+
+These are public simulation-maintenance commitments, not a service-level agreement. [@Sye-1321](https://github.com/Sye-1321) is the Security Owner, Incident Commander, disclosure authority, and release stop/go authority. There is no backup maintainer and no 24x7 monitoring or response commitment.
 
 ## Secrets and credentials
 

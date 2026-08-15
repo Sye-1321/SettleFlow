@@ -11,7 +11,7 @@ SettleFlow is a NestJS modular monolith with two independently deployable proces
 
 Both processes share bounded domain packages and use PostgreSQL as the authoritative transactional and financial source of truth. RabbitMQ provides durable at-least-once asynchronous delivery. Telemetry records operational evidence but is not authoritative financial state.
 
-The baseline technology choices are supported Node.js LTS and NestJS, PostgreSQL, Prisma plus reviewed parameterized raw SQL for critical locking/claim paths, RabbitMQ, versioned REST/OpenAPI, OpenTelemetry-compatible tracing, Prometheus-compatible metrics, Jest, Supertest, Testcontainers, k6, Docker Compose, and multi-stage images. Exact versions are intentionally **To be decided** during implementation and must be supported, pinned in lockfiles or digests, and reviewed.
+The implemented baseline pins Node.js 24.18.0, NestJS 11.1.28, PostgreSQL 18.4, Prisma 7.9.1 plus reviewed parameterized raw SQL for critical locking/claim paths, RabbitMQ 4.3.4, TypeScript 6.0.3, Testcontainers 12.0.4, OpenTelemetry-compatible tracing, Prometheus-compatible metrics, Docker Compose, and multi-stage distroless runtime images. Package versions, workflow actions, scanner images, and external container images are exact in repository policy, lockfiles, full action SHAs, or image digests as appropriate. Reference k6 performance work remains a release gate rather than an implemented claim.
 
 ## Core rules
 
@@ -43,30 +43,26 @@ PostgreSQL failure makes API readiness fail and financial commands reject safely
 
 Exactly-once delivery is not claimed. The system provides atomic local transactions, at-least-once messaging, idempotent consumers, bounded recovery, and auditable terminal states.
 
-## Baseline decisions and open matters
+## Accepted decisions and remaining release boundaries
 
-The specification records accepted baselines for the modular monolith, API/worker deployables, PostgreSQL plus RabbitMQ, outbox/inbox with lease claims, separate payment/settlement lifecycles, Prisma plus reviewed raw SQL, no Redis without a measured need, and webhook URLs as an SSRF boundary. These decisions should be captured as repository ADRs during the relevant implementation milestone; this foundation does not fabricate those records.
+The [ADR register](../adr/README.md) records the accepted modular-monolith and two-deployable model, PostgreSQL/RabbitMQ boundaries, outbox/inbox lease behavior, separate Payment/Settlement lifecycles, Prisma/raw-SQL policy, API and identifier contracts, webhook endpoint/delivery security, immutable Ledger, and guarded Settlement posting.
 
-The implemented Settlement/Reconciliation milestone resolves its approved specification choices:
+The implemented baseline resolves the specification's milestone questions:
 
 - demo currencies are exactly ETB and USD, with no conversion;
 - immutable `settlement_fee_v1` uses currency-specific flat fees plus 200 basis points, floor-rounded and snapshotted per batch item;
 - settlement cutoff timezone is `Africa/Addis_Ababa`, with timestamps stored in UTC; and
-- synchronous settlement finalization means simulated clearing, not bank payout or export success.
+- synchronous settlement finalization means simulated clearing, not bank payout or export success;
+- Apache-2.0 is the approved public license;
+- P1 authorize-then-capture is deferred and direct full capture remains the baseline; and
+- the optional telemetry profile uses Prometheus plus an OpenTelemetry Collector without a dashboard or trace-storage backend.
 
-Specification open questions still remain **To be decided** by their milestone deadlines:
+The remaining work is explicitly release-scoped, not an unresolved implementation choice:
 
-- open-source license (no public release until selected);
-- whether P1 authorization ships in v1.0 (default: defer and retain direct capture);
-- Compose telemetry backend (default: Prometheus and Grafana, optional trace collector).
+- backup/isolated-restore tooling and measured reference RPO/RTO evidence;
+- the complete reference performance workload and published environment results;
+- clean-room release review, final waiver/evidence matrices, immutable tags, and approved artifact publication;
+- owner-controlled GitHub security/reporting and branch/release settings; and
+- deferred or waived APIs and production integrations listed in the [operational-readiness plan](../plans/2026-08-03-operational-readiness-and-v1-release.md).
 
-The specification also leaves these implementation details **To be decided** before the affected work:
-
-- exact Node.js, PostgreSQL, framework, package-manager, dependency, image, and workflow versions/digests;
-- the operator authentication mechanism and role model beyond the requirement that it be separate from merchant API-key authentication;
-- the precise transaction/recovery sequence for finalizing an idempotency response snapshot after the financial transaction commits;
-- the future real settlement export/payout policy and operational contract;
-- endpoint-specific HTTP status codes and complete schemas beyond the examples and conventions in the specification;
-- environment-specific alert thresholds, retention overrides, recovery commands, and security-reporting contacts.
-
-No direct contradiction was identified in the baseline decisions. The items above must not be resolved implicitly inside implementation code; the relevant implementation plan and, when material, ADR must record the choice.
+Operator authentication, controlled Webhook replay, real payout/provider behavior, production KMS, dashboards, partial capture, and public Ledger reads are not silently invented by the current codebase. Adding one requires the applicable specification/ADR/change-control decision.

@@ -42,7 +42,7 @@ These are public simulation-maintenance commitments, not a service-level agreeme
 ## Authentication and authorization
 
 - Merchant APIs use hashed, scoped, rotatable API keys. Unknown, disabled, revoked, or out-of-scope keys fail closed.
-- Operator APIs require separate authentication and explicit authorization. Privileged actions must capture actor, action, target, reason, timestamp, and correlation ID in the append-only audit trail.
+- Any future operator API must use separate authentication and explicit authorization. Privileged actions must capture actor, action, target, reason, timestamp, and correlation ID in the append-only audit trail.
 - Enforce tenant ownership in each database predicate using the authenticated merchant ID. Do not fetch broadly and filter after retrieval.
 - Apply least privilege to application roles, migrations, worker queue permissions, network access, telemetry access, and operator capabilities. Financial and audit records require restricted update/delete permissions.
 - API and worker database access uses the non-owner `settleflow_app` role. Migration and provisioning use a distinct owner credential; the runtime role cannot update, delete, or truncate lifecycle audit.
@@ -60,7 +60,7 @@ These are public simulation-maintenance commitments, not a service-level agreeme
 
 - Sign the exact serialized UTF-8 request bytes with HMAC-SHA-256 using the endpoint secret. Include the unique delivery ID, stable event ID, schema version, and timestamp; compare signatures in constant time.
 - During the 24-hour rotation overlap, send the current signature first and the eligible previous-secret signature second. Select versions at durable attempt start, keep plaintext only in memory, and never persist or log signatures or decrypted secrets.
-- Example consumers must enforce the documented five-minute default recency window, validate identifiers, and deduplicate delivery/event processing. Manual replay creates a new delivery ID and records the authorized actor and reason.
+- Example consumers must enforce the documented five-minute default recency window, validate identifiers, and deduplicate delivery/event processing. Any future controlled Webhook replay mechanism must create a new delivery ID and record the authorized actor and reason.
 - Do not follow redirects. Use HTTPS in production-like environments, allow only approved ports, and apply outbound egress restrictions.
 - Validate and normalize the URL at registration and re-resolve DNS immediately before delivery. Block loopback, private, link-local, multicast/reserved ranges, cloud metadata targets, and any resolved address that violates policy. Defend against DNS rebinding and IPv4/IPv6 representation tricks.
 - Pin one approved resolved address per attempt while preserving the canonical host for HTTP Host, TLS SNI, and certificate verification. Bound the complete attempt to eight seconds and consume no more than 64 KiB of response data.
@@ -74,7 +74,7 @@ Use only synthetic merchants, payments, statements, destinations, credentials, s
 
 Never log or expose authorization headers, raw API keys, idempotency-key values, signing secrets, encryption material, raw financial request bodies, CSV row contents, full webhook payloads by default, full response bodies, stack traces in public API responses, or internal network details. Structured telemetry may contain sanitized route templates, status, duration, merchant/request/event/delivery IDs, and stable error codes.
 
-Apply retention limits to operational data and purge in bounded jobs. Do not use telemetry as an authoritative financial store.
+Any future operational-data retention or purge mechanism must use bounded jobs and preserve the approved financial, idempotency, audit, inbox/outbox, and Webhook evidence boundaries. Do not use telemetry as an authoritative financial store.
 
 ## Engineering and dependency controls
 

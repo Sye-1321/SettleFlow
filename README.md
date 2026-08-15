@@ -9,86 +9,77 @@ SettleFlow is an open-source, finance-grade simulation of a merchant payment pla
 
 **The project demonstrates financial correctness through executable evidence, not a production-readiness claim.**
 
-SettleFlow never connects to real payment rails, moves funds, initiates payouts, or stores cardholder data. The authoritative baseline is the [SettleFlow v1.0 specification](docs/specification/SettleFlow_Technical_Product_and_Architecture_Specification_v1.0.docx); accepted [architecture decisions](docs/adr/README.md) refine its implementation without weakening the [financial invariants](docs/architecture/financial-invariants.md).
+SettleFlow does not connect to real payment rails, move funds, initiate payouts, or store cardholder data. The authoritative baseline is the [SettleFlow v1.0 specification](docs/specification/SettleFlow_Technical_Product_and_Architecture_Specification_v1.0.docx), refined by accepted [architecture decisions](docs/adr/README.md) without weakening the [financial invariants](docs/architecture/financial-invariants.md).
 
 ## Why SettleFlow exists
 
-Typical payment examples stop after a successful request. SettleFlow concentrates on the harder questions:
+Typical payment examples stop after a successful request. SettleFlow focuses on what happens when:
 
-- What happens when the same financial command arrives 50 times?
-- Can payment state, balanced ledger entries, and the event intent commit atomically?
-- What survives a broker outage or a crash between publication and acknowledgement?
-- Can an untrusted Webhook destination be contacted without creating an SSRF path?
-- Can two settlement workers race without claiming the same payment?
-- Can a reconciliation report explain differences without mutating financial history?
+- financial commands are duplicated or race each other;
+- Payment state, balanced Ledger entries, and an event intent must commit atomically;
+- RabbitMQ is unavailable or a worker crashes between publication and acknowledgement;
+- signed Webhook delivery must remain retryable without opening an SSRF path;
+- concurrent settlement runs compete for the same eligible Payment; and
+- reconciliation finds a difference that must be explained without rewriting financial history.
 
-The result is a bounded NestJS modular monolith whose claims are traceable to PostgreSQL constraints, explicit transactions, contract tests, failure injection, operational signals, and runbooks.
+The implementation uses PostgreSQL constraints, explicit transactions, idempotency records, outbox/inbox delivery, failure injection, and operational runbooks to make those behaviors testable.
 
-## System at a glance
+## Architecture
 
 ```mermaid
 flowchart LR
-  Merchant[Merchant backend] -->|Scoped API key · REST /v1| API[API deployable]
-  API --> Payments[Payments]
-  API --> WebhookConfig[Webhook endpoint management]
-  API --> SettlementAPI[Settlement and reconciliation commands]
-
-  Payments -->|One PostgreSQL transaction| Ledger[Immutable Ledger]
-  Payments -->|Same transaction| Outbox[Transactional outbox]
-  Ledger --> PostgreSQL[(PostgreSQL source of truth)]
+  Merchant[Merchant backend] -->|Scoped API key / REST v1| API[API deployable]
+  API --> Domains[Bounded domain modules]
+  Domains -->|Authoritative state| PostgreSQL[(PostgreSQL)]
+  Domains -->|Atomic financial posting| Ledger[Immutable Ledger]
+  Domains -->|Atomic event intent| Outbox[Transactional outbox]
+  Ledger --> PostgreSQL
   Outbox --> PostgreSQL
-  WebhookConfig --> PostgreSQL
-  SettlementAPI --> PostgreSQL
 
-  Worker[Worker deployable] -->|Claim and confirm| Outbox
+  Worker[Worker deployable] -->|Claims and projections| PostgreSQL
   Worker <--> RabbitMQ[(RabbitMQ)]
-  Worker -->|Signed HTTPS POST| MerchantEndpoint[Merchant Webhook endpoint]
-  Worker --> Settlements[Settlement projections]
-  Worker --> Reconciliation[Mock-provider reconciliation]
-  Settlements --> PostgreSQL
-  Reconciliation --> PostgreSQL
+  Worker -->|Signed HTTPS POST| Endpoint[Merchant Webhook endpoint]
 
-  API -. Internal-only telemetry .-> Observability[Prometheus · OpenTelemetry]
-  Worker -. Internal-only telemetry .-> Observability
+  API -. Internal telemetry .-> Observability[Prometheus and OpenTelemetry]
+  Worker -. Internal telemetry .-> Observability
 ```
 
-The API and worker are independent deployables from one codebase. PostgreSQL is authoritative. RabbitMQ and telemetry are deliberately non-authoritative and may be unavailable without invalidating an already committed financial transaction.
+The API and worker are separate deployables from one NestJS modular-monolith codebase. PostgreSQL is the authoritative transactional and financial store. RabbitMQ and telemetry are deliberately non-authoritative. See the [architecture overview](docs/architecture/README.md) and [module boundaries](docs/architecture/module-boundaries.md) for the complete design.
 
-## Implemented guarantees
+## Core capabilities
 
-| Area             | What is implemented                                                                                                 | Principal evidence                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Merchant access  | Hashed, scoped, revocable API keys; one-time plaintext disclosure; merchant predicates on owned data                | Authentication, scope, lifecycle, and tenant-isolation tests                                      |
-| Payment commands | Lossless integer-minor-unit validation, direct full capture, partial/full refunds, response-snapshot idempotency    | Replay, changed-key, concurrency, overflow, and over-refund tests                                 |
-| Accounting       | Closed ETB/USD chart and immutable double-entry postings with exact reversals                                       | Deferred balance/entry-count triggers and permission-negative tests                               |
-| Event delivery   | Atomic outbox intent, leased relay, publisher confirms, inbox deduplication, manual acknowledgement                 | Broker-outage, crash recovery, duplicate delivery, and poison-message tests                       |
-| Webhooks         | Merchant endpoints, encrypted rotating secrets, SSRF controls, exact-byte HMAC signatures, immutable attempts       | Signature vectors, DNS/IP policy, retry, terminal-state, and redaction tests                      |
-| Settlement       | Merchant/currency-isolated eligibility, batching, fee snapshots, adjustments, and guarded Ledger posting            | Dual-worker, uniqueness, arithmetic, audit, and invariant tests                                   |
-| Reconciliation   | Bounded mock-provider CSV staging and deterministic, non-mutating mismatch classification                           | Malformed, duplicate, isolation, exact-match, and mismatch integration tests                      |
-| Operations       | Structured redacted logs, correlation context, internal probes, bounded metrics, alerts, SBOMs, and hardened images | Executable alert rules, configuration tests, CI, CodeQL, Trivy, and release-simulation inspection |
+| Area            | Implemented capability                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Merchant Access | Hashed, scoped, revocable API keys with one-time plaintext disclosure and merchant-scoped persistence               |
+| Payments        | Payment Intent create/read, deterministic direct full capture, and partial/full refunds in ETB or USD               |
+| Idempotency     | Merchant-scoped command ownership, canonical fingerprints, leases, conflicts, and stored response replay            |
+| Ledger          | Closed merchant chart, immutable double-entry postings, deferred balance enforcement, and exact reversals           |
+| Eventing        | Transactional outbox, publisher confirms, durable inbox deduplication, manual acknowledgements, and DLQs            |
+| Webhooks        | Endpoint management, encrypted rotating secrets, SSRF controls, exact-byte signatures, and bounded delivery retries |
+| Settlements     | Merchant/currency-isolated eligibility, deterministic fees, batching, adjustments, and guarded Ledger finalization  |
+| Reconciliation  | Bounded mock-provider CSV staging and deterministic, non-mutating mismatch classification                           |
+| Operations      | Structured redacted logs, correlation context, internal probes, metrics, alerts, hardened images, and CI evidence   |
 
-The concise [engineering evidence guide](docs/review/engineering-evidence.md) maps these claims to the commands and artifacts that falsify them.
+Detailed claim-to-test evidence is maintained in the [engineering evidence guide](docs/review/engineering-evidence.md).
 
-## Financial safety model
+## Financial correctness
 
-SettleFlow treats the following rules as release-blocking:
+SettleFlow treats these guarantees as release-blocking:
 
-1. Money is represented only as integer minor units with an explicit currency.
-2. Capture, refund, and settlement state commit with their balanced Ledger posting and outbox event—or all roll back.
-3. Every posted Ledger transaction has at least two positive entries, one currency, and equal debit and credit totals.
-4. Posted Ledger transactions and entries cannot be updated or deleted; corrections use exact linked reversals.
-5. Cumulative refunds cannot exceed captured value, including under concurrency.
-6. A payment cannot belong to more than one settlement batch.
-7. Duplicate commands cannot create a second financial side effect.
-8. Asynchronous delivery is at-least-once; stable identifiers and durable deduplication make repetition safe.
+- Money is represented as positive integer minor units with an explicit currency.
+- Payment, refund, or Settlement state commits with its balanced Ledger posting and outbox event, or all effects roll back.
+- Every posted Ledger transaction has at least two entries, one currency, and equal debit and credit totals.
+- Posted Ledger transactions and entries are immutable; corrections use a uniquely linked reversal.
+- Row locking, constraints, and idempotency prevent over-refund, duplicate settlement membership, and repeated financial side effects.
+- Payment and Settlement lifecycles remain separate, and asynchronous delivery is explicitly at-least-once rather than exactly-once.
 
-The complete normative set is [INV-01 through INV-10](docs/architecture/financial-invariants.md). No mutable stored-balance column exists; balances are derived from immutable entries.
+PostgreSQL constraints and triggers enforce the accounting boundary; application validation does not replace them. The complete normative rules are [INV-01 through INV-10](docs/architecture/financial-invariants.md).
 
-## Run the deterministic demonstration
+## Run the deterministic demo
 
-The isolated demo exercises real API, worker, PostgreSQL, RabbitMQ, Ledger, Webhook, Settlement, Reconciliation, telemetry, and dependency-recovery paths using synthetic data only. It writes a sanitized evidence manifest and never prints or persists plaintext merchant/Webhook secrets outside controlled process memory.
+The isolated demo exercises the API, worker, PostgreSQL, RabbitMQ, Ledger, Webhooks, Settlements, Reconciliation, telemetry, and dependency-recovery paths using synthetic data only. Docker with Linux containers and the pinned Node.js/pnpm toolchain are required.
 
-Prerequisites are the pinned Node.js/pnpm toolchain and Docker with Linux containers:
+PowerShell:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -96,482 +87,63 @@ $env:SETTLEFLOW_DEMO_MODE = 'true'
 pnpm demo
 ```
 
+POSIX shell:
+
 ```sh
 pnpm install --frozen-lockfile
 SETTLEFLOW_DEMO_MODE=true pnpm demo
 ```
 
-The ten-step flow proves idempotent creation, a same-key capture storm, balanced capture/refund/settlement postings, signed Webhook retry, deterministic reconciliation, RabbitMQ outage recovery, outbox catch-up, and consumer deduplication. See the [demo contract and safety boundary](docs/demo/README.md). A cold run includes image builds and bounded retry delays; no fixed completion-time claim is made until the clean-room release exercise is complete.
-
-## Verification snapshot
-
-- Global coverage is **91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines**, above the approved 85/80/80/85 floors.
-- Eventing, Idempotency, Ledger, Payments, Reconciliation, Settlements, and Webhooks each clear their stricter 90% statements/lines and 85% branches/functions floors.
-- API, worker, and migrator runtime images are non-root, distroless, read-only compatible, and currently pass the zero-critical/zero-unreviewed-high vulnerability policy without an exception.
-- CI applies the full migration history and checks grants, schema drift, deferred financial invariants, API/event contracts, integration behavior, repeated races, dependency failures, SBOM generation, and provenance evidence.
-
-The badges above report the current `main` result. Exact gate definitions, versions, retention, and limitations are documented in [Continuous Integration and Supply-Chain Evidence](docs/operations/continuous-integration.md).
+The flow covers idempotent creation, a same-key capture storm, balanced capture/refund/Settlement postings, signed Webhook retry, deterministic reconciliation, RabbitMQ outage recovery, outbox catch-up, and consumer deduplication. See the [demo contract and safety boundary](docs/demo/README.md) before running or resetting it.
 
 ## Project status and boundaries
 
-SettleFlow is a **pre-release finance-grade simulation**. It is intentionally not described as production-ready or specification-complete.
+SettleFlow is a **pre-release finance-grade simulation**. It is not production-ready or specification-complete.
 
-Implemented scope includes merchant API-key access, Payment Intent create/read, direct full capture, partial/full refunds, immutable Ledger postings, transactional outbox/inbox delivery, signed Webhooks, settlement batching/adjustments, mock-provider reconciliation, observability, hardened OCI images, and a deterministic end-to-end demo.
+The project intentionally excludes real payment providers, bank transfers and payouts, card storage, KYC/AML, customer wallets, subscriptions, FX, tax, disputes, chargebacks, authorize-then-capture, and partial capture. Public Ledger reads, Webhook-delivery inspection/manual replay, destructive retention jobs, dashboards, and a production KMS adapter are also deferred.
 
-Deliberate exclusions and approved release limitations include:
+Recovery targets, the complete reference performance workload, clean-room release verification, and immutable `v1.0.0` publication remain open. Catastrophic RabbitMQ-volume loss can still lose published-but-unconsumed work because controlled recovery replay is deferred.
 
-- no real payment provider, bank transfer, payout, card storage, KYC/AML, customer wallet, subscription, FX, tax, dispute, or chargeback capability;
-- no authorize-then-capture flow or partial capture;
-- no merchant Webhook-delivery inspection/manual replay API, public Ledger read API, destructive retention jobs, dashboards, or production KMS adapter;
-- no claim that PostgreSQL recovery targets, reference performance thresholds, or a clean-room `v1.0.0` release have passed yet; and
-- no guarantee against loss of published-but-unconsumed work after catastrophic RabbitMQ-volume loss because controlled recovery replay is deferred.
+CI enforces approved global and critical-module coverage floors and verifies migrations, grants, financial invariants, contracts, real-dependency integration, concurrency, failure recovery, security policy, image scans, SBOMs, and provenance evidence. Exact current evidence belongs in the [engineering evidence guide](docs/review/engineering-evidence.md) and [CI documentation](docs/operations/continuous-integration.md), not in this landing page.
 
-The remaining recovery, performance, public-release, and clean-room work stays governed by the [operational-readiness and v1 release plan](docs/plans/2026-08-03-operational-readiness-and-v1-release.md).
+## Development
 
-## Documentation map
-
-| Start here                                                        | Purpose                                                       |
-| ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| [Engineering evidence](docs/review/engineering-evidence.md)       | Claim-to-test review path and current evidence boundaries     |
-| [Architecture overview](docs/architecture/README.md)              | Deployables, consistency model, and bounded modules           |
-| [Module boundaries](docs/architecture/module-boundaries.md)       | Persistence ownership and permitted dependencies              |
-| [Financial invariants](docs/architecture/financial-invariants.md) | Normative INV-01–INV-10 rules and transaction boundaries      |
-| [Architecture decisions](docs/adr/README.md)                      | Accepted design decisions and trade-offs                      |
-| [OpenAPI](docs/api/openapi.json)                                  | Committed machine-readable HTTP contract                      |
-| [Events and Webhook signing](docs/events/README.md)               | Closed event schemas, AMQP metadata, and exact-byte signing   |
-| [Deterministic demo](docs/demo/README.md)                         | Isolated ten-step execution and sanitized evidence            |
-| [Operations](docs/operations/observability.md)                    | Telemetry, probes, alerts, and release-simulation operation   |
-| [Runbooks](docs/runbooks/README.md)                               | Failure diagnosis and recovery without financial row edits    |
-| [Security policy](SECURITY.md)                                    | Disclosure, secret, tenant, Webhook, and data-handling policy |
-| [Contributing](CONTRIBUTING.md)                                   | Governance, plans, reviews, migrations, and verification      |
-
-## Development and operations
-
-The sections below are the complete local setup and operator reference. For an architecture-first review, begin with the documentation map above.
-
-### Workspace and implemented modules
-
-The repository provides two independent NestJS processes and their local supporting services:
-
-- `apps/api`: HTTP API with process liveness and dependency readiness.
-- `apps/worker`: standalone transactional-outbox relay and Webhook projection consumer with internal lifecycle health.
-- `packages/infrastructure`: shared PostgreSQL/RabbitMQ connection lifecycle and lazy Prisma adapter.
-- `packages/modules/merchant-access`: bounded-domain API-key generation, lifecycle, authentication, and Prisma persistence.
-- `packages/modules/idempotency`: merchant-scoped command acquisition, leases, fingerprints, and response snapshots.
-- `packages/modules/eventing`: transactional outbox persistence, safe claims/leases, approved event contracts, RabbitMQ confirm publishing/consumption, and durable inbox deduplication.
-- `packages/modules/payments`: Payment Intent create/read, direct full capture, full/partial refund orchestration, deterministic provider boundary, and Prisma adapter.
-- `packages/modules/ledger`: internal immutable double-entry account, posting, provisioning, and exact-reversal foundation.
-- `packages/modules/operations`: append-only lifecycle-audit vocabulary and transaction-aware persistence.
-- `packages/modules/webhooks`: merchant endpoint, subscription, encrypted-secret, URL-policy, lifecycle behavior, processed-event markers, and pending delivery projection.
-- `packages/modules/settlements`: eligibility projections, deterministic batching/fees, post-settlement adjustments, and guarded Ledger finalization.
-- `packages/modules/reconciliation`: bounded mock-provider CSV staging, deterministic matching/reporting, and completion events.
-- `compose.yaml`: local PostgreSQL and RabbitMQ services only.
-
-The implemented domain surface is Merchant Access; simulated Payment Intent create/read, direct full capture, and full/partial refunds; bounded simulated settlement and mock-provider reconciliation; transactional-outbox relay; merchant-scoped webhook processing; and the immutable double-entry Ledger used atomically by capture/refund/settlement commands. There is no user/password/JWT authentication, merchant self-service onboarding, seed, partial capture, authorization flow, mutable stored balance, real payout/provider, or movement of real funds.
-
-### Pinned toolchain
-
-| Tool           | Exact version  | Selection note                                                     |
-| -------------- | -------------- | ------------------------------------------------------------------ |
-| Node.js        | 24.18.0        | Current official LTS patch when this scaffold was created          |
-| pnpm           | 11.18.0        | Current stable pnpm 11; pnpm 12 is still beta                      |
-| NestJS         | 11.1.28        | Current stable NestJS 11 framework line                            |
-| TypeScript     | 6.0.3          | Newest stable compiler supported by the pinned lint/test toolchain |
-| PostgreSQL     | 18.4           | Current supported PostgreSQL minor, pinned as a Compose image      |
-| RabbitMQ       | 4.3.4          | Current fully supported RabbitMQ patch, with management UI         |
-| pg             | 8.22.0         | Health-only PostgreSQL client                                      |
-| amqplib        | 2.0.1          | RabbitMQ 4.1+ compatible AMQP 0-9-1 client                         |
-| Testcontainers | 12.0.4         | Disposable real PostgreSQL/RabbitMQ integration environment        |
-| Prisma         | 7.9.1          | Current ORM/CLI patch with the PostgreSQL driver adapter           |
-| NestJS Swagger | 11.4.6         | OpenAPI support compatible with the pinned NestJS 11 line          |
-| ulid           | 3.0.2          | Approved monotonic public payment/event identifier generator       |
-| lossless-json  | 4.3.0          | Approved raw JSON-number preservation for exact amount validation  |
-| csv-parse      | 7.0.1          | Streaming parser for bounded untrusted mock-provider CSV input     |
-| OpenTelemetry  | 0.221.0/2.10.0 | Approved Node SDK/exporter and tracing SDK adapter versions        |
-| prom-client    | 15.1.3         | Process-local Prometheus-compatible metric registry                |
-
-The repository pins Node in `.node-version` and `package.json` engine metadata. It pins pnpm in `package.json` package-manager and engine metadata. Direct dependencies use exact versions and one root `pnpm-lock.yaml`.
-
-### Prerequisites and install
-
-- Git.
-- Node.js 24.18.0 exactly. Version managers can read `.node-version`.
-- Corepack or another official pnpm installation method.
-- Docker Engine with Docker Compose for local services and integration tests.
-
-From the repository root:
+The repository pins its Node.js and pnpm versions and uses one pnpm workspace lockfile. Install the workspace from the repository root:
 
 ```shell
 corepack enable pnpm
-corepack pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile
 ```
 
-For the first lockfile generation only, maintainers use `corepack pnpm install`; normal fresh-clone and CI installs use `--frozen-lockfile`.
+Local API/worker development requires the safe environment examples, PostgreSQL, RabbitMQ, runtime-role provisioning, and committed migrations. Follow the [local development guide](docs/operations/local-development.md) for the exact setup, database, application, verification, and reset commands.
 
-Copy the safe, synthetic development examples before starting local services or applications:
-
-```powershell
-Copy-Item .env.example .env
-Copy-Item apps/api/.env.example apps/api/.env
-Copy-Item apps/worker/.env.example apps/worker/.env
-```
-
-The copied `.env` files are ignored. The checked-in values are local-development credentials only; never reuse them outside this project or add real secrets to an example.
-
-Before starting the API, generate a synthetic 32-byte local webhook-encryption key and replace the placeholder only in the ignored `apps/api/.env`:
-
-```powershell
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-```
-
-The local keyring and development URL policy are rejected when `NODE_ENV=production`. A production KMS/keyring adapter is deferred.
-
-If a default port is already occupied, change its value in the root `.env` and update the matching application URL. For example, set `POSTGRES_PORT=55432` and use port `55432` in both application `DATABASE_URL` values.
-
-### Build and run the release simulation
-
-The separate release-simulation topology builds production-dependency-only, non-root API and worker images; provisions the least-privilege database role; runs committed migrations exactly once through a one-shot job; and starts applications only after dependencies and migration verification succeed. Generate ignored synthetic secrets, validate, build, and start it with:
+Common source checks are:
 
 ```shell
-pnpm release:config:create
-pnpm release:compose:check
-pnpm images:build
-pnpm images:validate
-pnpm release:up
-pnpm release:ps
-```
-
-Only API port 3000 is loopback-published. PostgreSQL, RabbitMQ, worker, OTLP, and application metric ports remain internal. `pnpm release:up:telemetry` optionally exposes only the Prometheus UI on `127.0.0.1:9091`. Stop without deleting volumes using `pnpm release:down`.
-
-This topology is explicitly a non-production finance-grade simulation because it uses the local Webhook keyring; configuration validation rejects production relabeling. See [OCI Images and Release Simulation](docs/operations/release-simulation.md) for startup sequencing, security boundaries, inspection, reset, and deferred production requirements.
-
-### Run the deterministic end-to-end demo
-
-The approved reviewer demo uses its own `settleflow-demo` Compose identity and disposable volumes. It builds the pinned API, worker, and migrator images; provisions one visibly synthetic merchant through Merchant Access; exercises real Payment, Ledger, Eventing, Webhook, Settlement, and Reconciliation boundaries; injects a RabbitMQ outage; and writes only sanitized evidence.
-
-The explicit demo sentinel is mandatory. In PowerShell:
-
-```powershell
-$env:SETTLEFLOW_DEMO_MODE = 'true'
-pnpm demo
-```
-
-In a POSIX shell:
-
-```sh
-SETTLEFLOW_DEMO_MODE=true pnpm demo
-```
-
-Normal execution never resets data. A second invocation safely reports that the completed isolated demo already exists. To destroy only the validated demo volumes and ignored configuration, run:
-
-```powershell
-$env:SETTLEFLOW_DEMO_MODE = 'true'
-pnpm demo:reset -- --yes
-```
-
-The manifest at `.settleflow/demo/evidence.json` contains only bounded check names, counts, terminal states, elapsed time, the source commit, commands, and runbook paths. It never contains API keys, webhook secrets or signatures, payloads, amounts, references, CSV rows, endpoint or dependency URLs, SQL, logs, or stack traces. See [Deterministic Demo](docs/demo/README.md) for the exact ten-step flow and safety model.
-
-### Start and inspect local infrastructure
-
-Start PostgreSQL and RabbitMQ and wait for both health checks:
-
-```shell
-pnpm infra:up
-pnpm db:provision-runtime-role
-```
-
-Role provisioning is idempotent. It creates or updates the non-owner `settleflow_app` login using the ignored root environment and never puts the password in a command argument. API and worker use this role; migrations and inspection use the separate owner URL.
-
-Inspect container health, recent logs, and service-native diagnostics:
-
-```shell
-pnpm infra:ps
-pnpm infra:logs
-docker compose exec postgres pg_isready --username settleflow --dbname settleflow
-docker compose exec rabbitmq rabbitmq-diagnostics -q ping
-```
-
-RabbitMQ management is available at `http://127.0.0.1:15672` with the synthetic values from the root `.env`. Published PostgreSQL, AMQP, and management ports bind to loopback only.
-
-Stop containers without removing them, or remove containers while preserving named volumes:
-
-```shell
-docker compose stop
-pnpm infra:down
-```
-
-Restart stopped services with `pnpm infra:up`. To inspect dependency-failure behavior, stop and restart one service explicitly:
-
-```shell
-docker compose stop rabbitmq
-docker compose up --detach --wait rabbitmq
-```
-
-Resetting is destructive to local PostgreSQL and RabbitMQ state. It removes both named volumes and cannot recover their contents:
-
-```shell
-pnpm infra:reset
-pnpm infra:up
-pnpm db:provision-runtime-role
-```
-
-### Prisma and local database workflow
-
-The root `.env` supplies the owner-only `MIGRATION_DATABASE_URL` to Prisma migration, validation, generation, and inspection commands. API and worker use the distinct non-owner `DATABASE_URL`. The schema contains Merchant Access, Payments, Idempotency/Eventing, Webhook and Operations evidence, immutable Ledger postings, Settlement-owned positions/batches/adjustments, and Reconciliation-owned staged/report evidence. It deliberately contains no settlement-status or stored-balance column. There is no seed command because a committed deterministic API-key or webhook secret would violate one-time-secret requirements, and merchant onboarding is not authorized as a public workflow.
-
-Validate the schema and generate the ignored Prisma Client output:
-
-```shell
-pnpm prisma:validate
-pnpm prisma:generate
-```
-
-Apply the reviewed migration history and inspect its status:
-
-```shell
-pnpm db:migrate:apply
-pnpm db:migrate:status
-```
-
-The baseline migration is intentionally empty. Later reviewed migrations create Merchant Access; Payment, idempotency, transactional-outbox and Webhook evidence; the immutable Ledger; and additive Settlement/Reconciliation evidence. Financial migrations require `settleflow_app` to have been provisioned first. They backfill the closed eight-account ETB/USD merchant chart and settlement projections, install named deferred financial/lifecycle/immutability constraints, provision immutable `settlement_fee_v1`, expand only the five approved event contracts, and limit the runtime role to approved operations. They create no stored balance, real payout/provider, or synthetic posting data.
-
-When a later approved domain milestone authorizes a schema change, create but do not immediately apply its migration, inspect the generated SQL, and then apply the committed history:
-
-```shell
-pnpm db:migrate:create --name descriptive_name
-pnpm db:migrate:apply
-```
-
-Open Prisma Studio for local inspection:
-
-```shell
-pnpm db:inspect
-```
-
-Reset only the local PostgreSQL schema and reapply committed migrations with the interactive command below. This is destructive to all data in the configured database and is never production guidance:
-
-```shell
-pnpm db:reset
-```
-
-Use `pnpm infra:reset` instead when both local service volumes must be removed. Every migration must be reviewed before application; `prisma db push` is not part of the governed workflow.
-
-### Immutable Ledger Foundation
-
-The internal `@settleflow/ledger` package owns the closed merchant chart and immutable accounting records authorized by ADR-0020 and ADR-0021. Each merchant has `provider_clearing`/debit, `merchant_payable`/credit, `fee_revenue`/credit, and `settlement_clearing`/credit accounts for ETB and USD. Existing merchants are backfilled by migrations; future approved onboarding may use the idempotent internal provisioning port in a separate transaction. Missing accounts fail closed and are never lazily created by a money command.
-
-The posting port accepts a caller-supplied Prisma transaction. It stages one `ltx_<ULID>` transaction, inserts fixed positive minor-unit entries, and finalizes `posted_at` to the PostgreSQL transaction timestamp. Deferred triggers reject commit unless there are at least two entries, one merchant/currency, and equal debit/credit totals. Accounts, posted transactions, and entries are immutable; an exact uniquely linked reversal is the only correction representation. No balance is stored.
-
-There is no Ledger HTTP endpoint. Payments calls its transaction-aware posting port inside the same idempotency completion transaction as Payment/Refund state and outbox intent. The optional `ledger.post` observation reports bounded staged/rejected outcomes; `staged` is not a committed-success signal. The API emits a separate bounded `payment.command` outcome only after commit/replay or on rejection. Inspect architecture and recovery guidance in [Immutable Ledger Foundation](docs/architecture/ledger-foundation.md), the [Ledger invariant-failure runbook](docs/runbooks/ledger-invariant-failure.md), and the [capture/refund runbook](docs/runbooks/payment-capture-and-refunds.md).
-
-Run its Docker-independent unit suite or the complete real-PostgreSQL integration suite:
-
-```shell
-pnpm test:ledger
-pnpm test:integration
-```
-
-### Run the API
-
-```shell
-pnpm dev:api
-```
-
-The default listener is `http://127.0.0.1:3000` and exposes:
-
-- `GET /health/live` - process liveness.
-- `GET /health/ready` - bounded PostgreSQL and RabbitMQ connectivity; HTTP 200 only when both are up, otherwise HTTP 503.
-- `GET /v1` - API version entrypoint protected by a merchant bearer API key.
-- `POST /v1/payment-intents` - idempotent manual Payment Intent creation; requires `payments:write`.
-- `POST /v1/payment-intents/{id}/capture` - idempotent direct full capture; requires `payments:write`.
-- `POST /v1/payment-intents/{id}/refunds` - idempotent full/partial refund creation; requires `payments:write`.
-- `GET /v1/payment-intents/{id}` - merchant-owned retrieval; requires `payments:read`.
-- `POST /v1/settlement-runs` - one idempotent bounded simulated settlement; requires `settlements:write`.
-- `GET /v1/settlement-batches/{id}` - merchant-owned finalized batch read; requires `settlements:read`.
-- `POST /v1/reconciliation-imports` - one bounded mock-provider CSV import; requires `reconciliation:write`.
-- `GET /v1/reconciliation-imports/{id}/report` - completed bounded report; requires `reconciliation:read`.
-- `POST /v1/webhook-endpoints` - endpoint creation with one-time secret disclosure; requires `webhooks:manage`.
-- `GET /v1/webhook-endpoints` - keyset-paginated merchant endpoint list; requires `webhooks:read`.
-- `GET /v1/webhook-endpoints/{id}` - merchant-owned endpoint metadata; requires `webhooks:read`.
-- `PATCH /v1/webhook-endpoints/{id}` - ETag-guarded status/subscription change; requires `webhooks:manage`.
-- `POST /v1/webhook-endpoints/{id}/secret-rotations` - ETag-guarded secret rotation; requires `webhooks:manage`.
-- `GET /docs` - public Swagger UI.
-- `GET /docs/openapi.json` - public runtime OpenAPI document.
-
-Liveness never performs a dependency check. Successful readiness returns stable `up` states; an unavailable required dependency returns a generic RFC 9457 `503 service_unavailable` problem without connection URLs, credentials, or raw errors.
-
-The API also owns an internal loopback-only diagnostic listener at `http://127.0.0.1:9464` with `/health/live`, `/health/ready`, and `/metrics`. It is not part of merchant ingress or OpenAPI, and it does not change the public health contracts above.
-
-Merchant credentials use `Authorization: Bearer <merchant_api_key>`. The plaintext is returned once by the internal issue or rotation application-service call, while PostgreSQL stores only its safe `sf_test_...` prefix and a salted scrypt hash. Never put a usable key in a shell history, source file, log, screenshot, or documentation. For example, with a disposable locally issued key held only in a process variable:
-
-```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:3000/v1 -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
-```
-
-Create a Payment Intent with a disposable key that has `payments:write`:
-
-```powershell
-$headers = @{
-  Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY"
-  "Idempotency-Key" = "local-example-001"
-  "X-Request-Id" = "req_local_example"
-}
-$body = '{"externalRef":"order_1001","amountMinor":125000,"currency":"ETB","captureMethod":"manual"}'
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/v1/payment-intents -ContentType application/json -Headers $headers -Body $body
-```
-
-Capture the full amount, then create a partial refund. Keep a distinct stable idempotency key for each logical command:
-
-```powershell
-$headers["Idempotency-Key"] = "local-capture-001"
-$capture = '{"amountMinor":125000,"currency":"ETB"}'
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3000/v1/payment-intents/$env:SETTLEFLOW_PAYMENT_ID/capture" -ContentType application/json -Headers $headers -Body $capture
-
-$headers["Idempotency-Key"] = "local-refund-001"
-$refund = '{"externalRef":"refund_1001","amountMinor":25000,"currency":"ETB"}'
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3000/v1/payment-intents/$env:SETTLEFLOW_PAYMENT_ID/refunds" -ContentType application/json -Headers $headers -Body $refund
-```
-
-These commands use a deterministic local provider that approves valid requests and performs no network I/O. Partial capture and real payment rails are deliberately unsupported.
-
-Retrieve the returned `pi_...` ID using a key with `payments:read`:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/payment-intents/$env:SETTLEFLOW_PAYMENT_ID" -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
-```
-
-Run one closed-date simulated ETB settlement using a key with `settlements:write`, then inspect the returned batch using `settlements:read`:
-
-```powershell
-$headers["Idempotency-Key"] = "local-settlement-001"
-$settlement = '{"currency":"ETB","cutoffDate":"2026-08-01"}'
-$run = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/v1/settlement-runs -ContentType application/json -Headers $headers -Body $settlement
-Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/settlement-batches/$($run.batchId)" -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
-```
-
-Stage the synthetic CSV example with `reconciliation:write`; the worker completes it asynchronously. Read the report with `reconciliation:read`:
-
-```powershell
-$headers["Idempotency-Key"] = "local-reconciliation-001"
-$form = @{
-  file = Get-Item examples/reconciliation/mock-provider-golden.csv
-  periodStart = "2026-08-01T00:00:00.000Z"
-  periodEnd = "2026-08-04T00:00:00.000Z"
-}
-$import = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:3000/v1/reconciliation-imports -Headers $headers -Form $form
-Invoke-RestMethod -Uri "http://127.0.0.1:3000/v1/reconciliation-imports/$($import.id)/report" -Headers @{ Authorization = "Bearer $env:SETTLEFLOW_TEST_API_KEY" }
-```
-
-These routes write only simulated internal clearing and mock comparison evidence; they never initiate a payout or provider call.
-
-No HTTP/CLI API-key provisioning command is exposed: the specification does not authorize public merchant onboarding or a key lifecycle endpoint, and operator authentication is deferred. Integration tests provision synthetic merchants and one-time keys directly through the bounded-domain application service. See [Merchant Access API and security](docs/api/merchant-access.md), [M1 Payment Intent API](docs/api/payment-intents.md), [Settlement API](docs/api/settlements.md), [Reconciliation API](docs/api/reconciliation.md), and [Webhook Endpoint API](docs/api/webhook-endpoints.md).
-
-Generate or verify the committed OpenAPI artifact:
-
-```shell
-pnpm openapi:generate
-pnpm openapi:check
-```
-
-### Run the worker
-
-```shell
-pnpm dev:worker
-```
-
-The worker is a standalone Nest application context with no public/business HTTP server. It relays the five approved domain events with at-least-once delivery, consumes Payment lifecycle events for Settlement projections, consumes all five Webhook projection queues, processes staged reconciliation imports, and dispatches due Webhook deliveries. Its dedicated loopback-only diagnostic listener defaults to `http://127.0.0.1:9465` and exposes `/health/live`, `/health/ready`, and `/metrics`. Readiness requires PostgreSQL, a healthy publisher-confirm channel, complete topology, active Webhook and Settlement consumer registrations, an active Reconciliation processor, and a ready Webhook dispatcher/keyring. It remains running but not ready during a dependency outage. Shutdown makes internal readiness false before it stops new relay/delivery/reconciliation claims, cancels consumers, drains active work for at most 10 seconds, aborts Webhook sockets that exceed the drain, then closes consumer, publisher, Prisma, probes, and trace export resources.
-
-The relay uses batch size 50, a 500 ms idle poll, a 30-second lease, a five-second confirm timeout, and unlimited full-jitter retries from one to 60 seconds. It marks `published_at` only after a positive broker confirmation and successful routing. A crash after confirmation but before PostgreSQL finalization can produce a duplicate with the same stable `evt_...` message ID. The projection consumer deduplicates under event-specific names such as `webhook-projection.payment-captured.v1`, using one serializable transaction for inbox completion, retained event evidence, event-specific endpoint eligibility, and pending deliveries. It acknowledges only after commit; invalid/unsupported messages go to the matching DLQ, while transient dependency failures remain unacknowledged for reconnect/redelivery.
-
-Validated worker settings and approved defaults are:
-
-| Environment variable                      | Default |
-| ----------------------------------------- | ------: |
-| `OUTBOX_RELAY_BATCH_SIZE`                 |      50 |
-| `OUTBOX_RELAY_POLL_INTERVAL_MS`           |     500 |
-| `OUTBOX_RELAY_LEASE_MS`                   |   30000 |
-| `OUTBOX_RELAY_CONFIRM_TIMEOUT_MS`         |    5000 |
-| `OUTBOX_RELAY_RETRY_BASE_MS`              |    1000 |
-| `OUTBOX_RELAY_RETRY_MAX_MS`               |   60000 |
-| `OUTBOX_RELAY_SHUTDOWN_TIMEOUT_MS`        |   10000 |
-| `SETTLEMENT_CONSUMER_BODY_LIMIT_BYTES`    |   16384 |
-| `SETTLEMENT_CONSUMER_PREFETCH`            |       2 |
-| `SETTLEMENT_CONSUMER_RECONNECT_BASE_MS`   |    1000 |
-| `SETTLEMENT_CONSUMER_RECONNECT_MAX_MS`    |   60000 |
-| `SETTLEMENT_CONSUMER_SHUTDOWN_TIMEOUT_MS` |   10000 |
-| `RECONCILIATION_POLL_INTERVAL_MS`         |     500 |
-| `WEBHOOK_PROJECTION_BODY_LIMIT_BYTES`     |   16384 |
-| `WEBHOOK_PROJECTION_PREFETCH`             |       2 |
-| `WEBHOOK_PROJECTION_RECONNECT_BASE_MS`    |    1000 |
-| `WEBHOOK_PROJECTION_RECONNECT_MAX_MS`     |   60000 |
-| `WEBHOOK_PROJECTION_SHUTDOWN_TIMEOUT_MS`  |   10000 |
-| `WEBHOOK_PROJECTION_TRANSACTION_RETRIES`  |       3 |
-| `WEBHOOK_DELIVERY_BATCH_SIZE`             |       4 |
-| `WEBHOOK_DELIVERY_CONCURRENCY`            |       4 |
-| `WEBHOOK_DELIVERY_POLL_INTERVAL_MS`       |     500 |
-| `WEBHOOK_DELIVERY_LEASE_MS`               |   30000 |
-| `WEBHOOK_DELIVERY_ATTEMPT_TIMEOUT_MS`     |    8000 |
-| `WEBHOOK_DELIVERY_RESPONSE_LIMIT_BYTES`   |   65536 |
-| `WEBHOOK_DELIVERY_SHUTDOWN_TIMEOUT_MS`    |   10000 |
-| `WEBHOOK_DELIVERY_TRANSACTION_RETRIES`    |       3 |
-| `DEPENDENCY_READINESS_TIMEOUT_MS`         |    2000 |
-| `WORKER_HEARTBEAT_INTERVAL_MS`            |   30000 |
-
-RabbitMQ topology uses durable topic exchange `settleflow.domain-events`, exact routing keys for the three Payment lifecycle events plus `settlement.finalized.v1` and `reconciliation.completed.v1`, and matching durable quorum Webhook projection queues. Payment capture/refund also route to Settlement’s lifecycle projection queues. Every consumer queue dead-letters through durable topic exchange `settleflow.dead-letter` to its matching `.dlq` quorum queue.
-
-The consumer selects only endpoints owned by the event merchant that are active and subscribed at processing time and creates `PENDING` `whd_<ULID>` records with attempt count zero. The dispatcher claims at most four due `PENDING`/`RETRYING` rows for 30 seconds, re-resolves and validates each destination immediately before contact, sends the exact retained event bytes, and records immutable attempt evidence. A `2xx` is delivered; `408`, `429`, `5xx`, and transient transport failures use seven-attempt full-jitter retries with ceilings of 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours, and 24 hours. Redirects, other `4xx`, prohibited destinations, TLS verification failures, inactive endpoints, and an exhausted attempt budget become database `DEAD_LETTERED` records without an automatic replay path.
-
-For local delivery, load the same ignored local keyring values used by the API, set `WEBHOOK_URL_POLICY_MODE=development`, and allow only exact synthetic origins in `WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS`, for example `["http://127.0.0.1:8080"]`. Production rejects the local keyring provider and requires HTTPS on port 443; its KMS adapter remains a deployment prerequisite. Inspect relay backlog using the [outbox backlog runbook](docs/runbooks/outbox-backlog.md), projection or broker-DLQ state using the [Webhook projection runbook](docs/runbooks/webhook-projection-consumer.md), and outbound attempts using the [Webhook delivery runbook](docs/runbooks/webhook-delivery.md). See the [versioned event and signed-delivery contract](docs/events/README.md) for receiver guidance.
-
-### Quality and production commands
-
-```shell
-pnpm lint
 pnpm format:check
+pnpm lint
 pnpm typecheck
-pnpm boundaries:check
-pnpm docs:check
-pnpm contracts:check
-pnpm config:check
-pnpm security:policy
-pnpm security:secrets
 pnpm test
-pnpm test:infrastructure
-pnpm test:quality
-pnpm test:coverage
-pnpm test:merchant-access
-pnpm test:payments
-pnpm test:ledger
-pnpm test:event-contract
-pnpm test:operations
-pnpm test:webhooks
-pnpm test:settlements
-pnpm test:reconciliation
-pnpm test:integration
-pnpm test:concurrency
-pnpm test:failure
-pnpm db:migrate:verify
-pnpm db:permissions:check
-pnpm db:invariants:check
-pnpm db:schema:drift
 pnpm build
-pnpm start:api
-pnpm start:worker
 ```
 
-`pnpm test` runs all Docker-independent API, worker, Infrastructure, and bounded-module unit suites. The quality commands validate declared module edges, local Markdown paths/anchors, strict OpenAPI/event conventions, compiled environment examples, and database verifier safety. `test:coverage` enforces the approved overall 85% statements/lines and 80% branches/functions, plus 90% statements/lines and 85% branches for critical financial/asynchronous modules. Database verification commands are read-only and require the checked local Compose database to be running with the exact `settleflow`/`settleflow_app` target. The focused Settlement and Reconciliation commands exercise cutoff/fee/arithmetic and CSV/classification contracts. `pnpm test:event-contract` checks all five exact producer/consumer event contracts. `pnpm test:integration` starts disposable real PostgreSQL and RabbitMQ containers and controlled local HTTP targets and requires Docker. It covers migrations/permissions/invariants, atomic Payment and Settlement evidence, reconciliation reports/events, races, relay/projection, signing/retries, and immutable Webhook evidence. `pnpm build` creates the shared infrastructure and bounded-module packages plus independent production entrypoints under `apps/api/dist` and `apps/worker/dist`.
+## Documentation
 
-CI, pinned action/tool policy, dependency/license/secret/image scanning, scheduled race and failure evidence, enforced coverage floors, SBOMs, main-branch attestations, artifact retention, and GitHub prerequisites are documented in [Continuous Integration and Supply-Chain Evidence](docs/operations/continuous-integration.md). The local coverage and runtime-image vulnerability gates pass without threshold changes or security exceptions. No workflow needs a repository secret or publishes an image, package, tag, or release.
-
-Structured JSON logging, AsyncLocalStorage request correlation, protected process-local metrics, optional OpenTelemetry export, redaction, internal probes, the local Collector/Prometheus profile, and executable alerts are documented in [Observability and Internal Probes](docs/operations/observability.md). Validate and start only that optional profile with `pnpm telemetry:check` and `pnpm telemetry:up`; inspect it with `pnpm telemetry:ps` and `pnpm telemetry:logs`, then stop it with `pnpm telemetry:stop`. Prometheus is loopback-only at `http://127.0.0.1:9090`; application metrics remain on their dedicated internal listeners and there is no public metrics endpoint or dashboard. The [alert catalog](docs/operations/alert-catalog.md) maps every rule to its safe runbook.
-
-API readiness remains PostgreSQL/RabbitMQ dependency-aware; the pure local provider adds no readiness dependency. Worker readiness independently reports publisher, Webhook projection, Settlement projection, Reconciliation processor, and Webhook dispatcher paths. The worker writes only projections/reconciliation reports and performs no provider contact, Ledger posting, payout, or real-funds operation.
-
-For permission, keyring, URL-policy, or audit recovery, use the [Webhook Endpoint Foundation runbook](docs/runbooks/webhook-endpoint-foundation.md). Never run an application as the migration owner or manually edit endpoint, encrypted-secret, or audit rows.
-
-## Governance
-
-Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture overview](docs/architecture/README.md), and the [ADR index](docs/adr/README.md) before extending the scaffold. Implementation plans are governed by [PLANS.md](PLANS.md).
+| Document                                                            | Purpose                                                           |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [Local development](docs/operations/local-development.md)           | Environment, infrastructure, database, API/worker, and test setup |
+| [Architecture overview](docs/architecture/README.md)                | Deployables, consistency model, and bounded modules               |
+| [Financial invariants](docs/architecture/financial-invariants.md)   | Normative accounting, lifecycle, and concurrency rules            |
+| [Architecture decisions](docs/adr/README.md)                        | Accepted technical decisions and trade-offs                       |
+| [OpenAPI](docs/api/openapi.json)                                    | Machine-readable HTTP contract                                    |
+| [Events and Webhook signing](docs/events/README.md)                 | Closed event schemas, AMQP metadata, and signed-delivery contract |
+| [Deterministic demo](docs/demo/README.md)                           | Isolated ten-step execution and sanitized evidence                |
+| [Engineering evidence](docs/review/engineering-evidence.md)         | Detailed claim-to-test evaluation path and evidence boundaries    |
+| [Continuous integration](docs/operations/continuous-integration.md) | Quality, security, reliability, artifact, and supply-chain gates  |
+| [Release simulation](docs/operations/release-simulation.md)         | OCI image, topology, startup, security, and shutdown behavior     |
+| [Runbooks](docs/runbooks/README.md)                                 | Failure diagnosis and evidence-preserving recovery                |
+| [Security policy](SECURITY.md)                                      | Vulnerability disclosure and security requirements                |
+| [Contributing](CONTRIBUTING.md)                                     | Governance, plans, reviews, migrations, and verification          |
 
 ## License
 

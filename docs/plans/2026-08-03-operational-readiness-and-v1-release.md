@@ -606,6 +606,7 @@ Every final verification record must state exact tool/image/action versions and 
 - [ ] OCI images and release-simulation Compose verified from a clean clone.
 - [x] Demo seed/orchestration is deterministic, synthetic, secret-safe, and invariant-safe.
 - [x] Public README/evidence navigation, Apache-2.0 licensing, and the pre-release security policy are published without representing the remaining Steps 8-10 as complete.
+- [ ] Before `v1.0.0`, confirm contribution/source provenance and that no proprietary or confidential source is being relicensed; review third-party dependency/material obligations and preserve every required Apache or third-party NOTICE/attribution.
 - [ ] Backup/isolated restore meets measured reference targets or release remains pre-release.
 - [ ] License, security contact, CODEOWNERS, version policy, release notes, limitations, and evidence matrix complete.
 - [ ] All P0 requirements/invariants are passed or explicitly owner-waived; no financial/security blocker remains.

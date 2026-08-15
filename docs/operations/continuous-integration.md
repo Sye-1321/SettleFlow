@@ -74,6 +74,8 @@ Gitleaks ignores are exact historical fingerprints, never path/rule wildcards. E
 
 `security/exceptions.json` is the sole high-finding exception registry. Every future entry must identify the tool, finding, artifact, rationale, compensating controls, owner, approver, approval time, and an expiry no more than 30 days later. Expired, malformed, duplicate, critical, or unapproved exceptions fail locally and in CI. `security/license-reviews.json` records only evidence-backed license conclusions; it is not a vulnerability waiver.
 
+The automated license gate inventories production package licenses and verifies the checked evidence for any non-allowlisted package conclusion. It does not by itself establish contribution/source provenance or resolve every license, NOTICE, and attribution obligation for non-package material; those remain explicit final-release checks.
+
 ## Artifacts and attestations
 
 Coverage diagnostics are retained for 7 days. Image evidence is retained for 14 days and contains only three SPDX JSON SBOMs plus a bounded manifest of image IDs, OCI labels, runtime identity/command/health metadata, source revision, exact scanner images, and SBOM hashes. Image archives, generated configuration, environment values, scanner caches, raw logs, and database/broker data are never uploaded.

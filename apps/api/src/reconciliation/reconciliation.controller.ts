@@ -63,6 +63,16 @@ interface MultipartRequest extends RequestWithRequestId {
   readonly body?: Record<string, unknown>;
 }
 
+export const reconciliationMultipartLimits = Object.freeze({
+  fields: 2,
+  fileSize: 10 * 1024 * 1024,
+  files: 1,
+  // Busboy emits its parts-limit signal when the configured count is reached.
+  // Keep one parser slot beyond the exact two-field/one-file API contract;
+  // the independent field/file limits and controller shape check reject extras.
+  parts: 4,
+});
+
 function requireKey(request: MultipartRequest): string {
   const values = headerValues(request, 'idempotency-key');
   const value = values[0];
@@ -131,7 +141,7 @@ export class ReconciliationController {
   })
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2, parts: 3 },
+      limits: reconciliationMultipartLimits,
     }),
   )
   public async stage(

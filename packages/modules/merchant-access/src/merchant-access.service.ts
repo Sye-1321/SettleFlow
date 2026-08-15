@@ -6,7 +6,10 @@ import type {
   IssuedApiKey,
   MerchantRequestIdentity,
   RotateApiKeyCommand,
+  SyntheticMerchant,
 } from './merchant-access.types';
+
+const SYNTHETIC_MERCHANT_CODE_PATTERN = /^demo_[a-z0-9_]{1,58}$/u;
 
 export class MerchantAccessService {
   public constructor(
@@ -45,6 +48,14 @@ export class MerchantAccessService {
     return { ...metadata, plaintext: generated.plaintext };
   }
 
+  /** Local fixture boundary only; intentionally has no HTTP controller. */
+  public provisionSyntheticMerchant(code: string): Promise<SyntheticMerchant> {
+    if (!SYNTHETIC_MERCHANT_CODE_PATTERN.test(code)) {
+      throw new Error('Synthetic merchant code is invalid');
+    }
+    return this.repository.provisionSyntheticMerchant(code);
+  }
+
   public async disableApiKey(apiKeyId: string): Promise<boolean> {
     return this.repository.disableApiKey(apiKeyId);
   }
@@ -76,3 +87,5 @@ export class MerchantAccessService {
     return requiredScopes.every((scope) => granted.has(scope));
   }
 }
+
+export const merchantAccessServiceInternals = { SYNTHETIC_MERCHANT_CODE_PATTERN };

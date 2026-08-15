@@ -64,7 +64,7 @@ Invoke-RestMethod http://127.0.0.1:3000/health/ready
 pnpm release:ps
 ```
 
-The business `GET /v1` route remains merchant-authenticated and therefore returns `401` until a separately provisioned synthetic merchant API key is supplied. Demo provisioning and its one-time key flow are deliberately deferred; the release configuration generator does not create business data or credentials.
+The business `GET /v1` route remains merchant-authenticated and therefore returns `401` until a separately provisioned synthetic merchant API key is supplied. The release configuration generator never creates business data or credentials. The separate, explicitly guarded [deterministic demo](../demo/README.md) provisions its synthetic identity only inside the isolated `settleflow-demo` environment.
 
 After the base simulation is healthy, start only the optional internal telemetry services when required:
 

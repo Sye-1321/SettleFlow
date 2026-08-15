@@ -28,3 +28,10 @@ export interface RotateApiKeyCommand {
   readonly apiKeyId: string;
   readonly scopes?: readonly MerchantApiKeyScope[];
 }
+
+export interface SyntheticMerchant {
+  readonly code: string;
+  readonly createdAt: Date;
+  readonly id: string;
+  readonly status: 'active';
+}

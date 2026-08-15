@@ -24,6 +24,7 @@ ops
 security
 tools/ci
 tools/database
+tools/demo
 tools/quality
 tools/security
 tools/release/create-release-config.mjs

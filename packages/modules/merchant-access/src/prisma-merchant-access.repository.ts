@@ -9,7 +9,7 @@ import {
   type MerchantAccessRepository,
   type RotateApiKeyRecord,
 } from './merchant-access.repository';
-import type { ApiKeyMetadata } from './merchant-access.types';
+import type { ApiKeyMetadata, SyntheticMerchant } from './merchant-access.types';
 
 function toScopes(scopes: readonly string[]): readonly MerchantApiKeyScope[] {
   if (scopes.some((scope) => !isMerchantApiKeyScope(scope))) {
@@ -38,6 +38,31 @@ function toMetadata(record: {
 
 export class PrismaMerchantAccessRepository implements MerchantAccessRepository {
   public constructor(private readonly database: PrismaDatabase) {}
+
+  public async provisionSyntheticMerchant(code: string): Promise<SyntheticMerchant> {
+    try {
+      await this.database.getClient().merchant.createMany({
+        data: [{ code }],
+        skipDuplicates: true,
+      });
+      const merchant = await this.database.getClient().merchant.findUnique({
+        select: { code: true, createdAt: true, id: true, status: true },
+        where: { code },
+      });
+      if (merchant?.status !== 'ACTIVE') {
+        throw new MerchantUnavailableError();
+      }
+      return {
+        code: merchant.code,
+        createdAt: merchant.createdAt,
+        id: merchant.id,
+        status: 'active',
+      };
+    } catch (error: unknown) {
+      if (error instanceof MerchantUnavailableError) throw error;
+      return this.database.rethrowDatabaseError(error);
+    }
+  }
 
   public async createApiKey(input: CreateApiKeyRecord): Promise<ApiKeyMetadata> {
     const client = this.database.getClient();

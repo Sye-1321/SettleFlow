@@ -90,8 +90,16 @@ export class NodeWebhookHttpClient implements WebhookHttpClient {
         agent: false,
         headers: input.headers,
         hostname: parsed.hostname,
-        lookup: (_hostname, _options, callback): void => {
-          callback(null, input.destination.address, input.destination.family);
+        lookup: (_hostname, lookupOptions, callback): void => {
+          const pinned = {
+            address: input.destination.address,
+            family: input.destination.family,
+          };
+          if (lookupOptions.all === true) {
+            callback(null, [pinned]);
+            return;
+          }
+          callback(null, pinned.address, pinned.family);
         },
         method: 'POST',
         path: `${parsed.pathname}${parsed.search}`,

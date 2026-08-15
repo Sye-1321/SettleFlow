@@ -27,6 +27,7 @@ describe('MerchantAccessService', () => {
       createApiKey: jest.fn().mockResolvedValue(metadata),
       disableApiKey: jest.fn().mockResolvedValue(true),
       findActiveApiKeyByPrefix: jest.fn().mockResolvedValue(record),
+      provisionSyntheticMerchant: jest.fn(),
       revokeApiKey: jest.fn().mockResolvedValue(true),
       rotateApiKey: jest.fn().mockResolvedValue(metadata),
     };
@@ -94,6 +95,23 @@ describe('MerchantAccessService', () => {
       ],
     ]);
     expect(JSON.stringify(repository.createApiKey.mock.calls)).not.toContain(issued.plaintext);
+  });
+
+  it('provisions only visibly synthetic merchants through its owned repository', async () => {
+    const { repository, service } = createHarness();
+    const merchant = {
+      code: 'demo_reviewer',
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      id: '00000000-0000-4000-8000-000000000001',
+      status: 'active' as const,
+    };
+    repository.provisionSyntheticMerchant.mockResolvedValue(merchant);
+
+    await expect(service.provisionSyntheticMerchant(merchant.code)).resolves.toEqual(merchant);
+    expect(repository.provisionSyntheticMerchant.mock.calls).toEqual([[merchant.code]]);
+    expect(() => service.provisionSyntheticMerchant('merchant_real')).toThrow(
+      'Synthetic merchant code is invalid',
+    );
   });
 
   it('rejects empty scopes and rotates through one repository command', async () => {

@@ -21,5 +21,6 @@ export type {
   IssuedApiKey,
   MerchantRequestIdentity,
   RotateApiKeyCommand,
+  SyntheticMerchant,
 } from './merchant-access.types';
 export { PrismaMerchantAccessRepository } from './prisma-merchant-access.repository';

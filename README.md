@@ -98,6 +98,32 @@ Only API port 3000 is loopback-published. PostgreSQL, RabbitMQ, worker, OTLP, an
 
 This topology is explicitly a non-production finance-grade simulation because it uses the local Webhook keyring; configuration validation rejects production relabeling. See [OCI Images and Release Simulation](docs/operations/release-simulation.md) for startup sequencing, security boundaries, inspection, reset, and deferred production requirements.
 
+### Run the deterministic end-to-end demo
+
+The approved reviewer demo uses its own `settleflow-demo` Compose identity and disposable volumes. It builds the pinned API, worker, and migrator images; provisions one visibly synthetic merchant through Merchant Access; exercises real Payment, Ledger, Eventing, Webhook, Settlement, and Reconciliation boundaries; injects a RabbitMQ outage; and writes only sanitized evidence.
+
+The explicit demo sentinel is mandatory. In PowerShell:
+
+```powershell
+$env:SETTLEFLOW_DEMO_MODE = 'true'
+pnpm demo
+```
+
+In a POSIX shell:
+
+```sh
+SETTLEFLOW_DEMO_MODE=true pnpm demo
+```
+
+Normal execution never resets data. A second invocation safely reports that the completed isolated demo already exists. To destroy only the validated demo volumes and ignored configuration, run:
+
+```powershell
+$env:SETTLEFLOW_DEMO_MODE = 'true'
+pnpm demo:reset -- --yes
+```
+
+The manifest at `.settleflow/demo/evidence.json` contains only bounded check names, counts, terminal states, elapsed time, the source commit, commands, and runbook paths. It never contains API keys, webhook secrets or signatures, payloads, amounts, references, CSV rows, endpoint or dependency URLs, SQL, logs, or stack traces. See [Deterministic Demo](docs/demo/README.md) for the exact ten-step flow and safety model.
+
 ### Start and inspect local infrastructure
 
 Start PostgreSQL and RabbitMQ and wait for both health checks:

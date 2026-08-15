@@ -3,7 +3,10 @@ import type { ReconciliationService } from '@settleflow/reconciliation';
 
 import { REQUEST_ID } from '../http/request-id';
 import { REQUIRED_MERCHANT_SCOPES_METADATA } from '../merchant-access/merchant-access.decorators';
-import { ReconciliationController } from './reconciliation.controller';
+import {
+  reconciliationMultipartLimits,
+  ReconciliationController,
+} from './reconciliation.controller';
 
 function handler(name: 'report' | 'stage'): object {
   return Object.getOwnPropertyDescriptor(ReconciliationController.prototype, name)!.value as object;
@@ -81,5 +84,14 @@ describe('ReconciliationController', () => {
     expect(Reflect.getMetadata(REQUIRED_MERCHANT_SCOPES_METADATA, handler('report'))).toEqual([
       'reconciliation:read',
     ]);
+  });
+
+  it('bounds the exact two-field and one-file multipart contract without rejecting it', () => {
+    expect(reconciliationMultipartLimits).toEqual({
+      fields: 2,
+      fileSize: 10 * 1024 * 1024,
+      files: 1,
+      parts: 4,
+    });
   });
 });

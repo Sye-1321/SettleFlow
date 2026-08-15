@@ -1,5 +1,5 @@
 import type { MerchantApiKeyScope } from './api-key-scopes';
-import type { ApiKeyMetadata } from './merchant-access.types';
+import type { ApiKeyMetadata, SyntheticMerchant } from './merchant-access.types';
 
 export interface ApiKeyAuthenticationRecord {
   readonly id: string;
@@ -30,6 +30,7 @@ export interface MerchantAccessRepository {
   findActiveApiKeyByPrefix(prefix: string): Promise<ApiKeyAuthenticationRecord | undefined>;
   revokeApiKey(apiKeyId: string, revokedAt: Date): Promise<boolean>;
   rotateApiKey(input: RotateApiKeyRecord): Promise<ApiKeyMetadata>;
+  provisionSyntheticMerchant(code: string): Promise<SyntheticMerchant>;
 }
 
 export class MerchantUnavailableError extends Error {

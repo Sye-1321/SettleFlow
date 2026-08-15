@@ -88,10 +88,16 @@ function requireEnvironment(name, expected) {
 }
 
 const databaseUrl = requireEnvironment('MIGRATION_DATABASE_URL');
-requireEnvironment('POSTGRES_DB', 'settleflow');
+const demoMode =
+  process.env.SETTLEFLOW_DEMO_MODE === 'true' && process.env.NODE_ENV !== 'production';
+const databaseName = requireEnvironment('POSTGRES_DB', demoMode ? 'settleflow_demo' : 'settleflow');
 requireEnvironment('POSTGRES_APP_USER', 'settleflow_app');
 const expectedOwner = requireEnvironment('POSTGRES_USER');
-if (new URL(databaseUrl).username !== expectedOwner)
+const parsedDatabaseUrl = new URL(databaseUrl);
+if (
+  parsedDatabaseUrl.username !== expectedOwner ||
+  decodeURIComponent(parsedDatabaseUrl.pathname.replace(/^\//u, '')) !== databaseName
+)
   throw new Error('Migration URL is not the declared owner');
 
 const client = new Client({ connectionString: databaseUrl });

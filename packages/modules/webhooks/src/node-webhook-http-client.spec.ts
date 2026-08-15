@@ -94,6 +94,32 @@ describe('NodeWebhookHttpClient', () => {
     }
   });
 
+  it('connects a hostname URL only to its pre-resolved pinned address', async () => {
+    const target = await listen((_request, response) => {
+      response.statusCode = 204;
+      response.end();
+    });
+    try {
+      const port = new URL(target.origin).port;
+      const client = new NodeWebhookHttpClient();
+
+      await expect(
+        client.deliver({
+          body: Buffer.from('{}'),
+          destination: {
+            address: '127.0.0.1',
+            family: 4,
+            hostname: 'demo-webhook-receiver',
+            url: `http://demo-webhook-receiver:${port}/hook`,
+          },
+          headers: { 'Content-Length': '2' },
+        }),
+      ).resolves.toMatchObject({ kind: 'response', statusCode: 204 });
+    } finally {
+      await close(target.server);
+    }
+  });
+
   it('caps diagnostic response consumption at exactly 64 KiB', async () => {
     const target = await listen((_request, response) => {
       response.statusCode = 200;

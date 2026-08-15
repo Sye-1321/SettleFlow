@@ -9,6 +9,7 @@ const ACTION_REFERENCE = /^[a-z0-9_.-]+\/[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)?@[a-f0-9
 const ACTION_LINE =
   /^\s*-?\s*uses:\s*[a-z0-9_.-]+\/[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)?@[a-f0-9]{40}\s+#\s+v\d+\.\d+\.\d+\s*$/imu;
 const ALLOWED_ACTION_OWNERS = new Set(['actions', 'github']);
+const ALLOWED_THIRD_PARTY_ACTIONS = new Set(['docker/setup-docker-action']);
 const ALLOWED_PERMISSION_VALUES = new Set(['none', 'read', 'write']);
 
 function triggerNames(on) {
@@ -102,9 +103,23 @@ export function validateWorkflow(raw, filename) {
         failures.push(`${filename}/${jobName}: action is not pinned to a full commit SHA`);
         continue;
       }
-      const owner = step.uses.slice(0, step.uses.indexOf('/')).toLowerCase();
-      if (!ALLOWED_ACTION_OWNERS.has(owner)) {
+      const action = step.uses.slice(0, step.uses.indexOf('@')).toLowerCase();
+      const owner = action.slice(0, action.indexOf('/'));
+      if (!ALLOWED_ACTION_OWNERS.has(owner) && !ALLOWED_THIRD_PARTY_ACTIONS.has(action)) {
         failures.push(`${filename}/${jobName}: action owner ${owner} is not approved`);
+      }
+      if (action === 'docker/setup-docker-action') {
+        if (!/^version=\d+\.\d+\.\d+$/u.test(step.with?.version ?? '')) {
+          failures.push(`${filename}/${jobName}: Docker Engine must use an exact version`);
+        }
+        try {
+          const daemonConfiguration = JSON.parse(step.with?.['daemon-config'] ?? '');
+          if (daemonConfiguration.features?.['containerd-snapshotter'] !== true) {
+            failures.push(`${filename}/${jobName}: Docker containerd image store is required`);
+          }
+        } catch {
+          failures.push(`${filename}/${jobName}: Docker daemon configuration must be valid JSON`);
+        }
       }
       const escaped = step.uses.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
       if (

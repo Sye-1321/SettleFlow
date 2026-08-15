@@ -137,6 +137,32 @@ jobs:
     validateWorkflow(valid.replace(/@[a-f0-9]{40} # v7\.0\.1/u, '@v7'), 'unsafe.yml').length > 0,
   );
   assert.ok(validateWorkflow(valid.replace('pull_request:', 'pull_request_target:'), 'unsafe.yml'));
+
+  const approvedDockerSetup = valid.replace(
+    / {6}- uses: actions\/checkout@[a-f0-9]{40} # v7\.0\.1\n {8}with:\n {10}persist-credentials: false/u,
+    `      - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5.4.0
+        with:
+          version: version=28.0.4
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'`,
+  );
+  assert.deepEqual(validateWorkflow(approvedDockerSetup, 'docker.yml'), []);
+  assert.ok(
+    validateWorkflow(
+      approvedDockerSetup.replace('docker/setup-docker-action', 'docker/unsafe-action'),
+      'unsafe.yml',
+    ).some((failure) => failure.includes('action owner docker is not approved')),
+  );
+  assert.ok(
+    validateWorkflow(approvedDockerSetup.replace('version=28.0.4', 'latest'), 'unsafe.yml').some(
+      (failure) => failure.includes('Docker Engine must use an exact version'),
+    ),
+  );
+  assert.ok(
+    validateWorkflow(
+      approvedDockerSetup.replace('containerd-snapshotter":true', 'containerd-snapshotter":false'),
+      'unsafe.yml',
+    ).some((failure) => failure.includes('Docker containerd image store is required')),
+  );
 });
 
 test('checked repository obeys exact version, lockfile, and scanner-image policy', () => {

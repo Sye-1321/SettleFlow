@@ -20,6 +20,7 @@ All GitHub actions are full-commit pinned with their exact release in an adjacen
 | ---------------------------------- | ------- | ------------------------------------------ |
 | `actions/checkout`                 | 7.0.1   | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
 | `actions/setup-node`               | 7.0.0   | `820762786026740c76f36085b0efc47a31fe5020` |
+| `docker/setup-docker-action`       | 5.4.0   | `77e84dbf09b47d1e29270283c22f16145aa85ca1` |
 | `actions/upload-artifact`          | 7.0.1   | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `actions/download-artifact`        | 8.0.1   | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
 | `actions/dependency-review-action` | 5.0.0   | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` |
@@ -65,7 +66,7 @@ pnpm images:sbom
 pnpm release:evidence
 ```
 
-`pnpm images:build` uses argument-array orchestration around an isolated ephemeral `docker-container` Buildx builder, selects only the API, worker, and migrator targets, pulls pinned bases, loads the local images, requests maximal provenance plus SBOM attestations explicitly, and removes the builder. The release Compose model therefore remains portable to the Compose 2.38.2 schema currently provided by the pinned Ubuntu runner image, and the GitHub host's non-attestation-capable default Docker driver cannot weaken the release-blocking attestation policy.
+`pnpm images:build` uses argument-array orchestration around Buildx Bake, selects only the API, worker, and migrator targets, pulls pinned bases, loads the local images, and requests maximal provenance plus SBOM attestations explicitly. The release Compose model therefore remains portable to the Compose 2.38.2 schema currently provided by the pinned Ubuntu runner image. The image job pins Docker Engine 28.0.4 and enables its containerd image store so the local exporter can retain the attested manifest lists; a host without an attestation-capable image store fails closed rather than silently dropping provenance or SBOM evidence.
 
 Gitleaks 8.30.1, Hadolint 2.15.1, Trivy 0.73.0, and Syft 1.50.0 run from version-and-digest-pinned containers declared in `tools/security/tool-images.json`. Gitleaks redacts findings. Trivy blocks critical and unreviewed high package or filesystem-secret findings across API, worker, and migrator images. The dependency audit applies the same severity policy; critical findings cannot be excepted. Final runtime stages use the digest-pinned distroless Node.js 24 Debian 13 image, which contains no npm, Corepack, Yarn, shell, or package manager; build tooling remains confined to the separate pinned toolchain stage.
 

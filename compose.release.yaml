@@ -16,8 +16,6 @@ x-app-build: &app-build
     OCI_CREATED: ${SETTLEFLOW_IMAGE_CREATED:?generate release configuration first}
     OCI_REVISION: ${SETTLEFLOW_IMAGE_REVISION:?generate release configuration first}
     OCI_VERSION: ${SETTLEFLOW_IMAGE_VERSION:?generate release configuration first}
-  provenance: mode=max
-  sbom: true
 
 services:
   postgres:

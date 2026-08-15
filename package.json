@@ -58,7 +58,7 @@
     "release:config:create": "node tools/release/create-release-config.mjs create",
     "release:config:check": "node tools/release/create-release-config.mjs check",
     "release:compose:check": "node tools/release/validate-release-compose.mjs",
-    "images:build": "pnpm release:config:check && docker compose --env-file .settleflow/release-simulation/compose.env -f compose.release.yaml build --pull api worker migrator",
+    "images:build": "pnpm release:config:check && node tools/release/build-release-images.mjs",
     "images:validate": "pnpm release:config:check && node tools/release/validate-images.mjs",
     "images:scan": "pnpm release:config:check && node tools/security/run-container-security.mjs scan-images",
     "images:sbom": "pnpm release:config:check && node tools/security/run-container-security.mjs sbom",

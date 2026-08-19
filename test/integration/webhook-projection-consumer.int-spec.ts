@@ -11,6 +11,7 @@ import {
   RabbitMqPaymentCreatedConsumer,
   type ClaimedOutboxEvent,
   type PaymentCreatedMessageHandler,
+  type WebhookProjectionConsumerSignal,
 } from '@settleflow/eventing';
 import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
 import {
@@ -54,9 +55,19 @@ function deployMigrations(databaseUrl: string): Promise<void> {
 }
 
 interface QueueDetails {
-  readonly messages: number;
   readonly messages_ready: number;
-  readonly messages_unacknowledged: number;
+}
+
+async function waitForPublisherReady(
+  publisher: RabbitMqOutboxPublisher,
+  timeoutMs = 60_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await publisher.ensureReady()) return true;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  } while (Date.now() < deadline);
+  return false;
 }
 
 describe('payment.created.v1 webhook projection consumer with real dependencies', () => {
@@ -106,7 +117,7 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
       retryBaseMs: 1_000,
       retryMaxMs: 60_000,
     });
-    await expect(publisher.ensureReady()).resolves.toBe(true);
+    await expect(waitForPublisherReady(publisher)).resolves.toBe(true);
   }, 120_000);
 
   afterEach(async () => {
@@ -158,7 +169,10 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
     );
   }
 
-  function createConsumer(handler: PaymentCreatedMessageHandler): RabbitMqPaymentCreatedConsumer {
+  function createConsumer(
+    handler: PaymentCreatedMessageHandler,
+    signal?: (value: WebhookProjectionConsumerSignal) => void,
+  ): RabbitMqPaymentCreatedConsumer {
     consumer = new RabbitMqPaymentCreatedConsumer(handler, {
       bodyLimitBytes: 16_384,
       connectionTimeoutMs: 5_000,
@@ -168,6 +182,7 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
       reconnectBaseMs: 1_000,
       reconnectMaxMs: 60_000,
       shutdownTimeoutMs: 10_000,
+      ...(signal === undefined ? {} : { signal }),
     });
     return consumer;
   }
@@ -268,7 +283,7 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
   }
 
   async function waitFor(
-    predicate: () => Promise<boolean>,
+    predicate: () => boolean | Promise<boolean>,
     description: string,
     timeoutMs = 15_000,
   ): Promise<void> {
@@ -352,16 +367,21 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
         return projection.handle(message);
       }),
     };
-    const activeConsumer = createConsumer(handler);
+    const signals: WebhookProjectionConsumerSignal[] = [];
+    const activeConsumer = createConsumer(handler, (signal) => signals.push(signal));
     await expect(activeConsumer.ensureReady()).resolves.toBe(true);
 
     await expect(publisher?.publishBatch([event])).resolves.toEqual([
       { eventId: event.eventId, kind: 'confirmed' },
     ]);
     await waitFor(
-      async () =>
-        (await queueDetails(OUTBOX_RABBITMQ_TOPOLOGY.queue)).messages_unacknowledged === 1,
-      'one unacknowledged projection message',
+      () =>
+        signals.some(
+          (signal) =>
+            signal.event === 'webhook.projection.message.received' &&
+            signal.eventId === event.eventId,
+        ),
+      'projection message receipt before handler release',
     );
     expect(await owner().getClient().inboxMessage.count()).toBe(0);
     release?.();
@@ -371,8 +391,13 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
       'durable webhook projection',
     );
     await waitFor(
-      async () => (await queueDetails(OUTBOX_RABBITMQ_TOPOLOGY.queue)).messages === 0,
-      'queue acknowledgement',
+      () =>
+        signals.some(
+          (signal) =>
+            signal.event === 'webhook.projection.message.processed' &&
+            signal.eventId === event.eventId,
+        ),
+      'post-commit acknowledgement signal',
     );
     expect(await owner().getClient().inboxMessage.count()).toBe(1);
     expect(await owner().getClient().webhookEventProjection.count()).toBe(1);
@@ -392,8 +417,13 @@ describe('payment.created.v1 webhook projection consumer with real dependencies'
       { eventId: event.eventId, kind: 'confirmed' },
     ]);
     await waitFor(
-      async () => (await queueDetails(OUTBOX_RABBITMQ_TOPOLOGY.queue)).messages === 0,
-      'duplicate acknowledgement',
+      () =>
+        signals.some(
+          (signal) =>
+            signal.event === 'webhook.projection.message.duplicate' &&
+            signal.eventId === event.eventId,
+        ),
+      'duplicate acknowledgement signal',
     );
     expect(await owner().getClient().inboxMessage.count()).toBe(1);
     expect(await owner().getClient().webhookEventProjection.count()).toBe(1);

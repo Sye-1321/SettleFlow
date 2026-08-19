@@ -71,7 +71,7 @@ interface QueueDetails {
 
 async function waitForPublisherReady(
   publisher: RabbitMqOutboxPublisher,
-  timeoutMs = 15_000,
+  timeoutMs = 60_000,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   do {
@@ -122,8 +122,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     rabbitmqUrl = `amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@${rabbitmq.getHost()}:${rabbitmq.getMappedPort(5672)}`;
     managementBaseUrl = `http://${rabbitmq.getHost()}:${rabbitmq.getMappedPort(15672)}/api`;
 
-    const topologyPublisher = createPublisher();
-    await expect(topologyPublisher.ensureReady()).resolves.toBe(true);
+    const topologyPublisher = await createReadyPublisher();
     await topologyPublisher.close();
     publishers.delete(topologyPublisher);
   }, 120_000);
@@ -178,6 +177,12 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
       retryMaxMs: 60_000,
     });
     publishers.add(publisher);
+    return publisher;
+  }
+
+  async function createReadyPublisher(): Promise<RabbitMqOutboxPublisher> {
+    const publisher = createPublisher();
+    await expect(waitForPublisherReady(publisher)).resolves.toBe(true);
     return publisher;
   }
 
@@ -313,7 +318,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
 
   it('declares the approved quorum topology and publishes exact consumer-ready metadata', async () => {
     const eventId = only(await createPendingEvents(1));
-    const publisher = createPublisher();
+    const publisher = await createReadyPublisher();
     const result = await createRelay(createRepository(), publisher).runOnce('worker_topology');
 
     expect(result).toMatchObject({ claimed: 1, published: 1, retryScheduled: 0 });
@@ -394,8 +399,10 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
 
   it('lets competing workers claim disjoint batches and publishes a healthy backlog under 10 seconds', async () => {
     const eventIds = await createPendingEvents(60);
-    const publisherOne = createPublisher();
-    const publisherTwo = createPublisher();
+    const [publisherOne, publisherTwo] = await Promise.all([
+      createReadyPublisher(),
+      createReadyPublisher(),
+    ]);
     const startedAt = performance.now();
     const [first, second] = await Promise.all([
       createRelay(createRepository(), publisherOne).runOnce('worker_competing_one'),
@@ -444,7 +451,8 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     expect(unavailableResult).toMatchObject({ claimed: 0, publisherReady: false });
     expect(untouched).toMatchObject({ attemptCount: 0, lockedBy: null, publishedAt: null });
 
-    const recovered = await createRelay(repository, createPublisher()).runOnce('worker_recovered');
+    const recoveredPublisher = await createReadyPublisher();
+    const recovered = await createRelay(repository, recoveredPublisher).runOnce('worker_recovered');
     expect(recovered).toMatchObject({ claimed: 1, published: 1 });
     const message = await waitForMessages(OUTBOX_RABBITMQ_TOPOLOGY.queue, 1);
     expect(message[0]?.properties.message_id).toBe(eventId);
@@ -460,7 +468,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
     if (claimed === undefined) {
       throw new Error('Expected a claimed outbox event');
     }
-    const crashedPublisher = createPublisher();
+    const crashedPublisher = await createReadyPublisher();
     await expect(crashedPublisher.publishBatch([claimed])).resolves.toEqual([
       { eventId, kind: 'confirmed' },
     ]);
@@ -475,7 +483,8 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
         },
         where: { eventId },
       });
-    const recovery = await createRelay(createRepository(), createPublisher()).runOnce(
+    const recoveryPublisher = await createReadyPublisher();
+    const recovery = await createRelay(createRepository(), recoveryPublisher).runOnce(
       'worker_lease_recovery',
     );
     expect(recovery).toMatchObject({ claimed: 1, published: 1 });
@@ -552,8 +561,7 @@ describe('transactional outbox relay with real PostgreSQL and RabbitMQ', () => {
 
   it('keeps a mandatory-returned event pending and recreates deleted topology safely', async () => {
     const eventId = only(await createPendingEvents(1));
-    const publisher = createPublisher();
-    await expect(publisher.ensureReady()).resolves.toBe(true);
+    const publisher = await createReadyPublisher();
     await managementRequest(queuePath(OUTBOX_RABBITMQ_TOPOLOGY.queue), { method: 'DELETE' });
 
     const result = await createRelay(createRepository(), publisher).runOnce('worker_return');

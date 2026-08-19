@@ -29,9 +29,12 @@ Detailed rules:
 - [Module boundaries](module-boundaries.md)
 - [Financial invariants](financial-invariants.md)
 - [Immutable Ledger Foundation](ledger-foundation.md)
+- [System and reliability flows](system-flows.md)
+- [Data model and schema inventory](data-model.md)
 - [ADR process](../adr/README.md)
 - [Implementation planning](../../PLANS.md)
 - [Security policy](../../SECURITY.md)
+- [Threat model](../security/threat-model.md)
 
 ## Bounded modules
 
@@ -59,8 +62,8 @@ The implemented baseline resolves the specification's milestone questions:
 
 The remaining work is explicitly release-scoped, not an unresolved implementation choice:
 
-- a sustained 15-minute backup cadence and measured PostgreSQL RPO evidence (isolated restore tooling and a reference RTO exercise are implemented);
-- the complete reference performance workload and published environment results;
+- a sustained 15-minute backup cadence and measured PostgreSQL RPO evidence (isolated restore tooling and a passing 78-second reference RTO exercise are implemented);
+- final-candidate execution and published environment/results for the five source-controlled reference performance scenarios;
 - clean-room release review, final waiver/evidence matrices, immutable tags, and approved artifact publication;
 - owner-controlled GitHub security/reporting and branch/release settings; and
 - deferred or waived APIs and production integrations listed in the [operational-readiness plan](../plans/2026-08-03-operational-readiness-and-v1-release.md).

@@ -1,0 +1,180 @@
+@baseUrl = http://127.0.0.1:3000
+@merchantApiKey = replace-with-an-ignored-synthetic-key
+@requestId = req_http_collection
+@paymentExternalRef = example_order_1001
+@refundExternalRef = example_refund_1001
+@webhookUrl = http://127.0.0.1:8080/settleflow
+@settlementCutoffDate = 2026-08-01
+@periodStart = 2026-08-01T00:00:00.000Z
+@periodEnd = 2026-08-02T00:00:00.000Z
+
+### Process liveness
+GET {{baseUrl}}/health/live
+X-Request-Id: {{requestId}}-live
+
+### Dependency readiness
+GET {{baseUrl}}/health/ready
+X-Request-Id: {{requestId}}-ready
+
+### Authenticated API-major entrypoint
+GET {{baseUrl}}/v1
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-version
+
+### Create Payment Intent
+# @name createPayment
+POST {{baseUrl}}/v1/payment-intents
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-payment-create-1001
+X-Request-Id: {{requestId}}-payment-create
+Content-Type: application/json
+
+{
+  "externalRef": "{{paymentExternalRef}}",
+  "amountMinor": 125000,
+  "currency": "ETB",
+  "captureMethod": "manual"
+}
+
+### Replay Payment Intent creation: response must be equivalent
+POST {{baseUrl}}/v1/payment-intents
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-payment-create-1001
+X-Request-Id: {{requestId}}-payment-replay
+Content-Type: application/json
+
+{
+  "externalRef": "{{paymentExternalRef}}",
+  "amountMinor": 125000,
+  "currency": "ETB",
+  "captureMethod": "manual"
+}
+
+### Read merchant-owned Payment Intent
+GET {{baseUrl}}/v1/payment-intents/{{createPayment.response.body.$.id}}
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-payment-read
+
+### Direct full capture
+# @name capturePayment
+POST {{baseUrl}}/v1/payment-intents/{{createPayment.response.body.$.id}}/capture
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-payment-capture-1001
+X-Request-Id: {{requestId}}-capture
+Content-Type: application/json
+
+{
+  "amountMinor": 125000,
+  "currency": "ETB"
+}
+
+### Partial refund
+# @name createRefund
+POST {{baseUrl}}/v1/payment-intents/{{createPayment.response.body.$.id}}/refunds
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-payment-refund-1001
+X-Request-Id: {{requestId}}-refund
+Content-Type: application/json
+
+{
+  "externalRef": "{{refundExternalRef}}",
+  "amountMinor": 25000,
+  "currency": "ETB"
+}
+
+### Create Webhook endpoint (secret appears once; do not save it)
+# @name createWebhook
+POST {{baseUrl}}/v1/webhook-endpoints
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-webhook-create
+Content-Type: application/json
+
+{
+  "url": "{{webhookUrl}}",
+  "subscriptions": [
+    "payment.created.v1",
+    "payment.captured.v1",
+    "payment.refunded.v1",
+    "settlement.finalized.v1",
+    "reconciliation.completed.v1"
+  ]
+}
+
+### List Webhook endpoints
+GET {{baseUrl}}/v1/webhook-endpoints?limit=20
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-webhook-list
+
+### Read Webhook endpoint
+# @name readWebhook
+GET {{baseUrl}}/v1/webhook-endpoints/{{createWebhook.response.body.$.id}}
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-webhook-read
+
+### Disable endpoint with optimistic concurrency
+PATCH {{baseUrl}}/v1/webhook-endpoints/{{createWebhook.response.body.$.id}}
+Authorization: Bearer {{merchantApiKey}}
+If-Match: {{readWebhook.response.headers.ETag}}
+X-Request-Id: {{requestId}}-webhook-disable
+Content-Type: application/json
+
+{
+  "status": "inactive"
+}
+
+### Rotate endpoint secret (first GET the current ETag after PATCH)
+# Replace the If-Match value with the latest strong ETag from a fresh GET.
+POST {{baseUrl}}/v1/webhook-endpoints/{{createWebhook.response.body.$.id}}/secret-rotations
+Authorization: Bearer {{merchantApiKey}}
+If-Match: "replace-with-current-endpoint-etag"
+X-Request-Id: {{requestId}}-webhook-rotate
+Content-Type: application/json
+
+{}
+
+### Run one bounded Settlement
+# @name runSettlement
+POST {{baseUrl}}/v1/settlement-runs
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-settlement-run-1001
+X-Request-Id: {{requestId}}-settlement
+Content-Type: application/json
+
+{
+  "currency": "ETB",
+  "cutoffDate": "{{settlementCutoffDate}}"
+}
+
+### Read finalized Settlement batch
+# Run only when runSettlement returned status COMPLETED and a batchId.
+GET {{baseUrl}}/v1/settlement-batches/{{runSettlement.response.body.$.batchId}}?limit=20
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-settlement-read
+
+### Stage bounded mock-provider Reconciliation CSV
+# @name stageReconciliation
+POST {{baseUrl}}/v1/reconciliation-imports
+Authorization: Bearer {{merchantApiKey}}
+Idempotency-Key: example-reconciliation-import-1001
+X-Request-Id: {{requestId}}-reconciliation
+Content-Type: multipart/form-data; boundary=SettleFlowBoundary
+
+--SettleFlowBoundary
+Content-Disposition: form-data; name="periodStart"
+
+{{periodStart}}
+--SettleFlowBoundary
+Content-Disposition: form-data; name="periodEnd"
+
+{{periodEnd}}
+--SettleFlowBoundary
+Content-Disposition: form-data; name="file"; filename="mock-provider-golden.csv"
+Content-Type: text/csv
+
+< ../reconciliation/mock-provider-golden.csv
+--SettleFlowBoundary--
+
+### Read Reconciliation report after worker completion
+GET {{baseUrl}}/v1/reconciliation-imports/{{stageReconciliation.response.body.$.id}}/report?limit=20
+Authorization: Bearer {{merchantApiKey}}
+X-Request-Id: {{requestId}}-reconciliation-report

@@ -1,6 +1,6 @@
 # Operational Runbooks
 
-Runbooks turn SettleFlow's failure model into safe, reviewable operator actions. Runtime-specific commands and thresholds are **To be decided** when the relevant components exist; do not invent them in advance.
+Runbooks turn SettleFlow's failure model into safe, reviewable operator actions. Implemented signals and thresholds use their exact names from the [alert catalog](../operations/alert-catalog.md). Environment-specific contacts/accounts/URLs may remain explicitly **To be decided**; do not invent or commit them.
 
 ## Required structure
 

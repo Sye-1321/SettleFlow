@@ -1,6 +1,6 @@
 # Webhook Endpoint API
 
-The Webhook Endpoint Foundation lets an authenticated merchant register and manage destinations for future webhook delivery. It does not consume RabbitMQ messages or send HTTP requests. Endpoint eligibility is evaluated only by a later projection consumer, using the endpoint state that exists when that event is processed.
+The Webhook Endpoint boundary lets an authenticated merchant register and manage destinations used by the implemented RabbitMQ projection and signed HTTP delivery worker. Eligibility uses the endpoint state present when an event is projected: active and subscribed endpoints receive a delivery record, and later subscription changes never cause historical fanout.
 
 ## Authentication and scopes
 
@@ -18,12 +18,18 @@ The machine-readable contract is [openapi.json](openapi.json).
 
 ## Create and one-time secret disclosure
 
-Create accepts only a URL and a nonempty subscription set. The supported events are `payment.created.v1`, `payment.captured.v1`, and `payment.refunded.v1`. Subscription changes affect only events projected after the change; they never cause historical fanout.
+Create accepts only a URL and a nonempty subscription set. The supported events are `payment.created.v1`, `payment.captured.v1`, `payment.refunded.v1`, `settlement.finalized.v1`, and `reconciliation.completed.v1`. Subscription changes affect only events projected after the change; they never cause historical fanout.
 
 ```json
 {
   "url": "https://merchant.example/webhooks/settleflow",
-  "subscriptions": ["payment.created.v1", "payment.captured.v1", "payment.refunded.v1"]
+  "subscriptions": [
+    "payment.created.v1",
+    "payment.captured.v1",
+    "payment.refunded.v1",
+    "settlement.finalized.v1",
+    "reconciliation.completed.v1"
+  ]
 }
 ```
 
@@ -50,7 +56,7 @@ PATCH accepts `status`, `subscriptions`, or both and requires exactly one strong
 }
 ```
 
-Secret rotation also requires the current ETag and an empty body. It is allowed while the endpoint is inactive. Success returns the new secret once, increments the endpoint version, and retains the previous encrypted secret for exactly 24 hours. The previous secret is never returned. A later delivery implementation may use both current and unexpired previous secrets during that overlap; deletion or cleanup is not implemented here.
+Secret rotation also requires the current ETag and an empty body. It is allowed while the endpoint is inactive. Success returns the new secret once, increments the endpoint version, and retains the previous encrypted secret for exactly 24 hours. The previous secret is never returned. Delivery signs with the current secret first and the eligible previous secret second during that overlap; deletion or cleanup is not implemented.
 
 ## Error contract
 

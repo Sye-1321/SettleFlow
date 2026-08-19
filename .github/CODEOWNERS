@@ -1,0 +1,20 @@
+# SettleFlow is currently maintained by one repository owner. These entries
+# make review responsibility explicit; they do not imply backup or 24x7 cover.
+* @Sye-1321
+
+# Financial integrity and persistence boundaries
+/prisma/ @Sye-1321
+/packages/modules/ledger/ @Sye-1321
+/packages/modules/payments/ @Sye-1321
+/packages/modules/settlements/ @Sye-1321
+/packages/modules/reconciliation/ @Sye-1321
+/docs/architecture/financial-invariants.md @Sye-1321
+
+# Security, release, and supply-chain controls
+/.github/ @Sye-1321
+/Dockerfile @Sye-1321
+/compose*.yaml @Sye-1321
+/SECURITY.md @Sye-1321
+/security/ @Sye-1321
+/tools/security/ @Sye-1321
+/docs/release/ @Sye-1321

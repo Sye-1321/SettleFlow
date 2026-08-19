@@ -10,7 +10,7 @@ SettleFlow is a pre-release **finance-grade simulation**. It does not process re
 2. Inspect [INV-01 through INV-10](../architecture/financial-invariants.md) and the [Ledger foundation](../architecture/ledger-foundation.md).
 3. Review the committed [OpenAPI contract](../api/openapi.json) and [event schemas](../events/README.md).
 4. Inspect the [CI and supply-chain contract](../operations/continuous-integration.md).
-5. Run the isolated [deterministic demonstration](../demo/README.md) when Docker is available.
+5. Check the [requirements/invariants matrix](requirements-evidence-matrix.md), then run the isolated [deterministic demonstration](../demo/README.md) when Docker is available.
 
 ## Claim-to-evidence map
 
@@ -84,6 +84,7 @@ Docker is required for real PostgreSQL, RabbitMQ, HTTP, image, telemetry, and re
 | Supply chain    | Frozen lockfile, dependency/license review, secret scanning, CodeQL, Dockerfile policy, SPDX SBOMs, and bounded provenance evidence                         |
 | Contracts       | Strict `/v1` OpenAPI and the five closed event schemas pass drift/extra-field validation                                                                    |
 | Operations      | Internal health/metrics, structured redaction, alert rules, dependency degradation, and graceful shutdown are executable                                    |
+| Recovery        | Isolated logical restore, grants/invariants, and API/worker smoke pass; measured RTO was 78 seconds, while sustained-cadence RPO remains unclaimed          |
 
 Current workflow state is available from [CI](https://github.com/Sye-1321/SettleFlow/actions/workflows/ci.yml), [Security and supply chain](https://github.com/Sye-1321/SettleFlow/actions/workflows/security.yml), and [Reliability evidence](https://github.com/Sye-1321/SettleFlow/actions/workflows/nightly.yml). Historical percentages and results are evidence snapshots, not a substitute for the current workflow result.
 
@@ -91,8 +92,9 @@ Current workflow state is available from [CI](https://github.com/Sye-1321/Settle
 
 The following work remains outside the current verified posture:
 
-- measured PostgreSQL backup/isolated-restore RPO and RTO evidence;
-- the specification's complete reference performance workload and published environment results;
+- remediation and compatibility verification for high-severity dependency advisory `GHSA-ggr8-5vv4-36mx`; no exception or suppression exists;
+- sustained-cadence PostgreSQL RPO evidence; the isolated restore/RTO exercise is implemented and passes;
+- final-candidate execution and environment/results for the five source-controlled reference performance scenarios;
 - production KMS, real provider/payout integration, and catastrophic RabbitMQ-loss replay;
 - authorize-then-capture, partial capture, dashboards/operator search, public Ledger reads, Webhook delivery inspection/manual replay, and destructive retention jobs;
 - the clean-room release review, immutable `v1.0.0` artifacts, and public GHCR publication.
@@ -107,4 +109,4 @@ These limitations are deliberate and release-blocking where required. They are g
 - A failed gate remains failed until its cause is resolved; thresholds, constraints, and negative tests are not weakened to obtain a green result.
 - Posted financial and immutable audit evidence is never repaired through direct row mutation.
 
-This page is a public engineering summary, not the final v1 requirements/waiver matrix or release approval record.
+The detailed P0/P1, INV-01–INV-10, waiver, deferral, limitation, and pending-release record is the [requirements evidence matrix](requirements-evidence-matrix.md). Neither page is final `v1.0.0` approval.

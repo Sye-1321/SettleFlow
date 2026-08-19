@@ -2,6 +2,8 @@
 
 SettleFlow is a finance-grade simulation and engineering case study. These documented controls do not establish that the project is secure, compliant, certified, or suitable for real payment processing. Never use the project for live funds or regulated payment-authentication data without independent security, compliance, financial, and operational review.
 
+The public [threat model](docs/security/threat-model.md) maps assets, trust boundaries, abuse cases, controls, executable evidence, and accepted first-release residual risks. Report a vulnerability through the private process below, not by editing that model with exploit details.
+
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability or include exploit details, secrets, or sensitive data in a public pull request.

@@ -49,8 +49,11 @@ pnpm contracts:check
 pnpm openapi:check
 pnpm config:check
 pnpm telemetry:check
+pnpm performance:check
 pnpm docs:check
 ```
+
+`pnpm performance:check` validates that all five source-controlled k6 scenarios and their executable thresholds load under the exact pinned k6 image. It does not start SettleFlow, generate load, or constitute a performance pass. Candidate-specific load execution, correctness checks, sanitized results, and environment evidence remain a Step 10 release gate documented in [Reference Performance Workload](../../perf/README.md).
 
 The Docker-backed security path additionally requires the ignored release-simulation configuration and locally built Step 5 images:
 
@@ -89,5 +92,7 @@ No repository secrets or Actions variables are required. GitHub-hosted Ubuntu 24
 The approved coverage floors remain unchanged. The Step 7 run records 91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines globally against the 85/80/80/85 floors. Eventing, Idempotency, Ledger, Payments, Reconciliation, Settlements, and Webhooks each also clear their 90% statements/lines and 85% branches/functions floors. Coverage is assembled from one unit shard and isolated real-dependency integration shards using compatible raw Istanbul maps; every shard must pass before the merged report is accepted.
 
 The runtime image gate now passes without an exception or suppression. Trivy 0.73.0 reports zero critical and zero high package findings and zero filesystem-secret findings for each rebuilt API, worker, and migrator image. The build stage remains the exact Node.js 24.18.0 Trixie-slim digest with pinned OpenSSL packages; only the minimal final runtime changed to the exact distroless Node.js 24 Debian 13 digest.
+
+Dependency advisories are time-sensitive. On 2026-08-20 the unchanged lockfile began failing the high-severity dependency gate for [`GHSA-ggr8-5vv4-36mx`](https://github.com/advisories/GHSA-ggr8-5vv4-36mx): `deepmerge-ts` 7.1.5 is present through Prisma 7.9.1's configuration tooling, and the advisory reports a fix in `deepmerge-ts` 8.0.0 or later. No exception or suppression was added. The repository remains pre-release until a separately scoped, compatibility-verified dependency update clears the gate.
 
 Use the [CI and security gate failure runbook](../runbooks/ci-security-gate-failure.md) for safe triage. OCI runtime details remain in [OCI Images and Release Simulation](release-simulation.md).

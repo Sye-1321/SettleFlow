@@ -102,7 +102,7 @@ SettleFlow is a **pre-release finance-grade simulation**. It is not production-r
 
 The project intentionally excludes real payment providers, bank transfers and payouts, card storage, KYC/AML, customer wallets, subscriptions, FX, tax, disputes, chargebacks, authorize-then-capture, and partial capture. Public Ledger reads, Webhook-delivery inspection/manual replay, destructive retention jobs, dashboards, and a production KMS adapter are also deferred.
 
-Recovery targets, the complete reference performance workload, clean-room release verification, and immutable `v1.0.0` publication remain open. Catastrophic RabbitMQ-volume loss can still lose published-but-unconsumed work because controlled recovery replay is deferred.
+The isolated PostgreSQL restore meets the reference RTO target, but a sustained backup cadence has not proven the RPO. Reference k6 scenarios now have executable definitions, while final candidate measurements, clean-room release verification, and immutable `v1.0.0` publication remain open. Catastrophic RabbitMQ-volume loss can still lose published-but-unconsumed work because controlled recovery replay is deferred.
 
 CI enforces approved global and critical-module coverage floors and verifies migrations, grants, financial invariants, contracts, real-dependency integration, concurrency, failure recovery, security policy, image scans, SBOMs, and provenance evidence. Exact current evidence belongs in the [engineering evidence guide](docs/review/engineering-evidence.md) and [CI documentation](docs/operations/continuous-integration.md), not in this landing page.
 
@@ -129,22 +129,30 @@ pnpm build
 
 ## Documentation
 
-| Document                                                            | Purpose                                                           |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [Local development](docs/operations/local-development.md)           | Environment, infrastructure, database, API/worker, and test setup |
-| [Architecture overview](docs/architecture/README.md)                | Deployables, consistency model, and bounded modules               |
-| [Financial invariants](docs/architecture/financial-invariants.md)   | Normative accounting, lifecycle, and concurrency rules            |
-| [Architecture decisions](docs/adr/README.md)                        | Accepted technical decisions and trade-offs                       |
-| [OpenAPI](docs/api/openapi.json)                                    | Machine-readable HTTP contract                                    |
-| [Events and Webhook signing](docs/events/README.md)                 | Closed event schemas, AMQP metadata, and signed-delivery contract |
-| [Deterministic demo](docs/demo/README.md)                           | Isolated ten-step execution and sanitized evidence                |
-| [Engineering evidence](docs/review/engineering-evidence.md)         | Detailed claim-to-test evaluation path and evidence boundaries    |
-| [Continuous integration](docs/operations/continuous-integration.md) | Quality, security, reliability, artifact, and supply-chain gates  |
-| [Release simulation](docs/operations/release-simulation.md)         | OCI image, topology, startup, security, and shutdown behavior     |
-| [Database recovery](docs/operations/database-recovery.md)           | Sensitive logical backups and safe isolated restore exercises     |
-| [Runbooks](docs/runbooks/README.md)                                 | Failure diagnosis and evidence-preserving recovery                |
-| [Security policy](SECURITY.md)                                      | Vulnerability disclosure and security requirements                |
-| [Contributing](CONTRIBUTING.md)                                     | Governance, plans, reviews, migrations, and verification          |
+| Document                                                             | Purpose                                                           |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [Local development](docs/operations/local-development.md)            | Environment, infrastructure, database, API/worker, and test setup |
+| [Architecture overview](docs/architecture/README.md)                 | Deployables, consistency model, and bounded modules               |
+| [System and reliability flows](docs/architecture/system-flows.md)    | Context, atomicity, outbox/inbox, Webhook, Settlement, deployment |
+| [Data model and ERD](docs/architecture/data-model.md)                | Module-owned schema inventory and critical relationships          |
+| [Financial invariants](docs/architecture/financial-invariants.md)    | Normative accounting, lifecycle, and concurrency rules            |
+| [Architecture decisions](docs/adr/README.md)                         | Accepted technical decisions and trade-offs                       |
+| [OpenAPI](docs/api/openapi.json)                                     | Machine-readable HTTP contract                                    |
+| [Events and Webhook signing](docs/events/README.md)                  | Closed event schemas, AMQP metadata, and signed-delivery contract |
+| [Deterministic demo](docs/demo/README.md)                            | Isolated ten-step execution and sanitized evidence                |
+| [Engineering evidence](docs/review/engineering-evidence.md)          | Detailed claim-to-test evaluation path and evidence boundaries    |
+| [Requirements evidence](docs/review/requirements-evidence-matrix.md) | P0/P1, INV-01–INV-10, waivers, limitations, and release gates     |
+| [Continuous integration](docs/operations/continuous-integration.md)  | Quality, security, reliability, artifact, and supply-chain gates  |
+| [Configuration reference](docs/operations/configuration.md)          | Validated API, worker, dependency, secret, and telemetry settings |
+| [Release simulation](docs/operations/release-simulation.md)          | OCI image, topology, startup, security, and shutdown behavior     |
+| [Database recovery](docs/operations/database-recovery.md)            | Sensitive logical backups and safe isolated restore exercises     |
+| [Reference performance](perf/README.md)                              | Five executable k6 contracts and honest result requirements       |
+| [HTTP examples](examples/http/README.md)                             | Synthetic request collection for implemented public routes        |
+| [Threat model](docs/security/threat-model.md)                        | Assets, trust boundaries, controls, proof, and residual risk      |
+| [Release documentation](docs/release/README.md)                      | Versioning, upgrades, draft notes, and blocking checklist         |
+| [Runbooks](docs/runbooks/README.md)                                  | Failure diagnosis and evidence-preserving recovery                |
+| [Security policy](SECURITY.md)                                       | Vulnerability disclosure and security requirements                |
+| [Contributing](CONTRIBUTING.md)                                      | Governance, plans, reviews, migrations, and verification          |
 
 ## License
 

@@ -72,3 +72,5 @@ Reviewers should use [the SettleFlow code-review checklist](docs/review/code-rev
 ## Documentation
 
 Make observable behavior and operational recovery discoverable. Update relative links, examples, requirement traceability, architecture boundaries, financial invariants, ADRs, implementation plans, runbooks, and contract artifacts in the same pull request as the relevant change.
+
+Release-affecting work must also update the [requirements evidence matrix](docs/review/requirements-evidence-matrix.md), [draft release notes](docs/release/v1.0.0.md), and [release checklist](docs/release/v1-release-checklist.md) without turning a pending/waived gate into a passing claim. Performance evidence must state its exact workload, environment, image/tool versions, resource limits, and failures; a scenario definition alone is not a measurement.

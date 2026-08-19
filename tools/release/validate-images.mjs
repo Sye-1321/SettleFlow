@@ -55,7 +55,7 @@ const scan=(directory)=>{for(const entry of fs.readdirSync(directory,{withFileTy
 scan('/app');
 if(!fs.existsSync(process.env.SETTLEFLOW_RUNTIME_ENTRY))throw Error('missing runtime entrypoint');
 if(process.env.SETTLEFLOW_IMAGE_ROLE==='migrator'){
-  for(const path of ['/app/prisma/schema.prisma','/app/prisma/migrations','/app/tools/release/verify-release-database.mjs'])if(!fs.existsSync(path))throw Error('missing migration artifact '+path);
+  for(const path of ['/app/prisma/schema.prisma','/app/prisma/migrations','/app/tools/release/verify-release-database.mjs','/app/tools/operations/verify-restored-database.mjs'])if(!fs.existsSync(path))throw Error('missing migration artifact '+path);
   require.resolve('prisma/package.json');
 }
 `;

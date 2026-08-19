@@ -88,4 +88,4 @@ Deleting volumes destroys all local release-simulation data. Only after confirmi
 docker compose --env-file .settleflow/release-simulation/compose.env -f compose.release.yaml down --volumes --remove-orphans
 ```
 
-Remove `.settleflow/release-simulation/` separately only when deliberate credential rotation is required, then rerun `pnpm release:config:create`. That directory is not a backup. Backup/restore exercises, production KMS, registry publication, CI release automation, real providers/payouts, and production support remain deferred by the approved release plan.
+Remove `.settleflow/release-simulation/` separately only when deliberate credential rotation is required, then rerun `pnpm release:config:create`. That directory is not a backup. Use the separate [PostgreSQL backup and isolated recovery procedure](database-recovery.md); it never restores over these volumes and does not claim RabbitMQ message recovery. Production KMS, registry publication, real providers/payouts, and production support remain deferred by the approved release plan.

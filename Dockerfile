@@ -90,6 +90,7 @@ COPY --from=deploy --chown=10001:10001 /opt/settleflow-migrator/ ./
 COPY --chown=10001:10001 prisma ./prisma
 COPY --chown=10001:10001 prisma.config.mts ./prisma.config.mts
 COPY --chown=10001:10001 tools/release/run-migrations.mjs tools/release/verify-release-database.mjs ./tools/release/
+COPY --chown=10001:10001 tools/operations/verify-restored-database.mjs ./tools/operations/
 USER 10001:10001
 ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["tools/release/run-migrations.mjs"]

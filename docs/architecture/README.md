@@ -59,7 +59,7 @@ The implemented baseline resolves the specification's milestone questions:
 
 The remaining work is explicitly release-scoped, not an unresolved implementation choice:
 
-- backup/isolated-restore tooling and measured reference RPO/RTO evidence;
+- a sustained 15-minute backup cadence and measured PostgreSQL RPO evidence (isolated restore tooling and a reference RTO exercise are implemented);
 - the complete reference performance workload and published environment results;
 - clean-room release review, final waiver/evidence matrices, immutable tags, and approved artifact publication;
 - owner-controlled GitHub security/reporting and branch/release settings; and

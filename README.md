@@ -141,6 +141,7 @@ pnpm build
 | [Engineering evidence](docs/review/engineering-evidence.md)         | Detailed claim-to-test evaluation path and evidence boundaries    |
 | [Continuous integration](docs/operations/continuous-integration.md) | Quality, security, reliability, artifact, and supply-chain gates  |
 | [Release simulation](docs/operations/release-simulation.md)         | OCI image, topology, startup, security, and shutdown behavior     |
+| [Database recovery](docs/operations/database-recovery.md)           | Sensitive logical backups and safe isolated restore exercises     |
 | [Runbooks](docs/runbooks/README.md)                                 | Failure diagnosis and evidence-preserving recovery                |
 | [Security policy](SECURITY.md)                                      | Vulnerability disclosure and security requirements                |
 | [Contributing](CONTRIBUTING.md)                                     | Governance, plans, reviews, migrations, and verification          |

@@ -122,6 +122,7 @@ export function createRecoveryConfiguration(workspace, options) {
       ...common,
       API_HOST: '0.0.0.0',
       API_PORT: '3000',
+      DATABASE_MAX_CONNECTIONS: '30',
       INTERNAL_TELEMETRY_PORT: '9464',
     },
     'migrator.env': {

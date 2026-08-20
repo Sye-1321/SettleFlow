@@ -90,6 +90,7 @@ export function createDemoConfiguration(_root, outputDirectory, options) {
       ...common,
       API_HOST: '0.0.0.0',
       API_PORT: '3000',
+      DATABASE_MAX_CONNECTIONS: '30',
       INTERNAL_TELEMETRY_PORT: '9464',
     }),
     'compose.env': serialize({

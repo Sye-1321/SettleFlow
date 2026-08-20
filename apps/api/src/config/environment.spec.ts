@@ -5,6 +5,7 @@ import { validateApiEnvironment } from './environment';
 const baseEnvironment = {
   API_HOST: '127.0.0.1',
   API_PORT: '3000',
+  DATABASE_MAX_CONNECTIONS: '30',
   DATABASE_URL: 'postgresql://local:local@127.0.0.1:5432/settleflow',
   DEPENDENCY_READINESS_TIMEOUT_MS: '2000',
   IDEMPOTENCY_LEASE_MS: '30000',
@@ -25,6 +26,7 @@ const baseEnvironment = {
 describe('API environment', () => {
   it('accepts the safe bounded idempotency defaults', () => {
     expect(validateApiEnvironment(baseEnvironment)).toMatchObject({
+      DATABASE_MAX_CONNECTIONS: 30,
       IDEMPOTENCY_LEASE_MS: 30_000,
       IDEMPOTENCY_LOCK_TIMEOUT_MS: 5_000,
       IDEMPOTENCY_REPLAY_TTL_HOURS: 168,
@@ -33,6 +35,15 @@ describe('API environment', () => {
       OTEL_TRACE_SAMPLE_RATIO: 0.1,
       OTEL_TRACING_ENABLED: false,
     });
+  });
+
+  it('bounds the API database pool independently of readiness timeouts', () => {
+    expect(() =>
+      validateApiEnvironment({ ...baseEnvironment, DATABASE_MAX_CONNECTIONS: '0' }),
+    ).toThrow('DATABASE_MAX_CONNECTIONS');
+    expect(() =>
+      validateApiEnvironment({ ...baseEnvironment, DATABASE_MAX_CONNECTIONS: '51' }),
+    ).toThrow('DATABASE_MAX_CONNECTIONS');
   });
 
   it('requires an HTTP OTLP endpoint only when tracing is enabled', () => {

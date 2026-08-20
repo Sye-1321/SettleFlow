@@ -17,6 +17,7 @@ Use only the safe placeholders in [root](../../.env.example), [API](../../apps/a
 | Variable                              | Required/default                                      | Contract                                                                              |
 | ------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                        | Required                                              | `postgres://` or `postgresql://`; normal processes use non-owner `settleflow_app`     |
+| `DATABASE_MAX_CONNECTIONS`            | `30`                                                  | API Prisma-pool bound; integer 1–50, sized for the approved 30-VU reference profile   |
 | `RABBITMQ_URL`                        | Required                                              | `amqp://` or `amqps://`; no credential may appear in logs                             |
 | `NODE_ENV`                            | `development`                                         | Closed environment enum and production cross-checks above                             |
 | `SETTLEFLOW_DEPLOYMENT_MODE`          | `host`                                                | Host/release-simulation listener policy                                               |

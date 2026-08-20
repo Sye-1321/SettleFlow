@@ -31,6 +31,7 @@ test('creates isolated ignored configuration without sharing owner credentials',
       ),
     );
     assert.equal(configuration['api.env'].SETTLEFLOW_DEMO_MODE, 'true');
+    assert.equal(configuration['api.env'].DATABASE_MAX_CONNECTIONS, '30');
     assert.equal(configuration['api.env'].RELEASE_VERSION, 'v1.0.0-rc.1');
     assert.equal(configuration['compose.env'].SETTLEFLOW_IMAGE_VERSION, 'v1.0.0-rc.1');
     assert.equal(configuration['api.env'].WEBHOOK_URL_POLICY_MODE, 'development');

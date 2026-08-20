@@ -100,6 +100,7 @@ import { WebhookEndpointController } from './webhook-endpoints/webhook-endpoint.
         new PrismaDatabase({
           connectionTimeoutMs: config.get('DEPENDENCY_READINESS_TIMEOUT_MS', { infer: true }),
           databaseUrl: config.get('DATABASE_URL', { infer: true }),
+          maxConnections: config.get('DATABASE_MAX_CONNECTIONS', { infer: true }),
         }),
     },
     {

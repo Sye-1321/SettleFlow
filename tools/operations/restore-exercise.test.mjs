@@ -34,6 +34,7 @@ test('generates isolated credentials and withholds the owner URL from runtimes',
       revision: 'a'.repeat(40),
     });
     assert.equal(result.files['api.env'].SETTLEFLOW_RECOVERY_MODE, 'true');
+    assert.equal(result.files['api.env'].DATABASE_MAX_CONNECTIONS, '30');
     assert.equal(result.files['worker.env'].DATABASE_URL, result.files['api.env'].DATABASE_URL);
     assert.notEqual(
       result.files['api.env'].DATABASE_URL,

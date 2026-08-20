@@ -30,6 +30,7 @@ test('creates a complete ignored-style configuration without sharing owner crede
     assert.equal(parsed['api.env'].NODE_ENV, 'development');
     assert.equal(parsed['api.env'].SETTLEFLOW_DEPLOYMENT_MODE, 'release-simulation');
     assert.equal(parsed['api.env'].INTERNAL_TELEMETRY_HOST, '0.0.0.0');
+    assert.equal(parsed['api.env'].DATABASE_MAX_CONNECTIONS, '30');
     assert.doesNotMatch(parsed['api.env'].DATABASE_URL, /settleflow:@/u);
     assert.ok(
       !readFileSync(resolve(result.outputDirectory, 'api.env'), 'utf8').includes(

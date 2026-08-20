@@ -47,6 +47,7 @@ const apiEnvironmentSchema = z
   .object({
     API_HOST: z.string().trim().min(1).default('127.0.0.1'),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+    DATABASE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(30),
     DATABASE_URL: databaseUrlSchema,
     DEPENDENCY_READINESS_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(2_000),
     IDEMPOTENCY_LEASE_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),

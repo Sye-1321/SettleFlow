@@ -288,7 +288,7 @@ async function measuredScenario(root, scenario, environment) {
       peakResources: peaks,
       referenceCpuLimit: 1,
       referencePostgresMemoryMiB: 512,
-      referenceRabbitMqMemoryMiB: 512,
+      referenceBrokerMemoryMiB: 512,
       referenceWorkerMemoryMiB: 512,
     },
     raw: JSON.parse(readFileSync(summaryPath, 'utf8')),

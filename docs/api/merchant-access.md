@@ -24,6 +24,7 @@ No merchant or API-key lifecycle HTTP endpoint exists. Issuance, disablement, re
 - Only the `sf_test_<public>` prefix and a versioned salted scrypt hash are persisted.
 - The plaintext is returned only by a successful issue or rotation call and cannot be recovered later.
 - Authentication first applies the active-key, non-revoked, active-merchant database predicate, then verifies the slow hash with a constant-time digest comparison.
+- Every request repeats that authoritative database predicate. A process-scoped cache may reuse a successful scrypt result for at most five minutes, keyed only by a SHA-256 fingerprint of the presented credential plus the current stored hash. It retains no plaintext or failed result, holds at most 1,024 successes, deduplicates concurrent verification of the same value, and misses automatically after rotation/hash change; disablement and revocation therefore remain immediate.
 - Rotation atomically revokes the old key and creates one replacement, with no overlap window. Concurrent rotations have one winner.
 - Request identity contains only merchant ID, API-key ID, and granted scopes. It never contains a credential, hash, or full merchant record.
 

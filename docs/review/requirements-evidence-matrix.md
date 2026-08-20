@@ -70,22 +70,22 @@ The repository retains financial/audit/Webhook marker evidence conservatively an
 | No 24x7/SLA/backup maintainer                              | Accepted public maintenance boundary                                      | Single-owner availability/bus-factor risk is disclosed                                                      | `@Sye-1321`; review before next minor                 |
 | Initial version has no prior public upgrade fixture        | Accepted first-release limitation                                         | Future schema compatibility is unproven against a public version                                            | `@Sye-1321`; mandatory starting `v1.0.1`              |
 | Reference performance result                               | PENDING                                                                   | Executable scenario definitions exist; no final candidate environment claim yet                             | `@Sye-1321`; Step 10 candidate run                    |
-| GitHub PVR/notifications/tabletop                          | PENDING external setting/exercise                                         | Private disclosure readiness is not locally provable                                                        | `@Sye-1321`; before `v1.0.0`                          |
+| GitHub PVR/notifications/tabletop                          | PARTIAL: PVR and tabletop pass; email check pending                       | Private intake/triage/closure is exercised; account-level email delivery is not machine-verifiable          | `@Sye-1321`; confirm email before `v1.0.0`            |
 | Clean-room review and immutable artifact promotion         | PENDING                                                                   | Local/CI evidence is not final independent release approval                                                 | `@Sye-1321` plus clean-room reviewer; Step 10         |
 
 ## Release-gate evidence
 
-| Specification gate | Current state                           | Evidence and final action                                                                                                                                  |
-| ------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Correctness        | PASS snapshot                           | Unit/integration/concurrency/failure/database invariant gates; rerun on candidate                                                                          |
-| Contracts          | PASS snapshot                           | OpenAPI/event/example contract checks; rerun and attach candidate artifacts                                                                                |
-| Concurrency        | PASS snapshot                           | Repeated capture/refund/idempotency/relay/Settlement races; no retry-to-green                                                                              |
-| Security           | OWNER ACTION                            | Tenant, signature/SSRF/CSV/secret/dependency/image gates pass; enable/test GitHub Private Vulnerability Reporting and complete the tabletop before release |
-| Operations         | PASS snapshot                           | Internal health/metrics/log correlation, executable alerts, and runbooks                                                                                   |
-| Recovery           | PARTIAL                                 | Isolated restore/RTO passes; sustained RPO and async replay remain unclaimed/limited                                                                       |
-| Reproducibility    | PASS implementation, PENDING clean room | Deterministic demo exists; fresh-clone timed independent run is Step 10                                                                                    |
-| Documentation      | PASS for Step 9 after current checks    | README, architecture/ERD/ADRs/API/contribution/security/limits/release/evidence pack                                                                       |
-| Performance        | PENDING                                 | Five Table 37 k6 contracts; final environment/run results required before tag                                                                              |
+| Specification gate | Current state                           | Evidence and final action                                                                                                                                   |
+| ------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Correctness        | PASS snapshot                           | Unit/integration/concurrency/failure/database invariant gates; rerun on candidate                                                                           |
+| Contracts          | PASS snapshot                           | OpenAPI/event/example contract checks; rerun and attach candidate artifacts                                                                                 |
+| Concurrency        | PASS snapshot                           | Repeated capture/refund/idempotency/relay/Settlement races; no retry-to-green                                                                               |
+| Security           | PARTIAL: owner email check              | Tenant, signature/SSRF/CSV/secret/dependency/image gates pass; Private Vulnerability Reporting and the tabletop pass; confirm Security-alert email delivery |
+| Operations         | PASS snapshot                           | Internal health/metrics/log correlation, executable alerts, and runbooks                                                                                    |
+| Recovery           | PARTIAL                                 | Isolated restore/RTO passes; sustained RPO and async replay remain unclaimed/limited                                                                        |
+| Reproducibility    | PASS implementation, PENDING clean room | Deterministic demo exists; fresh-clone timed independent run is Step 10                                                                                     |
+| Documentation      | PASS for Step 9 after current checks    | README, architecture/ERD/ADRs/API/contribution/security/limits/release/evidence pack                                                                        |
+| Performance        | PENDING                                 | Five Table 37 k6 contracts; final environment/run results required before tag                                                                               |
 
 ## Exact verification entry points
 

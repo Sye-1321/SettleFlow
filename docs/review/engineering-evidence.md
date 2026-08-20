@@ -94,6 +94,7 @@ The following work remains outside the current verified posture:
 
 - sustained-cadence PostgreSQL RPO evidence; the isolated restore/RTO exercise is implemented and passes;
 - final-candidate execution and environment/results for the five source-controlled reference performance scenarios;
+- owner confirmation that GitHub delivered a Security-alert email; Private Vulnerability Reporting, repository vulnerability alerts, and the synthetic private intake/triage/closure tabletop already pass;
 - production KMS, real provider/payout integration, and catastrophic RabbitMQ-loss replay;
 - authorize-then-capture, partial capture, dashboards/operator search, public Ledger reads, Webhook delivery inspection/manual replay, and destructive retention jobs;
 - the clean-room release review, immutable `v1.0.0` artifacts, and public GHCR publication.

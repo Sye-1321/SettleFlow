@@ -10,7 +10,7 @@ Do not open a public issue for a suspected vulnerability or include exploit deta
 
 The primary disclosure channel is [GitHub Private Vulnerability Reporting](https://github.com/Sye-1321/SettleFlow/security/advisories). Select **Report a vulnerability** and include the affected version or commit, impact, reproduction steps, and any suggested mitigation. Use only synthetic data and remove credentials, personal data, and unrelated system information.
 
-Private Vulnerability Reporting must be enabled and exercised by the repository owner before `v1.0.0`. Until the **Report a vulnerability** control is visible, do not post vulnerability details publicly. Contact [@Sye-1321](https://github.com/Sye-1321) through a non-sensitive public channel only to request private reporting instructions.
+Private Vulnerability Reporting was enabled and exercised through a synthetic, non-vulnerability tabletop on 2026-08-20. If the **Report a vulnerability** control is unexpectedly unavailable, do not post vulnerability details publicly. Contact [@Sye-1321](https://github.com/Sye-1321) through a non-sensitive public channel only to request private reporting instructions.
 
 ## Supported versions and response commitments
 

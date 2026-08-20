@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
@@ -192,6 +192,24 @@ export function runScenario(scenario, root = process.cwd(), environment = proces
     createDockerArguments(root, 'run', scenario, validatedEnvironment),
     validatedEnvironment,
   );
+}
+
+export async function runScenarioAsync(scenario, root = process.cwd(), environment = process.env) {
+  const validatedEnvironment = runtimeEnvironment(scenario, environment);
+  const arguments_ = createDockerArguments(root, 'run', scenario, validatedEnvironment);
+  await new Promise((resolveRun, rejectRun) => {
+    const child = spawn('docker', arguments_, {
+      cwd: root,
+      env: validatedEnvironment,
+      stdio: 'inherit',
+      windowsHide: true,
+    });
+    child.once('error', () => rejectRun(new Error('performance_k6_command_failed')));
+    child.once('exit', (code) => {
+      if (code === 0) resolveRun();
+      else rejectRun(new Error('performance_k6_command_failed'));
+    });
+  });
 }
 
 export const performanceInternals = { inspectionEnvironment, runtimeEnvironment };

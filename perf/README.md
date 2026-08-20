@@ -75,6 +75,29 @@ pnpm performance:run -- reconciliation-import
 
 Each run writes a local k6 summary to `.settleflow/performance/<scenario>-summary.json`. Do not commit raw summaries until they are sanitized: a public summary may contain only scenario/threshold results, counts, durations, percentiles, environment/resources, candidate commit/image digests, exact k6 image, and limitations. It must not contain API keys, headers, request/response bodies, merchant/payment/reference values, endpoint URLs, CSV rows, or local network details.
 
+## Controlled candidate orchestration
+
+Step 10 uses the repository-owned reference wrapper. It refuses a dirty tree, a branch other than `main`, or a commit that differs from the configured upstream, builds the exact `v1.0.0-rc.1` candidate images, uses only the isolated `settleflow-demo` project and validated volumes, generates one-time ignored credentials, samples bounded container CPU/memory, sanitizes the k6 summaries, and reruns migrations, runtime grants, and INV-01–INV-10 after each measurement.
+
+```shell
+pnpm performance:reference:check
+pnpm performance:reference:run-ready
+```
+
+`run-ready` performs the deterministic demo as the warm-up, resets the isolated volumes, and measures the four scenarios that can start from a freshly provisioned dataset. It deliberately does not represent a release pass: Settlement eligibility requires a business date to close after the capture fixtures were committed.
+
+Prepare the 10×500 Settlement fixture before 21:00 UTC (midnight in `Africa/Addis_Ababa`), leave the isolated candidate containers running, and resume only after the recorded cutoff:
+
+```shell
+pnpm performance:reference:prepare-settlement
+# after the command's exact UTC cutoff
+pnpm performance:reference:resume-settlement
+```
+
+The preparation path creates every Payment and capture through the Payments, Ledger, Idempotency, and Eventing application services using `settleflow_app`; it waits for the normal RabbitMQ/Settlement projection and never edits a financial timestamp or row. The resume command refuses a changed commit or image ID. If the process cannot remain isolated across the cutoff, discard it with `pnpm demo:reset -- --yes` and prepare again on the same clean candidate. Never move a cutoff, forge an event, inject a replacement database clock, or update `available_at` to make this gate pass.
+
+Sanitized scenario evidence is written under `.settleflow/performance/evidence/`. Raw summaries, the generated 50,000-row CSV, API keys, and the resumable Settlement state remain ignored and must not be uploaded. The release process attaches only the validated sanitized evidence.
+
 ## Correctness checks around load
 
 Performance never substitutes for financial verification. Before and after every recorded run:

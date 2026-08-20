@@ -2,12 +2,13 @@
 
 SettleFlow has no stable public release. This directory defines the controlled path from the current pre-release finance-grade simulation to `v1.0.0`; it is not evidence that a tag or artifact already exists.
 
-| Document                                            | Purpose                                                                                |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [v1 release checklist](v1-release-checklist.md)     | Blocking technical, security, clean-room, waiver, and owner-approval gates             |
-| [Draft v1.0.0 release notes](v1.0.0.md)             | Intended capabilities, changes, waivers, limitations, and artifact contract            |
-| [Versioning and support](versioning-and-support.md) | SemVer/API-major policy, supported versions, maintenance and publication rules         |
-| [Upgrade and migrations](upgrade-and-migrations.md) | Initial install, database migration, compatibility, failure, and future upgrade policy |
+| Document                                                      | Purpose                                                                                   |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [v1 release checklist](v1-release-checklist.md)               | Blocking technical, security, clean-room, waiver, and owner-approval gates                |
+| [Draft v1.0.0 release notes](v1.0.0.md)                       | Intended capabilities, changes, waivers, limitations, and artifact contract               |
+| [Versioning and support](versioning-and-support.md)           | SemVer/API-major policy, supported versions, maintenance and publication rules            |
+| [Upgrade and migrations](upgrade-and-migrations.md)           | Initial install, database migration, compatibility, failure, and future upgrade policy    |
+| [Security readiness exercise](security-readiness-exercise.md) | Synthetic private-reporting and incident-tabletop evidence plus the remaining owner check |
 
 Related evidence:
 

@@ -17,6 +17,7 @@ test('creates isolated ignored configuration without sharing owner credentials',
     const configuration = createDemoConfiguration(root, directory, {
       apiPort: 13_000,
       createdAt: '2026-08-12T00:00:00.000Z',
+      imageVersion: 'v1.0.0-rc.1',
       postgresPort: 55_432,
       prometheusPort: 19_090,
       receiverPort: 18_080,
@@ -30,6 +31,8 @@ test('creates isolated ignored configuration without sharing owner credentials',
       ),
     );
     assert.equal(configuration['api.env'].SETTLEFLOW_DEMO_MODE, 'true');
+    assert.equal(configuration['api.env'].RELEASE_VERSION, 'v1.0.0-rc.1');
+    assert.equal(configuration['compose.env'].SETTLEFLOW_IMAGE_VERSION, 'v1.0.0-rc.1');
     assert.equal(configuration['api.env'].WEBHOOK_URL_POLICY_MODE, 'development');
     assert.equal(
       configuration['api.env'].WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS,

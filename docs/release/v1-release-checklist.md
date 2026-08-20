@@ -24,7 +24,7 @@
 - [ ] Trivy reports zero critical and zero unreviewed high package/filesystem-secret findings for every candidate image.
 - [ ] SPDX SBOMs, checksums, image IDs/digests, OCI labels, source revision, and verified provenance/attestation evidence are retained without secret configuration.
 - [ ] Apache-2.0 source/contribution provenance and every third-party license/NOTICE/attribution obligation are reviewed for source and image distributions.
-- [ ] GitHub Private Vulnerability Reporting and Security-alert email notification are enabled and tested; one private-advisory/incident tabletop is recorded.
+- [ ] GitHub Private Vulnerability Reporting and Security-alert email notification are enabled and tested; one private-advisory/incident tabletop is recorded. PVR intake/triage/closure passed on 2026-08-20; owner email delivery remains unchecked.
 
 ## Operations, recovery, and performance
 
@@ -55,7 +55,7 @@
 
 - Reference performance scenarios have source definitions but no final candidate environment result yet.
 - A sustained backup cadence has not proven the 15-minute RPO; only isolated restorability/RTO is evidenced.
-- Private Vulnerability Reporting/notifications and the private-advisory tabletop require repository-owner GitHub actions.
+- Private Vulnerability Reporting and the private-advisory tabletop pass; the owner must still confirm Security-alert email delivery from GitHub account settings.
 - Clean-room review, `v1.0.0-rc.1`, final owner approval, immutable tag, and exact-digest GHCR promotion are Step 10 work.
 
 Any correctness, tenant-isolation, secret-exposure, Webhook-SSRF, migration, recovery, critical/high security, or financial-invariant blocker keeps the project pre-release regardless of demo appearance.

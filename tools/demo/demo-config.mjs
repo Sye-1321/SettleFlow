@@ -63,6 +63,7 @@ export function createDemoConfiguration(_root, outputDirectory, options) {
   const migrationDatabaseUrl = `postgresql://${ownerUser}:${encodeURIComponent(ownerPassword)}@postgres:5432/${DEMO_DATABASE_NAME}`;
   const rabbitmqUrl = `amqp://${rabbitUser}:${encodeURIComponent(rabbitPassword)}@rabbitmq:5672/settleflow_demo`;
   const receiverOrigin = `http://demo-webhook-receiver:${options.receiverPort}`;
+  const imageVersion = options.imageVersion ?? '0.0.0-demo';
   const common = {
     DATABASE_URL: containerDatabaseUrl,
     DEPENDENCY_READINESS_TIMEOUT_MS: '2000',
@@ -75,7 +76,7 @@ export function createDemoConfiguration(_root, outputDirectory, options) {
     OTEL_TRACING_ENABLED: 'true',
     RABBITMQ_URL: rabbitmqUrl,
     RELEASE_COMMIT: options.revision,
-    RELEASE_VERSION: '0.0.0-demo',
+    RELEASE_VERSION: imageVersion,
     SETTLEFLOW_DEMO_MODE: 'true',
     SETTLEFLOW_DEPLOYMENT_MODE: 'release-simulation',
     WEBHOOK_DEVELOPMENT_ALLOWED_ORIGINS: JSON.stringify([receiverOrigin]),
@@ -97,7 +98,7 @@ export function createDemoConfiguration(_root, outputDirectory, options) {
       SETTLEFLOW_DEMO_RECEIVER_PORT: String(options.receiverPort),
       SETTLEFLOW_IMAGE_CREATED: options.createdAt,
       SETTLEFLOW_IMAGE_REVISION: options.revision,
-      SETTLEFLOW_IMAGE_VERSION: '0.0.0-demo',
+      SETTLEFLOW_IMAGE_VERSION: imageVersion,
       SETTLEFLOW_PROMETHEUS_PORT: String(options.prometheusPort),
     }),
     'migrator.env': serialize({

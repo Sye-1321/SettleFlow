@@ -12,11 +12,13 @@ All notable changes to SettleFlow will be recorded here. The project follows
 - Transactional outbox publication, inbox-protected consumers, signed Webhook projection/delivery, and retry/dead-letter evidence.
 - Settlement batching, deterministic fee snapshots, post-settlement refund adjustments, and mock-provider CSV reconciliation.
 - Structured telemetry, internal probes, executable alerts, secure OCI release simulation, deterministic demo, CI/security gates, and isolated database-recovery tooling.
+- Clean-candidate performance orchestration with sanitized threshold/resource evidence, application-port fixture provisioning, and a guarded prepare/resume path for closed-date Settlement eligibility.
 
 ### Security
 
 - Scoped and hashed merchant API keys, encrypted rotating Webhook secrets, tenant-scoped persistence predicates, SSRF protections, least-privilege runtime database grants, secret scanning, CodeQL, dependency/license review, and container scanning.
 - Patched transitive dependency resolution and assembled no-QUIC OpenSSL/distroless runtime images keep the production audit and zero-high/critical image policy green without exceptions.
+- GitHub Private Vulnerability Reporting and the private intake/owner-triage/closure path were exercised with a synthetic non-vulnerability report; account-level Security-alert email confirmation remains a stable-release owner check.
 
 ### Known limitations
 

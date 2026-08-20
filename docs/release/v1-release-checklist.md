@@ -53,7 +53,6 @@
 
 ## Current blockers
 
-- The current production dependency audit reports high-severity `GHSA-ggr8-5vv4-36mx` in transitive `deepmerge-ts` 7.1.5 through Prisma 7.9.1 configuration tooling; there is no exception, and a compatibility-verified update is required.
 - Reference performance scenarios have source definitions but no final candidate environment result yet.
 - A sustained backup cadence has not proven the 15-minute RPO; only isolated restorability/RTO is evidenced.
 - Private Vulnerability Reporting/notifications and the private-advisory tabletop require repository-owner GitHub actions.

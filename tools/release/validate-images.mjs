@@ -47,7 +47,10 @@ const images = [
 const filesystemCheck = String.raw`
 const fs=require('node:fs');
 if(process.getuid?.()!==10001||process.getgid?.()!==10001)throw Error('unexpected runtime identity');
+if(process.versions.node!=='24.18.0'||process.versions.openssl!=='3.5.7')throw Error('unexpected runtime version');
+try{require('node:quic');throw Error('QUIC runtime must remain unavailable')}catch(error){if(error.code!=='ERR_UNKNOWN_BUILTIN_MODULE')throw error}
 for(const path of ['/app/.env','/app/.git','/app/src','/app/test','/app/tsconfig.json'])if(fs.existsSync(path))throw Error('forbidden artifact '+path);
+for(const path of ['/bin/sh','/bin/bash','/usr/bin/apt','/usr/bin/apt-get','/usr/bin/dpkg'])if(fs.existsSync(path))throw Error('forbidden runtime tool '+path);
 for(const path of ['/usr/local/bin/corepack','/usr/local/bin/npm','/usr/local/bin/npx','/usr/local/bin/yarn','/usr/local/bin/yarnpkg','/usr/local/lib/node_modules/corepack','/usr/local/lib/node_modules/npm','/opt/yarn-v1.22.22'])if(fs.existsSync(path))throw Error('forbidden package manager '+path);
 for(const dependency of ['jest','typescript']){try{require.resolve(dependency+'/package.json');throw Error('development dependency '+dependency)}catch(error){if(!String(error.message).startsWith('Cannot find module'))throw error}}
 if(process.env.SETTLEFLOW_IMAGE_ROLE!=='migrator'){try{require.resolve('prisma/package.json');throw Error('development dependency prisma')}catch(error){if(!String(error.message).startsWith('Cannot find module'))throw error}}
@@ -68,7 +71,7 @@ for (const image of images) {
   assert(config.User === '10001:10001', `${image.name} image user is not fixed non-root`);
   assert(
     JSON.stringify(config.Entrypoint) === JSON.stringify(['/nodejs/bin/node']),
-    `${image.name} entrypoint is not the absolute distroless Node runtime`,
+    `${image.name} entrypoint is not the absolute assembled Node runtime`,
   );
   assert(
     JSON.stringify(config.Cmd) === JSON.stringify([image.command]),

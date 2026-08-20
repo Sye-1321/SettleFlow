@@ -11,7 +11,7 @@ SettleFlow is a NestJS modular monolith with two independently deployable proces
 
 Both processes share bounded domain packages and use PostgreSQL as the authoritative transactional and financial source of truth. RabbitMQ provides durable at-least-once asynchronous delivery. Telemetry records operational evidence but is not authoritative financial state.
 
-The implemented baseline pins Node.js 24.18.0, NestJS 11.1.28, PostgreSQL 18.4, Prisma 7.9.1 plus reviewed parameterized raw SQL for critical locking/claim paths, RabbitMQ 4.3.4, TypeScript 6.0.3, Testcontainers 12.0.4, OpenTelemetry-compatible tracing, Prometheus-compatible metrics, Docker Compose, and multi-stage distroless runtime images. Package versions, workflow actions, scanner images, and external container images are exact in repository policy, lockfiles, full action SHAs, or image digests as appropriate. Reference k6 performance work remains a release gate rather than an implemented claim.
+The implemented baseline pins Node.js 24.18.0, NestJS 11.1.28, PostgreSQL 18.4, Prisma 7.9.1 plus reviewed parameterized raw SQL for critical locking/claim paths, RabbitMQ 4.3.4, TypeScript 6.0.3, Testcontainers 12.0.4, OpenTelemetry-compatible tracing, Prometheus-compatible metrics, Docker Compose, and multi-stage assembled distroless `base-nossl` runtime images. Package versions, workflow actions, scanner images, and external container images are exact in repository policy, lockfiles, full action SHAs, or image digests as appropriate. Reference k6 performance work remains a release gate rather than an implemented claim.
 
 ## Core rules
 

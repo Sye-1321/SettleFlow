@@ -79,7 +79,7 @@ Docker is required for real PostgreSQL, RabbitMQ, HTTP, image, telemetry, and re
 | Coverage        | 91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines globally; all seven critical-module floors pass                                      |
 | Database        | Complete committed migration history, runtime grants, schema drift, deferred constraints, and financial invariant verification pass against real PostgreSQL |
 | Integration     | Real PostgreSQL/RabbitMQ/HTTP suites cover API, workers, messaging, Webhooks, settlement, reconciliation, failure, and concurrency behavior                 |
-| Runtime images  | API, worker, and migrator are pinned, non-root, distroless, runtime-only, and read-only compatible                                                          |
+| Runtime images  | API, worker, and migrator use pinned distroless `base-nossl`, exact Node, no-QUIC shared OpenSSL, fixed non-root identity, and read-only execution          |
 | Vulnerabilities | Zero critical and zero unreviewed high findings in the three runtime images; no active security exception                                                   |
 | Supply chain    | Frozen lockfile, dependency/license review, secret scanning, CodeQL, Dockerfile policy, SPDX SBOMs, and bounded provenance evidence                         |
 | Contracts       | Strict `/v1` OpenAPI and the five closed event schemas pass drift/extra-field validation                                                                    |
@@ -92,7 +92,6 @@ Current workflow state is available from [CI](https://github.com/Sye-1321/Settle
 
 The following work remains outside the current verified posture:
 
-- remediation and compatibility verification for high-severity dependency advisory `GHSA-ggr8-5vv4-36mx`; no exception or suppression exists;
 - sustained-cadence PostgreSQL RPO evidence; the isolated restore/RTO exercise is implemented and passes;
 - final-candidate execution and environment/results for the five source-controlled reference performance scenarios;
 - production KMS, real provider/payout integration, and catastrophic RabbitMQ-loss replay;

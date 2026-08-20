@@ -16,6 +16,7 @@ All notable changes to SettleFlow will be recorded here. The project follows
 ### Security
 
 - Scoped and hashed merchant API keys, encrypted rotating Webhook secrets, tenant-scoped persistence predicates, SSRF protections, least-privilege runtime database grants, secret scanning, CodeQL, dependency/license review, and container scanning.
+- Patched transitive dependency resolution and assembled no-QUIC OpenSSL/distroless runtime images keep the production audit and zero-high/critical image policy green without exceptions.
 
 ### Known limitations
 

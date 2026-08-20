@@ -70,23 +70,53 @@ test('sanitizes only approved metrics and threshold outcomes', () => {
     environment: { cpuCount: 8, memoryGiB: 16, operatingSystem: 'linux' },
     raw: {
       metrics: {
-        checks: { thresholds: { 'rate>0.99': { ok: true } }, values: { rate: 1 } },
+        checks: { fails: 0, passes: 100, thresholds: { 'rate>0.99': false }, value: 1 },
         http_req_duration: {
-          thresholds: { 'p(95)<300': { ok: true } },
-          values: { avg: 10, 'p(95)': 20 },
+          avg: 10,
+          'p(95)': 20,
+          thresholds: { 'p(95)<300': false },
         },
-        http_req_failed: { thresholds: { 'rate<0.01': { ok: true } }, values: { rate: 0 } },
+        http_req_failed: { fails: 10, passes: 0, thresholds: { 'rate<0.01': false }, value: 0 },
         settleflow_financial_effect_failures: {
-          thresholds: { 'rate==0': { ok: true } },
-          values: { rate: 0 },
+          fails: 10,
+          passes: 0,
+          thresholds: { 'rate==0': false },
+          value: 0,
         },
-        secret_metric: { values: { value: 123 } },
+        secret_metric: { value: 123 },
       },
     },
     scenario: 'payments-happy-path',
   });
   assert.equal(evidence.status, 'PASS');
   assert.equal(Object.hasOwn(evidence.metrics, 'secret_metric'), false);
+});
+
+test('records a crossed pinned-k6 threshold as a failed scenario', () => {
+  const rawMetric = { fails: 0, passes: 1, thresholds: { 'rate==1': false }, value: 1 };
+  const evidence = sanitizeK6Summary({
+    candidate: {
+      commit: revision,
+      imageIds: { api: `sha256:${'b'.repeat(64)}` },
+      version: 'v1.0.0-rc.1',
+    },
+    environment: { cpuCount: 8, memoryGiB: 16, operatingSystem: 'linux' },
+    raw: {
+      metrics: {
+        checks: { ...rawMetric, thresholds: { 'rate>0.99': false } },
+        http_req_duration: { 'p(95)': 4_414, thresholds: { 'p(95)<300': true } },
+        http_req_failed: { ...rawMetric, thresholds: { 'rate<0.01': false }, value: 0 },
+        settleflow_financial_effect_failures: {
+          ...rawMetric,
+          thresholds: { 'rate==0': false },
+          value: 0,
+        },
+      },
+    },
+    scenario: 'payments-happy-path',
+  });
+  assert.equal(evidence.status, 'FAIL');
+  assert.equal(evidence.metrics.http_req_duration.thresholds['p(95)<300'], false);
 });
 
 test('rejects secret-bearing or unsafe public evidence fields', () => {

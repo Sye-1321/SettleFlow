@@ -60,16 +60,16 @@ function safeNumber(value) {
 
 function metricEvidence(metric) {
   const values = {};
-  for (const [name, value] of Object.entries(metric?.values ?? {})) {
+  for (const [name, value] of Object.entries(metric ?? {})) {
     if (SAFE_VALUE_NAMES.has(name) && safeNumber(value) !== undefined) values[name] = value;
   }
   const thresholds = {};
-  for (const [expression, result] of Object.entries(metric?.thresholds ?? {})) {
+  for (const [expression, crossed] of Object.entries(metric?.thresholds ?? {})) {
     if (!/^[A-Za-z0-9().<>=_% -]{1,96}$/u.test(expression)) {
       throw new Error('performance_threshold_expression_unsafe');
     }
-    if (typeof result?.ok !== 'boolean') throw new Error('performance_threshold_result_invalid');
-    thresholds[expression] = result.ok;
+    if (typeof crossed !== 'boolean') throw new Error('performance_threshold_result_invalid');
+    thresholds[expression] = !crossed;
   }
   return { thresholds, values };
 }

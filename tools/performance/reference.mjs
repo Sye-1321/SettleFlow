@@ -44,6 +44,7 @@ import {
 } from './reference-domain.mjs';
 import {
   assertCleanCandidate,
+  assertReferenceHost,
   buildProviderOnlyCsv,
   parseDockerStats,
   REFERENCE_SCENARIOS,
@@ -225,6 +226,19 @@ function environmentEvidence(root) {
   };
 }
 
+function verifyReferenceHost(root) {
+  const names = execute(root, 'docker', ['ps', '--format', '{{.Names}}'], {
+    errorCode: 'performance_docker_inventory_unavailable',
+  })
+    .split(/\r?\n/u)
+    .filter(Boolean);
+  assertReferenceHost({
+    containerNames: names,
+    cpuCount: cpus().length,
+    totalMemoryGiB: Math.floor(totalmem() / 1024 ** 3),
+  });
+}
+
 function sampleResources(root, peaks) {
   try {
     const source = execute(
@@ -336,6 +350,7 @@ async function registerWebhook(apiKey) {
 
 async function prepareScenario(root, scenario, revision, buildImages) {
   safeReset(root);
+  verifyReferenceHost(root);
   const configuration = createConfiguration(root, revision);
   inspectDemoCompose(root);
   if (buildImages) buildDemoImages(root);
@@ -492,6 +507,7 @@ async function executePrepared(root, scenario, prepared) {
 
 async function warmup(root) {
   safeReset(root);
+  verifyReferenceHost(root);
   rmSync(resolve(root, OUTPUT_DIRECTORY, 'warmup-evidence.json'), { force: true });
   const previous = process.env.SETTLEFLOW_DEMO_MODE;
   process.env.SETTLEFLOW_DEMO_MODE = 'true';
@@ -552,6 +568,7 @@ async function resumeSettlement(root, revision) {
   if (!Number.isFinite(cutoffAt.getTime()) || new Date() < cutoffAt) {
     throw new Error('performance_settlement_cutoff_not_closed');
   }
+  verifyReferenceHost(root);
   clearScenarioArtifacts(root, 'settlement-batch');
   const configuration = checkDemoConfiguration(demoPaths(root).directory);
   const context = await createReferenceDomainContext(hostRuntimeDatabaseUrl(configuration));

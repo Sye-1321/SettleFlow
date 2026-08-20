@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   assertCleanCandidate,
+  assertReferenceHost,
   buildProviderOnlyCsv,
   parseDockerStats,
   sanitizeK6Summary,
@@ -45,6 +46,29 @@ test('requires an exact clean main candidate', () => {
         upstreamRevision: 'b'.repeat(40),
       }),
     /candidate_not_pushed/u,
+  );
+});
+
+test('requires the approved isolated reference host', () => {
+  assert.doesNotThrow(() =>
+    assertReferenceHost({
+      containerNames: ['settleflow-demo-api-1', 'settleflow-demo-worker-1'],
+      cpuCount: 4,
+      totalMemoryGiB: 8,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertReferenceHost({
+        containerNames: ['unrelated-kafka'],
+        cpuCount: 4,
+        totalMemoryGiB: 8,
+      }),
+    /host_not_isolated/u,
+  );
+  assert.throws(
+    () => assertReferenceHost({ containerNames: [], cpuCount: 2, totalMemoryGiB: 8 }),
+    /host_capacity_invalid/u,
   );
 });
 

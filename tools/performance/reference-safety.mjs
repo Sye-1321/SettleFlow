@@ -107,6 +107,25 @@ export function assertCleanCandidate({ branch, porcelain, revision, upstreamRevi
   return revision;
 }
 
+export function assertReferenceHost({ containerNames, cpuCount, totalMemoryGiB }) {
+  if (
+    !Number.isInteger(cpuCount) ||
+    cpuCount < 4 ||
+    !Number.isInteger(totalMemoryGiB) ||
+    totalMemoryGiB < 8
+  ) {
+    throw new Error('performance_reference_host_capacity_invalid');
+  }
+  if (
+    !Array.isArray(containerNames) ||
+    containerNames.some(
+      (name) => typeof name !== 'string' || !/^settleflow-demo-[a-z0-9-]+-\d+$/u.test(name),
+    )
+  ) {
+    throw new Error('performance_reference_host_not_isolated');
+  }
+}
+
 export function buildProviderOnlyCsv({ merchantCode, occurredAt, rowCount = 50_000 }) {
   if (
     !/^demo_[a-z0-9_]{1,58}$/u.test(merchantCode) ||

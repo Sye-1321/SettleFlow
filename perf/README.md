@@ -77,7 +77,7 @@ Each run writes a local k6 summary to `.settleflow/performance/<scenario>-summar
 
 ## Controlled candidate orchestration
 
-Step 10 uses the repository-owned reference wrapper. It refuses a dirty tree, a branch other than `main`, or a commit that differs from the configured upstream, builds the exact `v1.0.0-rc.1` candidate images, uses only the isolated `settleflow-demo` project and validated volumes, generates one-time ignored credentials, samples bounded container CPU/memory, sanitizes the k6 summaries, and reruns migrations, runtime grants, and INV-01–INV-10 after each measurement.
+Step 10 uses the repository-owned reference wrapper. It refuses a dirty tree, a branch other than `main`, a commit that differs from the configured upstream, a host below the approved CPU/RAM baseline, or any running non-`settleflow-demo` container. It builds the exact `v1.0.0-rc.1` candidate images, uses only the isolated `settleflow-demo` project and validated volumes, generates one-time ignored credentials, samples bounded container CPU/memory, sanitizes the k6 summaries, and reruns migrations, runtime grants, and INV-01–INV-10 after each measurement.
 
 ```shell
 pnpm performance:reference:check

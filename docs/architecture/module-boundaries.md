@@ -17,10 +17,10 @@ Entrypoints compose modules but do not contain financial business rules. Infrast
 | Ledger          | `ledger_accounts`, `ledger_transactions`, `ledger_entries`                | Accepts posting/reversal commands through its application port. Must not depend on Payments.                                                                                         |
 | Idempotency     | `idempotency_keys`, fingerprints, command ownership, response snapshots   | Orchestrates single-winner acquisition and replay for money-mutating POST commands. Does not publish a public business event.                                                        |
 | Eventing        | `outbox_events`, `inbox_messages`, publish leases                         | Persists outbox rows inside producer transactions; relays committed events; deduplicates state-changing consumers.                                                                   |
-| Webhooks        | endpoints, deliveries, attempts, signing metadata                         | Reacts to committed events and owns outbound delivery/replay. Must not participate in capture/refund transactions.                                                                   |
+| Webhooks        | endpoints, deliveries, attempts, signing metadata                         | Reacts to committed events and owns outbound delivery. Manual replay is not implemented; any future replay must use an approved authenticated and audited command.                   |
 | Settlements     | fee policies, streams, positions, runs, batches, batch items, adjustments | Projects committed capture/refund events, revalidates payment facts, and coordinates its fixed Ledger/Eventing/Operations ports without writing Payments tables.                     |
 | Reconciliation  | imports, provider rows, results, summaries                                | Owns bounded staging, deterministic matching/classification, and immutable reports for untrusted mock-provider CSV input. Reads tenant-scoped platform evidence without mutating it. |
-| Operations      | `audit_events`, health, metrics, replay commands                          | Records append-only privileged actions and exposes bounded operational controls; must not patch financial rows.                                                                      |
+| Operations      | `audit_events`, health, metrics                                           | Records append-only privileged actions and exposes bounded implemented operational controls; must not patch financial rows.                                                          |
 
 ## Persistence rules
 
@@ -42,7 +42,7 @@ Entrypoints compose modules but do not contain financial business rules. Infrast
 - Webhooks and Settlements consume committed events through inbox-protected handlers or call stable read ports. They never join the originating capture/refund transaction.
 - Settlements coordinates a fixed `postSettlement` Ledger port, its outbox event, its Operations audit record, and idempotency completion in one caller-owned transaction.
 - Reconciliation reads authorized platform records through tenant-scoped read queries, writes only its staging/report data, and emits completion only in the report transaction.
-- Operations invokes explicit replay/run commands, subject to separate operator authentication, authorization, reason capture, and append-only audit.
+- Operations records append-only audit evidence for implemented privileged commands. Controlled Webhook replay is not implemented; any future replay command requires separate operator authentication, authorization, reason capture, and append-only audit.
 
 Any proposed reverse dependency, circular dependency, direct cross-module write, new shared table, or new synchronous network dependency requires design review and normally an ADR.
 
@@ -64,7 +64,7 @@ Every state-changing consumer reserves/detects `(consumer_name, message_id)` thr
 
 ### Webhooks
 
-Webhooks receive committed events and create at most one endpoint/event delivery record, while each replay has a new delivery ID. Delivery is signed over exact bytes, retried according to policy, never follows redirects, and terminates as delivered or dead-lettered with immutable attempt evidence. Authorized replay records actor and reason.
+Webhooks receive committed events and create at most one endpoint/event delivery record. Automatic retries retain the delivery ID; delivery is signed over exact bytes, retried according to policy, never follows redirects, and terminates as delivered or dead-lettered with immutable attempt evidence. Controlled manual replay is not implemented. Any future approved replay must create a new delivery ID and record the authorized actor and reason.
 
 ## External integration boundaries
 
@@ -76,4 +76,4 @@ Webhooks receive committed events and create at most one endpoint/event delivery
 
 ## Auditability
 
-Financial commands retain stable business references, idempotency evidence, ledger transaction IDs, event IDs, and correlation IDs. Webhook attempts and privileged operator actions are append-only. Manual recovery must use documented replay, reversal, rollback, or forward-fix paths; direct edits to posted ledger, audit, settlement, or delivery evidence are prohibited.
+Financial commands retain stable business references, idempotency evidence, ledger transaction IDs, event IDs, and correlation IDs. Webhook attempts and privileged operator actions are append-only. Recovery must use an implemented approved command, reversal, rollback, or forward-fix path; when no approved command exists, preserve the evidence and escalate rather than editing rows directly. Direct edits to posted ledger, audit, settlement, or delivery evidence are prohibited.

@@ -24,7 +24,7 @@ All GitHub actions are full-commit pinned with their exact release in an adjacen
 | `actions/upload-artifact`          | 7.0.1   | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `actions/download-artifact`        | 8.0.1   | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
 | `actions/dependency-review-action` | 5.0.0   | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` |
-| `github/codeql-action`             | 4.37.6  | `5595ccaf912efad79be6eef63a5619ff05969be3` |
+| `github/codeql-action`             | 4.37.7  | `ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd` |
 | `actions/attest`                   | 4.2.2   | `1e69f48acb82d1966a394da916b4c1698aa569d6` |
 
 Dependabot proposes weekly pnpm, GitHub Actions, and Docker updates. Only compatible development-tool minor/patch updates are grouped; nothing auto-merges.

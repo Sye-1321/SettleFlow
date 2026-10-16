@@ -9,10 +9,7 @@ import test from 'node:test';
 
 import { evaluateAuditReport } from './check-dependency-audit.mjs';
 import { evaluateLicenseReport } from './check-licenses.mjs';
-import {
-  checkRepositoryPolicy,
-  validateNodeVersionPolicy,
-} from './check-repository-policy.mjs';
+import { checkRepositoryPolicy, validateNodeVersionPolicy } from './check-repository-policy.mjs';
 import { validateSecurityExceptions } from './check-security-exceptions.mjs';
 import { validateWorkflow } from './check-workflows.mjs';
 import { summarizeTrivyReports } from './run-container-security.mjs';

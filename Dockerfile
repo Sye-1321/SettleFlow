@@ -33,11 +33,8 @@ FROM ${NODE_IMAGE} AS toolchain
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
 WORKDIR /workspace
-RUN apt-get update && \
-    apt-get install --yes --no-install-recommends \
-      libssl3t64=3.5.6-1~deb13u2 \
-      openssl=3.5.6-1~deb13u2 && \
-    rm -rf /var/lib/apt/lists/*
+COPY --from=openssl-runtime-build /opt/settleflow-openssl/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+COPY --from=openssl-runtime-build /opt/settleflow-openssl/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
 RUN corepack enable && corepack prepare pnpm@11.18.0 --activate
 RUN node -e \
       "if(process.versions.node!=='24.18.0'||process.versions.openssl!=='3.5.7')process.exit(1);try{require('node:quic');process.exit(1)}catch(error){if(error.code!=='ERR_UNKNOWN_BUILTIN_MODULE')throw error}"

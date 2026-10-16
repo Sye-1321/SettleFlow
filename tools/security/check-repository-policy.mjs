@@ -12,7 +12,41 @@ const SKIPPED_DIRECTORIES = new Set([
   'node_modules',
 ]);
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
+const VERSION_PART = String.raw`(0|[1-9]\d*)`;
+const EXACT_NODE_VERSION = new RegExp(
+  String.raw`^${VERSION_PART}\.${VERSION_PART}\.${VERSION_PART}$`,
+  'u',
+);
+const NODE_COMPATIBILITY_POLICY = new RegExp(
+  String.raw`^>=${VERSION_PART}\.${VERSION_PART}\.${VERSION_PART} <${VERSION_PART}$`,
+  'u',
+);
 const PINNED_IMAGE = /^[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/u;
+
+export function validateNodeVersionPolicy(nodeVersion, nodePolicy) {
+  const pinned = EXACT_NODE_VERSION.exec(nodeVersion);
+  if (!pinned) return ['.node-version must contain an exact Node.js version'];
+
+  const policy = NODE_COMPATIBILITY_POLICY.exec(nodePolicy ?? '');
+  if (!policy) return ['package.json engines.node must be a bounded Node.js compatibility range'];
+
+  const pinnedParts = pinned.slice(1).map(Number);
+  const minimumParts = policy.slice(1, 4).map(Number);
+  const exclusiveMajor = Number(policy[4]);
+  if (exclusiveMajor !== minimumParts[0] + 1) {
+    return ['package.json engines.node must be a bounded Node.js compatibility range'];
+  }
+  const meetsMinimum = pinnedParts.some(
+    (part, index) =>
+      part > minimumParts[index] &&
+      pinnedParts.slice(0, index).every((value, prior) => value === minimumParts[prior]),
+  );
+  const equalsMinimum = pinnedParts.every((part, index) => part === minimumParts[index]);
+  if ((!meetsMinimum && !equalsMinimum) || pinnedParts[0] >= exclusiveMajor) {
+    return ['.node-version does not satisfy package.json engines.node'];
+  }
+  return [];
+}
 
 function listFiles(root, name) {
   const matches = [];
@@ -33,9 +67,7 @@ export function checkRepositoryPolicy(root) {
   const packagePaths = listFiles(root, 'package.json');
   const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
   const nodeVersion = readFileSync(resolve(root, '.node-version'), 'utf8').trim();
-  if (nodeVersion !== rootPackage.engines.node) {
-    failures.push('.node-version and package.json engines.node differ');
-  }
+  failures.push(...validateNodeVersionPolicy(nodeVersion, rootPackage.engines.node));
   if (rootPackage.packageManager !== `pnpm@${rootPackage.engines.pnpm}`) {
     failures.push('packageManager and engines.pnpm differ');
   }

@@ -9,7 +9,10 @@ import test from 'node:test';
 
 import { evaluateAuditReport } from './check-dependency-audit.mjs';
 import { evaluateLicenseReport } from './check-licenses.mjs';
-import { checkRepositoryPolicy } from './check-repository-policy.mjs';
+import {
+  checkRepositoryPolicy,
+  validateNodeVersionPolicy,
+} from './check-repository-policy.mjs';
 import { validateSecurityExceptions } from './check-security-exceptions.mjs';
 import { validateWorkflow } from './check-workflows.mjs';
 import { summarizeTrivyReports } from './run-container-security.mjs';
@@ -167,6 +170,41 @@ jobs:
 
 test('checked repository obeys exact version, lockfile, and scanner-image policy', () => {
   assert.deepEqual(checkRepositoryPolicy(process.cwd()), []);
+});
+
+test('Node version policy accepts an exact compatible pinned runtime', () => {
+  assert.deepEqual(validateNodeVersionPolicy('24.18.0', '>=24.18.0 <25'), []);
+  assert.deepEqual(validateNodeVersionPolicy('24.19.1', '>=24.18.0 <25'), []);
+});
+
+test('Node version policy rejects invalid or incompatible runtimes', () => {
+  assert.deepEqual(validateNodeVersionPolicy('24', '>=24.18.0 <25'), [
+    '.node-version must contain an exact Node.js version',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('024.18.0', '>=24.18.0 <25'), [
+    '.node-version must contain an exact Node.js version',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24x18x0', '>=24.18.0 <25'), [
+    '.node-version must contain an exact Node.js version',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24.17.9', '>=24.18.0 <25'), [
+    '.node-version does not satisfy package.json engines.node',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('25.0.0', '>=24.18.0 <25'), [
+    '.node-version does not satisfy package.json engines.node',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24.18.0', '24.18.0'), [
+    'package.json engines.node must be a bounded Node.js compatibility range',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24.18.0', '>=25.0.0 <25'), [
+    'package.json engines.node must be a bounded Node.js compatibility range',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24.18.0', '>=24x18x0 <25'), [
+    'package.json engines.node must be a bounded Node.js compatibility range',
+  ]);
+  assert.deepEqual(validateNodeVersionPolicy('24.18.0', '>=24.18.0 <26'), [
+    'package.json engines.node must be a bounded Node.js compatibility range',
+  ]);
 });
 
 test('image summary removes secret material and critical findings cannot be excepted', () => {

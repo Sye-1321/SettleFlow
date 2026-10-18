@@ -309,6 +309,7 @@ describe('PrismaSettlementRepository', () => {
       occurredAt: now,
       paymentId: 'pi-id',
       paymentIntentId: 'payment-internal',
+      paymentRefundedAmountMinor: 0n,
     };
     await capture.repository.projectLifecycle(capture.tx, captured);
     expect(capture.transaction.settlementStream.createMany).toHaveBeenCalled();
@@ -332,9 +333,10 @@ describe('PrismaSettlementRepository', () => {
 
     const refund = harness();
     refund.transaction.settlementPosition.findUnique.mockResolvedValue({
-      batchItem: { id: 'item-id' },
+      batchItem: { id: 'item-id', refundedAmountMinor: 0n },
       id: 'position-id',
     });
+    refund.transaction.$executeRaw.mockResolvedValue(1);
     const refunded = {
       ...captured,
       amountMinor: 100,
@@ -353,6 +355,14 @@ describe('PrismaSettlementRepository', () => {
       publicId: 'sta-id',
       sourceEventId: 'evt-capture',
     });
+    const included = harness();
+    included.transaction.settlementPosition.findUnique.mockResolvedValue({
+      batchItem: { id: 'item-id', refundedAmountMinor: 100n },
+      id: 'position-id',
+    });
+    included.transaction.$executeRaw.mockResolvedValue(1);
+    await included.repository.projectLifecycle(included.tx, refunded, 'sta-id');
+    expect(included.transaction.settlementAdjustment.create).not.toHaveBeenCalled();
     const { refundRecordId, ...missingRefundIdentity } = refunded;
     expect(refundRecordId).toBe('refund-internal');
     await expect(

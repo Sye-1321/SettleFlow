@@ -142,6 +142,7 @@ export interface PaymentSettlementProjectionIdentity {
   readonly currency: PaymentCurrency;
   readonly paymentIntentId: string;
   readonly paymentPublicId: string;
+  readonly refundedAmountMinor: bigint;
   readonly refundRecordId?: string;
   readonly refundPublicId?: string;
 }

@@ -61,7 +61,7 @@ export class PrismaPaymentSettlementReader implements PaymentSettlementReadPort 
     refundPublicId?: string,
   ): Promise<PaymentSettlementProjectionIdentity | undefined> {
     const payment = await transaction.paymentIntent.findFirst({
-      select: { currency: true, id: true, publicId: true },
+      select: { currency: true, id: true, publicId: true, refundedAmountMinor: true },
       where: { merchantId, publicId: paymentPublicId },
     });
     if (payment === null) return undefined;
@@ -70,6 +70,7 @@ export class PrismaPaymentSettlementReader implements PaymentSettlementReadPort 
         currency: payment.currency as PaymentCurrency,
         paymentIntentId: payment.id,
         paymentPublicId: payment.publicId,
+        refundedAmountMinor: payment.refundedAmountMinor,
       };
     }
     const refund = await transaction.refund.findFirst({
@@ -81,6 +82,7 @@ export class PrismaPaymentSettlementReader implements PaymentSettlementReadPort 
       currency: payment.currency as PaymentCurrency,
       paymentIntentId: payment.id,
       paymentPublicId: payment.publicId,
+      refundedAmountMinor: payment.refundedAmountMinor,
       refundRecordId: refund.id,
       refundPublicId: refund.publicId,
     };

@@ -1,9 +1,15 @@
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { EventingService, PrismaOutboxRepository } from '@settleflow/eventing';
+import {
+  EventingService,
+  InboxService,
+  PrismaInboxRepository,
+  PrismaOutboxRepository,
+  type ValidatedPaymentEventMessage,
+} from '@settleflow/eventing';
 import { IdempotencyService, PrismaIdempotencyRepository } from '@settleflow/idempotency';
 import { MonotonicUlidGenerator, PrismaDatabase } from '@settleflow/infrastructure';
 import {
@@ -95,6 +101,271 @@ describe('settlement financial transaction with real PostgreSQL', () => {
     await runtime?.close();
     await owner?.close();
     await postgres?.stop();
+  });
+
+  it('keeps settlement refund projections correct across out-of-order and duplicate delivery', async () => {
+    const merchantId = '00000000-0000-4000-8000-000000000211';
+    const paymentId = '00000000-0000-4000-8000-000000000212';
+    const paymentPublicId = 'pi_01ARZ3NDEKTSV4RRFFQ69G5FB0';
+    const availableOn = new Date('2026-08-04T10:00:00.000Z');
+    await owner.getClient().merchant.create({ data: { code: 'projection_order', id: merchantId } });
+    await owner.getClient().paymentIntent.create({
+      data: {
+        amountMinor: 10_000n,
+        availableAt: availableOn,
+        captureMethod: 'MANUAL',
+        capturedAmountMinor: 10_000n,
+        capturedAt: availableOn,
+        currency: 'ETB',
+        externalRef: 'projection-order-payment',
+        id: paymentId,
+        merchantId,
+        paymentStatus: 'PARTIALLY_REFUNDED',
+        publicId: paymentPublicId,
+        refundedAmountMinor: 3_000n,
+      },
+    });
+    const refunds = [
+      {
+        amountMinor: 1_000n,
+        createdAt: new Date('2026-08-04T11:00:00.000Z'),
+        externalRef: 'projection-order-refund-1',
+        publicId: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FB0',
+      },
+      {
+        amountMinor: 2_000n,
+        createdAt: new Date('2026-08-04T12:00:00.000Z'),
+        externalRef: 'projection-order-refund-2',
+        publicId: 'rf_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      },
+    ] as const;
+    await owner.getClient().refund.createMany({
+      data: refunds.map((refund) => ({
+        ...refund,
+        currency: 'ETB',
+        merchantId,
+        paymentIntentId: paymentId,
+      })),
+    });
+    const inbox = new InboxService(
+      new PrismaInboxRepository(runtime, {
+        lockTimeoutMs: 5_000,
+        statementTimeoutMs: 10_000,
+        transactionTimeoutMs: 15_000,
+      }),
+      { retryAttempts: 3 },
+    );
+    const projection = new SettlementProjectionService(
+      new PrismaSettlementRepository(runtime),
+      new MonotonicUlidGenerator(),
+      new PrismaPaymentSettlementReader(),
+      inbox,
+    );
+    const message = (
+      event: ValidatedPaymentEventMessage['event'],
+    ): ValidatedPaymentEventMessage => {
+      const payloadBytes = Buffer.from(JSON.stringify(event));
+      return {
+        event,
+        payloadBytes,
+        payloadSha256: createHash('sha256').update(payloadBytes).digest(),
+        publishAttempt: 1,
+        redelivered: false,
+        schemaVersion: 1,
+      } as ValidatedPaymentEventMessage;
+    };
+    const olderRefund = message({
+      amountMinor: 1_000,
+      cumulativeRefundedAmountMinor: 1_000,
+      currency: 'ETB',
+      eventId: 'evt_01ARZ3NDEKTSV4RRFFQ69G5FB0',
+      eventType: 'payment.refunded.v1',
+      ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FB0',
+      merchantId,
+      occurredAt: refunds[0].createdAt,
+      paymentId: paymentPublicId,
+      refundId: refunds[0].publicId,
+      requestId: 'req_projection_order_refund_1',
+    });
+    const newerRefund = message({
+      amountMinor: 2_000,
+      cumulativeRefundedAmountMinor: 3_000,
+      currency: 'ETB',
+      eventId: 'evt_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      eventType: 'payment.refunded.v1',
+      ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FB1',
+      merchantId,
+      occurredAt: refunds[1].createdAt,
+      paymentId: paymentPublicId,
+      refundId: refunds[1].publicId,
+      requestId: 'req_projection_order_refund_2',
+    });
+    const capture = message({
+      availableOn,
+      capturedAmountMinor: 10_000,
+      currency: 'ETB',
+      eventId: 'evt_01ARZ3NDEKTSV4RRFFQ69G5FB2',
+      eventType: 'payment.captured.v1',
+      ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FB2',
+      merchantId,
+      occurredAt: availableOn,
+      paymentId: paymentPublicId,
+      requestId: 'req_projection_order_capture',
+    });
+
+    await expect(projection.handle(newerRefund)).resolves.toMatchObject({ kind: 'processed' });
+    expect(
+      await owner.getClient().settlementPosition.count({ where: { paymentIntentId: paymentId } }),
+    ).toBe(0);
+    expect(
+      await owner.getClient().inboxMessage.count({
+        where: { consumerName: 'settlement-projection.payment-refunded.v1' },
+      }),
+    ).toBe(1);
+
+    await expect(projection.handle(capture)).resolves.toMatchObject({ kind: 'processed' });
+    expect(
+      await owner.getClient().settlementPosition.findUniqueOrThrow({
+        where: { paymentIntentId: paymentId },
+      }),
+    ).toMatchObject({ capturedAmountMinor: 10_000n, refundedAmountMinor: 3_000n });
+
+    const apiKeyId = '00000000-0000-4000-8000-000000000214';
+    await owner.getClient().apiKey.create({
+      data: {
+        id: apiKeyId,
+        merchantId,
+        prefix: 'sf_test_PROJECTORDER',
+        scopes: ['settlements:write', 'settlements:read'],
+        secretHash: `scrypt:v1:16384:8:1:${'C'.repeat(22)}:${'D'.repeat(43)}`,
+      },
+    });
+    const ledger = new LedgerService(
+      new PrismaLedgerRepository(runtime),
+      new MonotonicUlidGenerator(),
+    );
+    await runtime
+      .getClient()
+      .$transaction((transaction) => ledger.provisionAccounts(transaction, merchantId));
+    const settlement = new SettlementService(
+      new PrismaSettlementRepository(runtime),
+      new IdempotencyService(
+        new PrismaIdempotencyRepository(runtime, {
+          leaseDurationMs: 30_000,
+          lockTimeoutMs: 5_000,
+          replayDurationMs: 86_400_000,
+          statementTimeoutMs: 10_000,
+        }),
+      ),
+      ledger,
+      new EventingService(new PrismaOutboxRepository(), new MonotonicUlidGenerator()),
+      new AuditService(new PrismaAuditRepository()),
+      new MonotonicUlidGenerator(),
+      new PrismaPaymentSettlementReader(),
+      () => new Date('2026-08-06T10:00:00.000Z'),
+    );
+    const settled = await settlement.run({
+      actorApiKeyId: apiKeyId,
+      currency: 'ETB',
+      cutoffDate: '2026-08-04',
+      idempotencyKey: 'projection-order-settlement',
+      merchantId,
+      requestId: 'req_projection_order_settlement',
+    });
+    const settledBatch = await owner.getClient().settlementBatch.findUniqueOrThrow({
+      include: { items: true },
+      where: { publicId: settled.batchId! },
+    });
+    expect(settledBatch.items).toEqual([
+      expect.objectContaining({ grossMinor: 7_000n, refundedAmountMinor: 3_000n }),
+    ]);
+
+    await expect(projection.handle(olderRefund)).resolves.toMatchObject({ kind: 'processed' });
+    await expect(projection.handle(olderRefund)).resolves.toEqual({ kind: 'duplicate' });
+    expect(
+      await owner
+        .getClient()
+        .settlementPosition.findUniqueOrThrow({ where: { paymentIntentId: paymentId } }),
+    ).toMatchObject({ refundedAmountMinor: 3_000n });
+    expect(
+      await owner.getClient().settlementAdjustment.count({
+        where: { paymentIntentId: paymentId },
+      }),
+    ).toBe(0);
+
+    const orderedPaymentId = '00000000-0000-4000-8000-000000000213';
+    const orderedPaymentPublicId = 'pi_01ARZ3NDEKTSV4RRFFQ69G5FB3';
+    await owner.getClient().paymentIntent.create({
+      data: {
+        amountMinor: 5_000n,
+        availableAt: availableOn,
+        captureMethod: 'MANUAL',
+        capturedAmountMinor: 5_000n,
+        capturedAt: availableOn,
+        currency: 'ETB',
+        externalRef: 'projection-ordered-payment',
+        id: orderedPaymentId,
+        merchantId,
+        paymentStatus: 'CAPTURED',
+        publicId: orderedPaymentPublicId,
+      },
+    });
+    await projection.handle(
+      message({
+        availableOn,
+        capturedAmountMinor: 5_000,
+        currency: 'ETB',
+        eventId: 'evt_01ARZ3NDEKTSV4RRFFQ69G5FB3',
+        eventType: 'payment.captured.v1',
+        ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FB3',
+        merchantId,
+        occurredAt: availableOn,
+        paymentId: orderedPaymentPublicId,
+        requestId: 'req_projection_ordered_capture',
+      }),
+    );
+    const orderedRefundId = 'rf_01ARZ3NDEKTSV4RRFFQ69G5FB2';
+    await owner.getClient().$transaction(async (transaction) => {
+      await transaction.paymentIntent.update({
+        data: {
+          paymentStatus: 'PARTIALLY_REFUNDED',
+          refundedAmountMinor: 1_000n,
+          version: { increment: 1 },
+        },
+        where: { id: orderedPaymentId },
+      });
+      await transaction.refund.create({
+        data: {
+          amountMinor: 1_000n,
+          createdAt: new Date('2026-08-04T13:00:00.000Z'),
+          currency: 'ETB',
+          externalRef: 'projection-ordered-refund',
+          merchantId,
+          paymentIntentId: orderedPaymentId,
+          publicId: orderedRefundId,
+        },
+      });
+    });
+    await projection.handle(
+      message({
+        amountMinor: 1_000,
+        cumulativeRefundedAmountMinor: 1_000,
+        currency: 'ETB',
+        eventId: 'evt_01ARZ3NDEKTSV4RRFFQ69G5FB4',
+        eventType: 'payment.refunded.v1',
+        ledgerTransactionId: 'ltx_01ARZ3NDEKTSV4RRFFQ69G5FB4',
+        merchantId,
+        occurredAt: new Date('2026-08-04T13:00:00.000Z'),
+        paymentId: orderedPaymentPublicId,
+        refundId: orderedRefundId,
+        requestId: 'req_projection_ordered_refund',
+      }),
+    );
+    expect(
+      await owner.getClient().settlementPosition.findUniqueOrThrow({
+        where: { paymentIntentId: orderedPaymentId },
+      }),
+    ).toMatchObject({ capturedAmountMinor: 5_000n, refundedAmountMinor: 1_000n });
   });
 
   it('commits batch, fee snapshots, balanced settlement ledger, audit, outbox, and idempotency atomically', async () => {

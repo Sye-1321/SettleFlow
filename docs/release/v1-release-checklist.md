@@ -14,6 +14,7 @@
 - [ ] Frozen install, format, lint, type-check, build, module boundaries, configuration, documentation links, and deterministic tool tests pass.
 - [ ] Unit and approved global/critical-module coverage floors pass without exclusion/threshold changes.
 - [ ] Real PostgreSQL/RabbitMQ/HTTP integration, required repeated concurrency, and failure-injection suites pass with no skipped financial case.
+- [ ] Real PostgreSQL Settlement lifecycle coverage proves refund-before-capture recovery, non-regressing cumulative refunds, duplicate-event idempotency, no adjustment for refunds already included in a settled snapshot, and one adjustment for each genuine post-settlement refund.
 - [ ] Empty database and maintained applicable prior fixture migrations, drift, runtime grants, named constraints/triggers, and INV-01–INV-10 pass.
 - [ ] Committed OpenAPI and all five event schemas/examples match runtime/source contracts; public problem, Webhook signature, AMQP metadata, and CSV contracts pass.
 

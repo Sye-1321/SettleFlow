@@ -33,6 +33,7 @@ export class SettlementProjectionService {
       {
         ...event,
         paymentIntentId: identity.paymentIntentId,
+        paymentRefundedAmountMinor: identity.refundedAmountMinor,
         ...(identity.refundRecordId === undefined
           ? {}
           : { refundRecordId: identity.refundRecordId }),

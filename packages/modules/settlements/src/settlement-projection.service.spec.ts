@@ -30,6 +30,7 @@ describe('SettlementProjectionService', () => {
         currency: 'ETB',
         paymentIntentId: 'payment-internal',
         paymentPublicId: 'pi-id',
+        refundedAmountMinor: 0n,
         refundRecordId: 'refund-internal',
       }),
     } as unknown as jest.Mocked<PaymentSettlementReadPort>;

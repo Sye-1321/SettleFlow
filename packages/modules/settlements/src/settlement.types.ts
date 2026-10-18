@@ -121,6 +121,7 @@ export interface SettlementProjectionEvent {
 
 export interface ResolvedSettlementProjectionEvent extends SettlementProjectionEvent {
   readonly paymentIntentId: string;
+  readonly paymentRefundedAmountMinor: bigint;
   readonly refundRecordId?: string;
 }
 

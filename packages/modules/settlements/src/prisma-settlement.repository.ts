@@ -443,7 +443,7 @@ export class PrismaSettlementRepository implements SettlementRepository {
           merchantId: event.merchantId,
           paymentIntentId: event.paymentIntentId,
           paymentPublicId: event.paymentId,
-          refundedAmountMinor: 0n,
+          refundedAmountMinor: event.paymentRefundedAmountMinor,
         },
         update: {
           availableAt: event.availableOn!,
@@ -460,15 +460,26 @@ export class PrismaSettlementRepository implements SettlementRepository {
       where: { paymentIntentId: event.paymentIntentId },
     });
     if (position === null) return;
-    await transaction.settlementPosition.update({
-      data: {
-        lastEventId: event.eventId,
-        lastEventOccurredAt: event.occurredAt,
-        refundedAmountMinor: BigInt(event.cumulativeRefundedAmountMinor!),
-      },
-      where: { id: position.id },
-    });
+    const projectedRefundedAmount = BigInt(event.cumulativeRefundedAmountMinor!);
+    const updated = await transaction.$executeRaw`
+      UPDATE "settlement_positions"
+      SET
+        "refunded_amount_minor" = GREATEST("refunded_amount_minor", ${projectedRefundedAmount}),
+        "last_event_id" = CASE
+          WHEN ${projectedRefundedAmount} >= "refunded_amount_minor" THEN ${event.eventId}
+          ELSE "last_event_id"
+        END,
+        "last_event_occurred_at" = CASE
+          WHEN ${projectedRefundedAmount} >= "refunded_amount_minor" THEN ${event.occurredAt}
+          ELSE "last_event_occurred_at"
+        END
+      WHERE "id" = ${position.id}::uuid
+        AND "merchant_id" = ${event.merchantId}::uuid
+        AND "currency" = ${event.currency}
+    `;
+    if (updated !== 1) throw new Error('settlement_refund_projection_conflict');
     if (position.batchItem !== null) {
+      if (projectedRefundedAmount <= position.batchItem.refundedAmountMinor) return;
       if (event.refundRecordId === undefined) throw new Error('refund_projection_identity_missing');
       await transaction.settlementAdjustment.create({
         data: {

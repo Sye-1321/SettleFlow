@@ -214,6 +214,8 @@ describe('ReconciliationService', () => {
     [importId, 0, undefined],
     [importId, 101, undefined],
     [importId, 20, 'bad cursor!'],
+    [importId, 20, ['valid_cursor']],
+    [importId, 20, { value: 'valid_cursor' }],
   ] as const)('rejects invalid report request %#', (id, limit, cursor) => {
     const harness = createHarness();
     expect(() =>

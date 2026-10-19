@@ -147,7 +147,7 @@ export class ReconciliationService {
     merchantId: string,
     publicId: string,
     limit = 20,
-    cursor?: string,
+    cursor?: unknown,
   ): Promise<ReconciliationReportRepresentation> {
     if (
       !/^rec_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u.test(publicId) ||
@@ -155,7 +155,10 @@ export class ReconciliationService {
       limit < 1 ||
       limit > 100 ||
       (cursor !== undefined &&
-        (cursor.length < 1 || cursor.length > 128 || !/^[A-Za-z0-9_-]+$/u.test(cursor)))
+        (typeof cursor !== 'string' ||
+          cursor.length < 1 ||
+          cursor.length > 128 ||
+          !/^[A-Za-z0-9_-]+$/u.test(cursor)))
     )
       throw new InvalidReconciliationRequestError();
     return this.repository.getReport(merchantId, publicId, limit, cursor);

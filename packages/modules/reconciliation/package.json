@@ -13,6 +13,6 @@
     "@settleflow/idempotency": "workspace:*",
     "@settleflow/infrastructure": "workspace:*",
     "@settleflow/operations": "workspace:*",
-    "csv-parse": "7.0.1"
+    "csv-parse": "7.0.2"
   }
 }

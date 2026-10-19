@@ -1,10 +1,10 @@
 # Implementation Plan: Settlement Projection Event Ordering
 
-- **Status:** In progress
+- **Status:** Completed
 - **Owner:** SettleFlow Project
 - **Created:** 2026-10-16
-- **Last updated:** 2026-10-18
-- **Related issue/PR:** To be decided
+- **Last updated:** 2026-10-19
+- **Related issue/PR:** Merged PR [#23](https://github.com/Sye-1321/SettleFlow/pull/23)
 - **Related ADRs:** [ADR-0003](../adr/0003-postgresql-prisma-and-financial-data-access.md), [ADR-0004](../adr/0004-rabbitmq-outbox-inbox-and-message-delivery.md), and [ADR-0006](../adr/0006-payment-and-settlement-lifecycle-state-ownership.md)
 
 ## Goal
@@ -123,7 +123,7 @@ The requirements evidence matrix, draft release notes, and pre-release checklist
 - [x] Defects reproduced against real PostgreSQL.
 - [x] Implementation and focused tests completed without a migration or contract change.
 - [x] Unit, integration, typecheck, lint, formatting, and Git whitespace checks passed.
-- [ ] Final patch review completed.
+- [x] Final patch review completed.
 
 ## Definition of done
 

@@ -71,8 +71,6 @@ The codebase is a NestJS modular monolith with separate API and worker deployabl
 | Reconciliation  | Bounded mock-provider CSV staging and deterministic, non-mutating mismatch classification                          |
 | Operations      | Redacted structured logs, correlation context, internal probes, metrics, alerts, hardened images, and CI evidence  |
 
-Detailed claim-to-test evidence is maintained in the [engineering evidence guide](docs/review/engineering-evidence.md).
-
 ## Financial correctness
 
 SettleFlow treats the following guarantees as release-blocking:
@@ -155,20 +153,21 @@ pnpm docs:check
 
 ## Documentation
 
-| Document                                                                      | Purpose                                                            |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [Architecture overview](docs/architecture/README.md)                          | Deployables, consistency model, and bounded modules                |
-| [System and reliability flows](docs/architecture/system-flows.md)             | Atomicity, outbox/inbox, Webhook, Settlement, and deployment flows |
-| [Data model and ERD](docs/architecture/data-model.md)                         | Module-owned schema and critical relationships                     |
-| [Architecture decisions](docs/adr/README.md)                                  | Accepted decisions, trade-offs, and specification refinements      |
-| [OpenAPI](docs/api/openapi.json) and [HTTP examples](examples/http/README.md) | Machine-readable contract and synthetic request collection         |
-| [Events and Webhook signing](docs/events/README.md)                           | Closed event schemas, AMQP metadata, and signed delivery           |
-| [Continuous integration](docs/operations/continuous-integration.md)           | Quality, security, reliability, artifact, and supply-chain gates   |
-| [Threat model](docs/security/threat-model.md)                                 | Assets, trust boundaries, controls, proof, and residual risk       |
-| [Release documentation](docs/release/README.md)                               | Versioning, upgrades, draft notes, and blocking checklist          |
-| [Runbooks](docs/runbooks/README.md)                                           | Failure diagnosis and evidence-preserving recovery                 |
-| [Security policy](SECURITY.md)                                                | Vulnerability disclosure and security requirements                 |
-| [Contributing](CONTRIBUTING.md)                                               | Governance, plans, reviews, migrations, and verification           |
+| Document                                                                      | Purpose                                                                                            |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [Architecture overview](docs/architecture/README.md)                          | Deployables, consistency model, and bounded modules                                                |
+| [System and reliability flows](docs/architecture/system-flows.md)             | Atomicity, outbox/inbox, Webhook, Settlement, and deployment flows                                 |
+| [Data model and ERD](docs/architecture/data-model.md)                         | Module-owned schema and critical relationships                                                     |
+| [Architecture decisions](docs/adr/README.md)                                  | Accepted decisions, trade-offs, and specification refinements                                      |
+| [OpenAPI](docs/api/openapi.json) and [HTTP examples](examples/http/README.md) | Machine-readable contract and synthetic request collection                                         |
+| [Events and Webhook signing](docs/events/README.md)                           | Closed event schemas, AMQP metadata, and signed delivery                                           |
+| [Continuous integration](docs/operations/continuous-integration.md)           | Quality, security, reliability, artifact, and supply-chain gates                                   |
+| [Threat model](docs/security/threat-model.md)                                 | Assets, trust boundaries, controls, proof, and residual risk                                       |
+| [Release documentation](docs/release/README.md)                               | Versioning, upgrades, draft notes, and blocking checklist                                          |
+| [Runbooks](docs/runbooks/README.md)                                           | Failure diagnosis and evidence-preserving recovery                                                 |
+| [Implementation plans](docs/plans/)                                           | Historical engineering decisions and execution records, not a list of unfinished required features |
+| [Security policy](SECURITY.md)                                                | Vulnerability disclosure and security requirements                                                 |
+| [Contributing](CONTRIBUTING.md)                                               | Governance, plans, reviews, migrations, and verification                                           |
 
 ## License
 

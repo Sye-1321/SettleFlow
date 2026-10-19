@@ -22,7 +22,7 @@
     "@settleflow/reconciliation": "workspace:*",
     "@settleflow/settlements": "workspace:*",
     "@settleflow/webhooks": "workspace:*",
-    "lossless-json": "4.3.0",
+    "lossless-json": "4.3.2",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.4.3"

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { EventingService } from '@settleflow/eventing';
 import { IdempotencyService } from '@settleflow/idempotency';
@@ -170,8 +170,9 @@ export class ReconciliationProcessor {
   ) {}
 
   public processNext(workerId: string): Promise<boolean> {
+    const claimOwner = `${workerId.slice(0, 90)}:${randomUUID()}`;
     return this.repository.claimAndProcess(
-      workerId,
+      claimOwner,
       this.platformReader,
       async (transaction, input) => {
         const event = this.eventing.createReconciliationCompletedEvent(

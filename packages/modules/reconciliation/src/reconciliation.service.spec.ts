@@ -1,3 +1,4 @@
+import type { EventingService } from '@settleflow/eventing';
 import {
   IdempotencyService,
   type IdempotentOperation,
@@ -7,7 +8,7 @@ import { MonotonicUlidGenerator, type PrismaTransactionClient } from '@settleflo
 import { AuditService } from '@settleflow/operations';
 
 import { PrismaReconciliationRepository } from './prisma-reconciliation.repository';
-import { ReconciliationService } from './reconciliation.service';
+import { ReconciliationProcessor, ReconciliationService } from './reconciliation.service';
 import type { StageReconciliationCommand } from './reconciliation.types';
 import {
   InvalidReconciliationRequestError,
@@ -218,5 +219,25 @@ describe('ReconciliationService', () => {
     expect(() =>
       harness.service.getReport('00000000-0000-4000-8000-000000000201', id, limit, cursor),
     ).toThrow(InvalidReconciliationRequestError);
+  });
+
+  it('uses a distinct bounded ownership identity for every processing attempt', async () => {
+    const claimAndProcess = jest.fn().mockResolvedValue(false);
+    const processor = new ReconciliationProcessor(
+      { claimAndProcess } as unknown as PrismaReconciliationRepository,
+      {} as EventingService,
+      { readPlatformRecords: jest.fn() },
+    );
+
+    await processor.processNext('reconciliation_worker');
+    await processor.processNext('reconciliation_worker');
+
+    const owners = claimAndProcess.mock.calls.map((call: readonly unknown[]) => call[0] as string);
+    expect(owners[0]).not.toBe(owners[1]);
+    expect(owners).toEqual([
+      expect.stringMatching(/^reconciliation_worker:[0-9a-f-]{36}$/u),
+      expect.stringMatching(/^reconciliation_worker:[0-9a-f-]{36}$/u),
+    ]);
+    expect(owners.every((owner) => owner.length <= 128)).toBe(true);
   });
 });

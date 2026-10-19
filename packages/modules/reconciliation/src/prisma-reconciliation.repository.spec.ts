@@ -2,6 +2,7 @@ import { PrismaDatabase, type PrismaTransactionClient } from '@settleflow/infras
 
 import {
   InvalidReconciliationRequestError,
+  ReconciliationClaimOwnershipLostError,
   ReconciliationChecksumConflictError,
   ReconciliationImportFailedError,
   ReconciliationImportNotFoundError,
@@ -189,7 +190,8 @@ describe('PrismaReconciliationRepository', () => {
     const h = harness();
     h.transaction.$queryRaw
       .mockResolvedValueOnce([{ id: 'internal' }])
-      .mockResolvedValueOnce([{ now }]);
+      .mockResolvedValueOnce([{ now }])
+      .mockResolvedValueOnce([{ id: 'internal' }]);
     h.transaction.reconciliationImport.findFirst.mockResolvedValue({
       merchantId: 'merchant',
       periodEnd,
@@ -252,7 +254,8 @@ describe('PrismaReconciliationRepository', () => {
     const excessive = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
     overflow.transaction.$queryRaw
       .mockResolvedValueOnce([{ id: 'internal' }])
-      .mockResolvedValueOnce([{ now }]);
+      .mockResolvedValueOnce([{ now }])
+      .mockResolvedValueOnce([{ id: 'internal' }]);
     overflow.transaction.reconciliationImport.findFirst.mockResolvedValue({
       merchantId: 'merchant',
       periodEnd,
@@ -285,13 +288,46 @@ describe('PrismaReconciliationRepository', () => {
         eventFactory,
       ),
     ).resolves.toBe(true);
-    const updateCalls = overflow.transaction.reconciliationImport.update.mock
-      .calls as readonly (readonly unknown[])[];
-    const updateInput = updateCalls.at(-1)?.[0] as {
-      readonly data?: { readonly failureCode?: unknown; readonly status?: unknown };
-    };
-    expect(updateInput.data).toMatchObject({ failureCode: 'aggregate_overflow', status: 'FAILED' });
+    expect(overflow.transaction.$queryRaw).toHaveBeenCalledTimes(3);
     expect(eventFactory).not.toHaveBeenCalled();
+  });
+
+  it('fails the transaction when terminal ownership is lost', async () => {
+    const h = harness();
+    h.transaction.$queryRaw
+      .mockResolvedValueOnce([{ id: 'internal' }])
+      .mockResolvedValueOnce([{ now }])
+      .mockResolvedValueOnce([]);
+    h.transaction.reconciliationImport.findFirst.mockResolvedValue({
+      merchantId: 'merchant',
+      periodEnd,
+      periodStart,
+      providerRows: [],
+      publicId: 'rec-id',
+      requestId: 'request',
+    });
+    const eventFactory = jest.fn();
+
+    await expect(
+      h.repository.claimAndProcess(
+        'worker:claim',
+        { readPlatformRecords: jest.fn().mockResolvedValue([]) },
+        eventFactory,
+      ),
+    ).rejects.toBeInstanceOf(ReconciliationClaimOwnershipLostError);
+    expect(h.transaction.reconciliationResult.createMany).not.toHaveBeenCalled();
+    expect(h.transaction.reconciliationSummary.createMany).not.toHaveBeenCalled();
+    expect(eventFactory).not.toHaveBeenCalled();
+  });
+
+  it('fails when ownership is lost between claim and classification', async () => {
+    const h = harness();
+    h.transaction.$queryRaw.mockResolvedValueOnce([{ id: 'internal' }]);
+    h.transaction.reconciliationImport.findFirst.mockResolvedValue(null);
+
+    await expect(
+      h.repository.claimAndProcess('worker:claim', { readPlatformRecords: jest.fn() }, jest.fn()),
+    ).rejects.toBeInstanceOf(ReconciliationClaimOwnershipLostError);
   });
 
   it('returns mismatch pages and rejects invalid, missing, pending, and failed reports', async () => {

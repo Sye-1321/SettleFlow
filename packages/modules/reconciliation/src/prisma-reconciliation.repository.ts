@@ -4,6 +4,7 @@ import { classifyReconciliation } from './reconciliation-classifier';
 import {
   InvalidReconciliationRequestError,
   ReconciliationChecksumConflictError,
+  ReconciliationClaimOwnershipLostError,
   ReconciliationImportFailedError,
   ReconciliationImportNotFoundError,
   ReconciliationReportNotReadyError,
@@ -223,7 +224,7 @@ export class PrismaReconciliationRepository {
   }
 
   public async claimAndProcess(
-    workerId: string,
+    claimOwner: string,
     platformReader: ReconciliationPlatformReadPort,
     eventFactory: (
       transaction: PrismaTransactionClient,
@@ -239,29 +240,40 @@ export class PrismaReconciliationRepository {
     ) => Promise<void>,
   ): Promise<boolean> {
     const claimed = await this.database.getClient().$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<
-        { id: string }[]
-      >`SELECT "id" FROM "reconciliation_imports" WHERE "status" = 'staged' AND ("lease_expires_at" IS NULL OR "lease_expires_at" <= transaction_timestamp()) ORDER BY "created_at", "id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
-      const id = rows[0]?.id;
-      if (id === undefined) return undefined;
-      await tx.reconciliationImport.update({
-        data: {
-          leaseExpiresAt: new Date(Date.now() + 30_000),
-          lockedAt: new Date(),
-          lockedBy: workerId,
-        },
-        where: { id },
-      });
-      return id;
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        WITH claim_clock AS MATERIALIZED (
+          SELECT clock_timestamp() AS now_at
+        ), candidate AS (
+          SELECT reconciliation_import."id"
+          FROM "reconciliation_imports" AS reconciliation_import
+          CROSS JOIN claim_clock
+          WHERE reconciliation_import."status" = 'staged'
+            AND (
+              reconciliation_import."lease_expires_at" IS NULL
+              OR reconciliation_import."lease_expires_at" <= claim_clock.now_at
+            )
+          ORDER BY reconciliation_import."created_at", reconciliation_import."id"
+          LIMIT 1
+          FOR UPDATE OF reconciliation_import SKIP LOCKED
+        )
+        UPDATE "reconciliation_imports" AS reconciliation_import
+        SET "locked_by" = ${claimOwner},
+            "locked_at" = claim_clock.now_at,
+            "lease_expires_at" = claim_clock.now_at + INTERVAL '30 seconds'
+        FROM candidate, claim_clock
+        WHERE reconciliation_import."id" = candidate."id"
+        RETURNING reconciliation_import."id"
+      `;
+      return rows[0]?.id;
     });
     if (claimed === undefined) return false;
     await this.database.getClient().$transaction(
       async (tx) => {
         const reconciliationImport = await tx.reconciliationImport.findFirst({
           include: { providerRows: { orderBy: { rowNumber: 'asc' } } },
-          where: { id: claimed, lockedBy: workerId, status: 'STAGED' },
+          where: { id: claimed, lockedBy: claimOwner, status: 'STAGED' },
         });
-        if (reconciliationImport === null) return;
+        if (reconciliationImport === null) throw new ReconciliationClaimOwnershipLostError();
         const platformRows = await platformReader.readPlatformRecords(
           tx,
           reconciliationImport.merchantId,
@@ -327,19 +339,37 @@ export class PrismaReconciliationRepository {
           summary.unexplainedDifferenceMinor,
         ]);
         if (aggregates.some((amount) => amount < -maximumSafe || amount > maximumSafe)) {
-          await tx.reconciliationImport.update({
-            data: {
-              failedAt: completedAt,
-              failureCode: 'aggregate_overflow',
-              leaseExpiresAt: null,
-              lockedAt: null,
-              lockedBy: null,
-              status: 'FAILED',
-            },
-            where: { id: claimed },
-          });
+          const failed = await tx.$queryRaw<{ id: string }[]>`
+            UPDATE "reconciliation_imports"
+            SET "failed_at" = ${completedAt},
+                "failure_code" = 'aggregate_overflow',
+                "lease_expires_at" = NULL,
+                "locked_at" = NULL,
+                "locked_by" = NULL,
+                "status" = 'failed'
+            WHERE "id" = ${claimed}::uuid
+              AND "status" = 'staged'
+              AND "locked_by" = ${claimOwner}
+              AND "lease_expires_at" > clock_timestamp()
+            RETURNING "id"
+          `;
+          if (failed.length !== 1) throw new ReconciliationClaimOwnershipLostError();
           return;
         }
+        const completed = await tx.$queryRaw<{ id: string }[]>`
+          UPDATE "reconciliation_imports"
+          SET "completed_at" = ${completedAt},
+              "lease_expires_at" = NULL,
+              "locked_at" = NULL,
+              "locked_by" = NULL,
+              "status" = 'completed'
+          WHERE "id" = ${claimed}::uuid
+            AND "status" = 'staged'
+            AND "locked_by" = ${claimOwner}
+            AND "lease_expires_at" > clock_timestamp()
+          RETURNING "id"
+        `;
+        if (completed.length !== 1) throw new ReconciliationClaimOwnershipLostError();
         await tx.reconciliationResult.createMany({
           data: results.map((result, index) => ({
             bucket: result.bucket.toUpperCase() as never,
@@ -363,16 +393,6 @@ export class PrismaReconciliationRepository {
           })),
         });
         await tx.reconciliationSummary.createMany({ data: summaries });
-        await tx.reconciliationImport.update({
-          data: {
-            completedAt,
-            leaseExpiresAt: null,
-            lockedAt: null,
-            lockedBy: null,
-            status: 'COMPLETED',
-          },
-          where: { id: claimed },
-        });
         const matchedExactCount = results.filter(
           (result) => result.bucket === 'matched_exact',
         ).length;

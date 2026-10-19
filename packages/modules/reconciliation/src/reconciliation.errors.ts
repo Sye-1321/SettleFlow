@@ -8,3 +8,4 @@ export class ReconciliationReportNotReadyError extends Error {}
 export class ReconciliationImportFailedError extends Error {}
 export class ReconciliationAggregateOverflowError extends Error {}
 export class ReconciliationIdentifierExhaustedError extends Error {}
+export class ReconciliationClaimOwnershipLostError extends Error {}

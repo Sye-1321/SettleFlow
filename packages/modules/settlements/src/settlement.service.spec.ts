@@ -301,6 +301,13 @@ describe('SettlementService financial orchestration', () => {
     await expect(
       h.service.getBatch('merchant-id', h.batch.id, 20, 'bad cursor'),
     ).rejects.toBeInstanceOf(InvalidSettlementRequestError);
+    for (const cursor of [['cursor_1'], { value: 'cursor_1' }]) {
+      h.mocks.findBatch.mockClear();
+      await expect(
+        h.service.getBatch('merchant-id', h.batch.id, 20, cursor),
+      ).rejects.toBeInstanceOf(InvalidSettlementRequestError);
+      expect(h.mocks.findBatch).not.toHaveBeenCalled();
+    }
     h.repository.findBatch.mockResolvedValue(undefined);
     await expect(h.service.getBatch('merchant-id', h.batch.id)).rejects.toBeInstanceOf(
       SettlementBatchNotFoundError,

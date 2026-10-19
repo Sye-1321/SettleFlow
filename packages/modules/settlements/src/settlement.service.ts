@@ -286,7 +286,7 @@ export class SettlementService {
     merchantId: string,
     publicId: string,
     limit = 20,
-    cursor?: string,
+    cursor?: unknown,
   ): Promise<SettlementBatchRepresentation> {
     if (
       !/^stb_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u.test(publicId) ||
@@ -294,7 +294,10 @@ export class SettlementService {
       limit < 1 ||
       limit > 100 ||
       (cursor !== undefined &&
-        (cursor.length < 1 || cursor.length > 64 || !/^[A-Za-z0-9_-]+$/u.test(cursor)))
+        (typeof cursor !== 'string' ||
+          cursor.length < 1 ||
+          cursor.length > 64 ||
+          !/^[A-Za-z0-9_-]+$/u.test(cursor)))
     )
       throw new InvalidSettlementRequestError();
     const result = await this.repository.findBatch(merchantId, publicId, limit, cursor);

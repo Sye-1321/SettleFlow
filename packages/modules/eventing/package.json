@@ -20,6 +20,6 @@
   },
   "dependencies": {
     "@settleflow/infrastructure": "workspace:*",
-    "amqplib": "2.0.1"
+    "amqplib": "2.2.0"
   }
 }

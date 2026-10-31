@@ -1,10 +1,10 @@
 # Implementation Plan: Dependency security remediation
 
-- **Status:** In progress
+- **Status:** Completed
 - **Owner:** SettleFlow Project
 - **Created:** 2026-10-31
 - **Last updated:** 2026-10-31
-- **Related issue/PR:** October 26, 2026 security workflow run 40298573836
+- **Related issue/PR:** October 26, 2026 security workflow run 40298573836; PR [#34](https://github.com/Sye-1321/SettleFlow/pull/34)
 - **Related ADRs:** ADR-0002
 
 ## Goal
@@ -24,7 +24,7 @@ Remediate the high-severity `zod`, `body-parser`, and `multer` advisories report
 
 ## Existing behavior
 
-Security workflow run 40298573836 failed the production dependency audit on `GHSA-mrhx-c7xc-m3w5`, `GHSA-27r3-jxmh-p828`, and `GHSA-q7qp-rjg7-q26m`. The same packages produced three high findings in each API and worker image. The workspace currently resolves `zod` 4.4.3, `body-parser` 2.3.0, and `multer` 2.3.0, all below the advisory fixes. No security exception is active.
+Security workflow run 40298573836 failed the production dependency audit on `GHSA-mrhx-c7xc-m3w5`, `GHSA-27r3-jxmh-p828`, and `GHSA-q7qp-rjg7-q26m`. The same packages produced three high findings in each API and worker image. At investigation time, the workspace resolved `zod` 4.4.3, `body-parser` 2.3.0, and `multer` 2.3.0, all below the advisory fixes. No security exception was active.
 
 ## Proposed design
 
@@ -32,11 +32,11 @@ Pin direct `zod` consumers to the minimum compatible patched release and use bou
 
 ## Affected modules and files
 
-| Module/file area | Ownership or change | Boundary impact |
-| --- | --- | --- |
-| API and worker manifests | Patch direct `zod` version | None |
-| Workspace/lockfile | Bound vulnerable transitive versions to patched releases | None |
-| Security evidence documentation | Replace stale pass claims and record remediation | None |
+| Module/file area                | Ownership or change                                      | Boundary impact |
+| ------------------------------- | -------------------------------------------------------- | --------------- |
+| API and worker manifests        | Patch direct `zod` version                               | None            |
+| Workspace/lockfile              | Bound vulnerable transitive versions to patched releases | None            |
+| Security evidence documentation | Replace stale pass claims and record remediation         | None            |
 
 No dependency direction or cross-module write changes.
 
@@ -58,10 +58,10 @@ The patch removes three known denial-of-service findings without exceptions or s
 
 ## Failure, retry, and recovery behavior
 
-| Failure or duplicate scenario | Expected safe state | Retry/recovery | Evidence |
-| --- | --- | --- | --- |
+| Failure or duplicate scenario           | Expected safe state  | Retry/recovery                        | Evidence                             |
+| --------------------------------------- | -------------------- | ------------------------------------- | ------------------------------------ |
 | Frozen install or compatibility failure | No deployable change | Revert or forward-fix dependency pins | Install, type, build, and test gates |
-| Advisory remains in a runtime image | Security gate blocks | Forward-fix the dependency graph | Audit and Trivy image scans |
+| Advisory remains in a runtime image     | Security gate blocks | Forward-fix the dependency graph      | Audit and Trivy image scans          |
 
 ## Observability and operations
 
@@ -84,33 +84,36 @@ The manifest, override, lockfile, and prose changes are reversible. If compatibi
 
 ## Risks and assumptions
 
-| Risk or assumption | Impact | Mitigation/validation | Owner/deadline |
-| --- | --- | --- | --- |
-| Patched transitive versions remain compatible with Express/Nest ranges | Runtime regression | Frozen install, build, unit/integration, and image gates | SettleFlow Project / before handoff |
-| Advisory data may change after verification | A later scan may fail | Keep dated evidence and rerun scheduled gates | SettleFlow Project / ongoing |
+| Risk or assumption                                                     | Impact                | Mitigation/validation                                    | Owner/deadline                      |
+| ---------------------------------------------------------------------- | --------------------- | -------------------------------------------------------- | ----------------------------------- |
+| Patched transitive versions remain compatible with Express/Nest ranges | Runtime regression    | Frozen install, build, unit/integration, and image gates | SettleFlow Project / before handoff |
+| Advisory data may change after verification                            | A later scan may fail | Keep dated evidence and rerun scheduled gates            | SettleFlow Project / ongoing        |
 
 ## Execution checklist
 
 - [x] Design and boundaries reviewed.
 - [x] Required ADR/specification change reviewed; none required.
 - [x] Dependency patch completed.
-- [ ] Tests and security gates pass; GitHub image gate pending.
+- [x] Tests and security gates pass.
 - [x] Documentation updated.
-- [ ] Commands/results and deviations recorded below.
+- [x] Commands/results and deviations recorded below.
 
 ## Verification record
 
-| Command or review | Result | Date/evidence |
-| --- | --- | --- |
-| October 26 security workflow investigation | Failed on the three named high advisories in audit and images | 2026-10-31 / run 40298573836 |
-| `corepack pnpm install --frozen-lockfile` | Passed | 2026-10-31 |
-| `pnpm security:policy` | Passed; zero active exceptions and no critical or unreviewed high audit findings | 2026-10-31 |
-| `pnpm docs:check` | Passed | 2026-10-31 |
-| `pnpm typecheck`, `pnpm lint`, `pnpm build` | Passed sequentially | 2026-10-31 |
-| `pnpm test` | Passed; 72 suites and 493 tests | 2026-10-31 |
-| `pnpm format:check` | Baseline failure in 395 files, including untouched files and the unmodified `HEAD` content | 2026-10-31 |
-| Local `pnpm images:build` | Incomplete: Docker registry/scanner downloads repeatedly stalled; use GitHub security workflow | 2026-10-31 |
-| GitHub security workflow | Not run: push rejected because the configured account has read-only repository access | 2026-10-31 |
+| Command or review                                                                              | Result                                                                                                                          | Date/evidence                |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| October 26 security workflow investigation                                                     | Failed on the three named high advisories in audit and images                                                                   | 2026-10-31 / run 40298573836 |
+| `corepack pnpm install --frozen-lockfile`                                                      | Passed                                                                                                                          | 2026-10-31                   |
+| `pnpm security:policy`                                                                         | Passed; zero active exceptions and no critical or unreviewed high audit findings                                                | 2026-10-31                   |
+| `pnpm docs:check`                                                                              | Passed                                                                                                                          | 2026-10-31                   |
+| `pnpm typecheck`, `pnpm lint`, `pnpm build`                                                    | Passed sequentially                                                                                                             | 2026-10-31                   |
+| `pnpm test`                                                                                    | Passed; 72 suites and 493 tests                                                                                                 | 2026-10-31                   |
+| `pnpm format:check`                                                                            | Baseline failure in 395 files, including untouched files and the unmodified `HEAD` content                                      | 2026-10-31                   |
+| Local `pnpm images:build`                                                                      | Incomplete: Docker registry/scanner downloads repeatedly stalled; use GitHub security workflow                                  | 2026-10-31                   |
+| GitHub security workflow                                                                       | Not run: push rejected because the configured account has read-only repository access                                           | 2026-10-31                   |
+| [`main` CI workflow](https://github.com/Sye-1321/SettleFlow/actions/runs/41220748849)          | Passed for merge commit `c0d84e8`, including formatting, build, unit, integration, migration, contract, and documentation gates | 2026-10-31                   |
+| [`main` security workflow](https://github.com/Sye-1321/SettleFlow/actions/runs/41220748854)    | Passed for merge commit `c0d84e8`, including dependency audit, image validation and scanning, SBOM evidence, and attestation    | 2026-10-31                   |
+| [`main` reliability workflow](https://github.com/Sye-1321/SettleFlow/actions/runs/41220748874) | Passed for merge commit `c0d84e8`, including three concurrency runs and dependency/crash-recovery evidence                      | 2026-10-31                   |
 
 ## Definition of done
 

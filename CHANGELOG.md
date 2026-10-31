@@ -17,7 +17,7 @@ All notable changes to SettleFlow will be recorded here. The project follows
 ### Security
 
 - Scoped and hashed merchant API keys, encrypted rotating Webhook secrets, tenant-scoped persistence predicates, SSRF protections, least-privilege runtime database grants, secret scanning, CodeQL, dependency/license review, and container scanning.
-- Patched transitive dependency resolution and assembled no-QUIC OpenSSL/distroless runtime images keep the production audit and zero-high/critical image policy green without exceptions.
+- Patched dependency resolution includes `zod` 4.6.6, `body-parser` 2.4.0, and `multer` 2.5.0 for the October 26 high-severity advisories; no vulnerability exception or suppression was added.
 - GitHub Private Vulnerability Reporting and the private intake/owner-triage/closure path were exercised with a synthetic non-vulnerability report; account-level Security-alert email confirmation remains a stable-release owner check.
 
 ### Known limitations

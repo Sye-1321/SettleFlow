@@ -24,7 +24,7 @@ All GitHub actions are full-commit pinned with their exact release in an adjacen
 | `actions/upload-artifact`          | 7.0.1   | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `actions/download-artifact`        | 8.0.1   | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
 | `actions/dependency-review-action` | 5.0.0   | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` |
-| `github/codeql-action`             | 4.37.7  | `ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd` |
+| `github/codeql-action`             | 4.37.9  | `cdf488f595d80d6e07e03d4674febd5ab45fa938` |
 | `actions/attest`                   | 4.2.2   | `1e69f48acb82d1966a394da916b4c1698aa569d6` |
 
 Dependabot proposes weekly pnpm, GitHub Actions, and Docker updates. Only compatible development-tool minor/patch updates are grouped; nothing auto-merges.
@@ -91,8 +91,8 @@ No repository secrets or Actions variables are required. GitHub-hosted Ubuntu 24
 
 The approved coverage floors remain unchanged. The Step 7 run records 91.46% statements, 84.71% branches, 91.80% functions, and 92.13% lines globally against the 85/80/80/85 floors. Eventing, Idempotency, Ledger, Payments, Reconciliation, Settlements, and Webhooks each also clear their 90% statements/lines and 85% branches/functions floors. Coverage is assembled from one unit shard and isolated real-dependency integration shards using compatible raw Istanbul maps; every shard must pass before the merged report is accepted.
 
-The runtime image gate passes without an exception or suppression. On 2026-08-20, Trivy 0.73.0 reported zero critical and zero high package findings and zero filesystem-secret findings for rebuilt API `sha256:45e4ff35624ce9274d0bb90f932547e165e521ff05ba1a143ec44ca205a799d9`, worker `sha256:7ac189de9fb7c4b2b6723861aa82f9a5e6f9166daf877ece6afc339cae62efc6`, and migrator `sha256:b9f3d0f31054b85188aa1e81789aa30603fc488e8d5d91c8bfeba27266099b51`. Image validation additionally proved fixed non-root identity, read-only/capability-free execution, exact Node/OpenSSL versions, absent QUIC runtime, absent shell/package managers, and a runnable native Prisma schema engine.
+The August 20 image scan is historical evidence, not a claim about the current advisory database. It reported zero critical or high package findings and zero filesystem-secret findings, and image validation proved the fixed non-root identity, read-only/capability-free execution, exact Node/OpenSSL versions, absent QUIC runtime, absent shell/package managers, and runnable native Prisma schema engine. Current status comes from the latest workflow run and must be refreshed before release.
 
-Dependency advisories are time-sensitive. On 2026-08-20 the lockfile began failing the high-severity dependency gate for [`GHSA-ggr8-5vv4-36mx`](https://github.com/advisories/GHSA-ggr8-5vv4-36mx) through Prisma 7.9.1's configuration tooling. The exact workspace override now resolves the transitive package to patched `deepmerge-ts` 8.0.0. Frozen installation, Prisma generation/validation and migration runtime checks, unit/integration/build gates, and the production dependency audit must all remain green; no exception or suppression was added.
+Dependency advisories are time-sensitive. The scheduled October 26 run failed on high-severity findings for [`zod`](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), [`body-parser`](https://github.com/advisories/GHSA-27r3-jxmh-p828), and [`multer`](https://github.com/advisories/GHSA-q7qp-rjg7-q26m). The workspace now resolves the first patched releases: `zod` 4.6.6, `body-parser` 2.4.0, and `multer` 2.5.0. Frozen installation, compatibility checks, and the production dependency audit pass without an exception or suppression; rebuilt image scans remain required before merge or release.
 
 Use the [CI and security gate failure runbook](../runbooks/ci-security-gate-failure.md) for safe triage. OCI runtime details remain in [OCI Images and Release Simulation](release-simulation.md).

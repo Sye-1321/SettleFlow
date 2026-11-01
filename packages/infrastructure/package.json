@@ -25,7 +25,7 @@
     "@opentelemetry/sdk-node": "0.221.0",
     "@opentelemetry/sdk-trace-base": "2.10.0",
     "@prisma/adapter-pg": "7.9.1",
-    "@prisma/client": "7.9.1",
+    "@prisma/client": "7.10.1",
     "amqplib": "2.2.0",
     "pg": "8.23.1",
     "prom-client": "15.1.3",

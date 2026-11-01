@@ -119,7 +119,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@nestjs/common": "11.1.28",
-    "@nestjs/cli": "11.0.24",
+    "@nestjs/cli": "12.0.11",
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-express": "11.1.28",
     "prisma": "7.9.1",
